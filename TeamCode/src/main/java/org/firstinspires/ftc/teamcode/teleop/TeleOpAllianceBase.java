@@ -6,41 +6,69 @@ import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.subsystems.Feed;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
-import org.firstinspires.ftc.teamcode.util.OpModeShim;
 
 /*
  * FILE: TeleOpAllianceBase.java
- * LOCATION: teamcode/.../teleop/
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
  *
  * PURPOSE:
- * - Shared TeleOp base for Red and Blue that wires drive, launcher, feed, intake,
- *   and implements the control mapping (sticks, triggers, buttons).
+ * - Shared TeleOp base used by TeleOp_Red and TeleOp_Blue.
+ * - Wires the drivetrain (Drivebase), Launcher, Feed, and Intake subsystems.
+ * - Implements the control mapping with button edge-detection so toggles
+ *   flip exactly once per press.
+ *
+ * CONTROLS (PS layout; adjust if using Xbox/Logitech):
+ * - Left stick (Y/X): forward/back + strafe
+ * - Right stick X:    twist/rotation
+ * - Left trigger:     BRAKE (scales power down toward slowestSpeed)
+ * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true)
+ * - X:                FIRE one ball (runs Feed motor single shot)   [edge]
+ * - Left Bumper:      Toggle Intake on/off                          [edge]
+ * - Triangle:         Toggle ManualSpeed mode on/off                [edge]
+ * - Right Bumper:     (optional placeholder) Aim-assist enable while held
  *
  * TUNABLES:
- * - slowestSpeed: cap applied when Left Trigger is fully pressed (brake mode).
- * - rpmBottom / rpmTop: manual RPM range when Triangle (manual mode) is ON.
- * - aim assist: add gains when you wire Vision (R2 held).
+ * - slowestSpeed:      Cap when fully braking with Left trigger (e.g., 0.25)
+ * - rpmBottom/rpmTop:  Manual RPM range mapped from Right trigger
  *
- * IMPORTANT FUNCTIONS:
- * - alliance(): implemented by subclasses to return Alliance.RED/BLUE.
- * - init(): creates Drivebase via OpModeShim and initializes subsystems.
- * - loop(): reads gamepad, runs drive, feed/intake/launcher logic, updates telemetry.
+ * IMPORTANT METHODS:
+ * - alliance(): implemented by subclasses (TeleOp_Red/TeleOp_Blue)
+ * - init():     creates subsystems
+ * - loop():     reads gamepad, applies drive/launcher/feed/intake logic, updates telemetry
+ *
+ * NOTES:
+ * - Intake toggle is bound to Left Bumper because Left Trigger is used for braking.
+ *   If you prefer L2 for intake, we can remap and change brake behavior accordingly.
+ * - Aim-assist is left as a placeholder so it won't fight with RT's RPM mapping.
  */
+
 public abstract class TeleOpAllianceBase extends OpMode {
+    // Implemented by TeleOp_Red / TeleOp_Blue
     protected abstract Alliance alliance();
 
+    // Subsystems
     protected Drivebase drive;
     protected Launcher launcher;
     protected Feed feed;
     protected Intake intake;
 
-    private double slowestSpeed = 0.25;
-    private boolean manualSpeedMode = true;
-    private double rpmBottom = 2000, rpmTop = 4500;
+    // ---- Tunables ----
+    private double slowestSpeed = 0.25;     // full brake cap
+    private double rpmBottom    = 2000;     // manual RPM range bottom
+    private double rpmTop       = 4500;     // manual RPM range top
+
+    // ---- State ----
+    private boolean manualSpeedMode = true; // Triangle toggles this
+
+    // Button edge tracking (so we toggle once per press)
+    private boolean prevY  = false; // Triangle
+    private boolean prevLB = false; // Left Bumper (intake toggle)
+    private boolean prevX  = false; // X (fire)
 
     @Override
     public void init() {
-        drive    = new Drivebase(hardwareMap, telemetry); 
+        // Use TeleOp-friendly Drivebase constructor (no shim, no blocking)
+        drive    = new Drivebase(hardwareMap, telemetry);
         launcher = new Launcher(hardwareMap);
         feed     = new Feed(hardwareMap);
         intake   = new Intake(hardwareMap);
@@ -51,45 +79,70 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void loop() {
-        // --- Drivetrain with brake scaling (Left Trigger) ---
+        // ---------------- Drivetrain with brake scaling ----------------
         double brake = gamepad1.left_trigger; // 0..1
+        // Cap scales from 1.0 (no brake) down to slowestSpeed (full brake)
         double cap = 1.0 - brake * (1.0 - slowestSpeed);
 
         double driveY  = cap * gamepad1.left_stick_y;     // +forward
-        double strafeX = cap * -gamepad1.left_stick_x;    // +right
-        double twist   = cap * -gamepad1.right_stick_x;   // +CCW
+        double strafeX = cap * -gamepad1.left_stick_x;    // +right (matches your original)
+        double twist   = cap * -gamepad1.right_stick_x;   // +CCW  (matches your original)
 
-        // --- Aim Assist (R2) placeholder: inject twist from vision angle later ---
-        if (gamepad1.right_bumper) { // (use RB as a temporary aim button if RT used for RPM)
-            // TODO: twist = kAim * angleError; clamp; skip if no target
-        }
+        // ---- Optional aim-assist placeholder (Right Bumper while held) ----
+        // If you later wire AprilTag angle here, inject a small twist correction when RB is held.
+        // boolean aimHeld = gamepad1.right_bumper;
+        // if (aimHeld && Vision.hasTarget()) {
+        //     double err = Vision.getAngleToTarget(); // deg
+        //     double kAim = 0.02;                     // tune
+        //     twist = Math.max(-cap, Math.min(cap, kAim * err));
+        // }
 
         drive.drive(driveY, strafeX, twist);
 
-        // Intake toggle (L2)
-        if (gamepad1.left_bumper) { intake.toggle(); }
+        // ---------------- Button edge detection ----------------
+        boolean y  = gamepad1.y;
+        boolean lb = gamepad1.left_bumper;
+        boolean x  = gamepad1.x;
 
-        // Manual speed mode toggle (Triangle/Y)
-        if (gamepad1.y) { manualSpeedMode = !manualSpeedMode; }
+        // Triangle: toggle manual/auto speed mode (edge)
+        if (y && !prevY) manualSpeedMode = !manualSpeedMode;
 
-        // Manual RPM from Right Trigger when in manual mode
-        if (manualSpeedMode) {
-            double t = gamepad1.right_trigger; // 0..1
-            launcher.setTargetRpm(rpmBottom + t * (rpmTop - rpmBottom));
-        }
+        // Left Bumper: toggle intake (edge)
+        if (lb && !prevLB) intake.toggle();
 
-        // Fire one ball (X/A)
-        if (gamepad1.x) {
-            // Optional interlock: if (launcher.isAtSpeed(100)) { feed.feedOnceBlocking(); }
+        // X: fire one ball (edge)
+        if (x && !prevX) {
+            // Add interlock when you wire real RPM sensing:
+            // if (launcher.isAtSpeed(100)) { feed.feedOnceBlocking(); }
             feed.feedOnceBlocking();
         }
 
-        // --- Telemetry ---
+        prevY  = y;
+        prevLB = lb;
+        prevX  = x;
+
+        // ---------------- Launcher RPM control ----------------
+        if (manualSpeedMode) {
+            double rt = gamepad1.right_trigger; // 0..1
+            if (rt > 0.05) { // deadzone
+                double rpm = rpmBottom + rt * (rpmTop - rpmBottom);
+                launcher.setTargetRpm(rpm);
+            } else {
+                launcher.setTargetRpm(0); // no trigger -> stop flywheels
+            }
+        } else {
+            // Auto RPM mode not implemented yet; keep off for now
+            launcher.setTargetRpm(0);
+        }
+
+        // ---------------- Telemetry ----------------
         telemetry.addData("Alliance", alliance());
+        telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "On" : "Off");
         telemetry.addData("ManualSpeed", manualSpeedMode);
+        telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
         telemetry.addData("RPM Target", "%.0f", launcher.targetRpm);
-        telemetry.addData("ThrottleCap", "%.2f", cap);
+        telemetry.addData("RPM Actual", "%.0f", launcher.getCurrentRpm()); // placeholder until closed-loop RPM wired
         telemetry.update();
     }
 }

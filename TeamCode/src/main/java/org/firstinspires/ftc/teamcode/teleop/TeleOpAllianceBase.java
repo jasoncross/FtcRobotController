@@ -40,7 +40,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void init() {
-        drive    = new Drivebase(new OpModeShim(this));
+        drive    = new Drivebase(hardwareMap, telemetry); 
         launcher = new Launcher(hardwareMap);
         feed     = new Feed(hardwareMap);
         intake   = new Intake(hardwareMap);

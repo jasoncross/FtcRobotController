@@ -155,6 +155,5 @@ so the correct TeleOp automatically preloads on the Driver Station.
 
 ## Credits
 Indianola Robotics – FTC Team 2025  
-Lead Programming: *Your Names Here*  
-Mentor Support: *Jason Cross & Programming Team*  
+Mentor Support: *Jason Cross*  
 Built on the official **FIRST Tech Challenge SDK**

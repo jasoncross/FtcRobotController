@@ -76,8 +76,8 @@ public class Launcher {
         right = hw.get(DcMotorEx.class, "FlywheelRight");
 
         // Make both flywheels spin the same physical direction
-        left.setDirection(DcMotorSimple.Direction.FORWARD);
-        right.setDirection(DcMotorSimple.Direction.REVERSE);
+        left.setDirection(DcMotorSimple.Direction.REVERSE);
+        right.setDirection(DcMotorSimple.Direction.FORWARD);
 
         // Flywheels should coast when power = 0
         left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);

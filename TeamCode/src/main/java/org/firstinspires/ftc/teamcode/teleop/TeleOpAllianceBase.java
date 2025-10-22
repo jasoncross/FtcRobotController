@@ -20,38 +20,53 @@ import java.util.List;
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
  *
  * PURPOSE:
- * - Shared TeleOp base used by TeleOp_Red and TeleOp_Blue.
- * - Wires the drivetrain (Drivebase), Launcher, Feed, and Intake subsystems.
- * - Implements button edge-detection for toggles and manual controls.
- * - Integrates AprilTag-based Aim-Assist (Right Bumper toggle).
+ *   Shared TeleOp base for both Red and Blue alliances.
+ *   Manages driver input, drivetrain, launcher, feed, intake, and AprilTag-based auto-aim.
+ *   Aim-Assist keeps the robot pointed at the alliance GOAL tag while preserving full translation control.
  *
- * CONTROLS (PS layout; adjust if using Xbox/Logitech):
- * - Left stick (Y/X): Forward/back + strafe.
- * - Right stick X:    Twist/rotation.
- * - Left trigger:     Brake (scales power down toward slowestSpeed).
- * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true).
- * - X (A):            Feed one ball (runs Feed motor single shot).          [edge]
- * - Left Bumper:      Toggle Intake ON/OFF.                                [edge]
- * - Triangle (Y):     Toggle ManualSpeed mode ON/OFF.                      [edge]
- * - Right Bumper:     Toggle Aim-Assist (keeps robot aimed at alliance tag). [edge]
+ * CONTROLS (Gamepad 1):
+ *   Left stick ........ Forward/back + strafe
+ *   Right stick X ..... Rotation
+ *   Left trigger ...... Brake (reduces top speed toward slowestSpeed)
+ *   Right trigger ..... Manual launch RPM (only when manualSpeedMode == true)
+ *   X / A ............. Feed one ball (Feed subsystem)
+ *   Left Bumper ....... Toggle intake ON/OFF
+ *   Right Bumper ...... TOGGLE Aim-Assist (not hold)
+ *   Triangle / Y ...... Toggle manual launch-speed mode
+ *
+ * TELEMETRY (always shown):
+ *   Alliance, BrakeCap, Intake state, ManualSpeed, RT value,
+ *   RPM Target/Actual, Aim Enabled, Tag Visible, Tag Heading (deg),
+ *   Tag Distance (inches).
  *
  * TUNABLES:
- * - slowestSpeed:   Cap when fully braking with Left Trigger (e.g., 0.25).
- * - rpmBottom/Top:  Manual RPM range mapped from Right Trigger.
+ *   // Drivebase (see Drivebase.java)
+ *   - STRAFE_CORRECTION ............... Multiplier to linearize strafe distance
+ *   - TURN_KP, TURN_KD ............... IMU turn gains
+ *   - TURN_TOLERANCE_DEG, TURN_SETTLE_TIME ... Turn completion criteria
  *
- * NEW (VISION):
- * - Aim-Assist overrides *only twist* to keep the robot facing the AprilTag.
- * - Forward/back + strafe remain fully driver-controlled.
- * - Always displays tag telemetry (distance, heading, visibility).
- * - Adds simple smoothing for heading & distance to reduce jitter.
- * - Telemetry shows distance in INCHES (converted from meters).
+ *   // TeleOp behavior
+ *   - slowestSpeed .................... Full-brake top-speed cap (0–1)
+ *   - rpmBottom, rpmTop .............. Manual launch RPM range mapped from RT when manualSpeedMode == true
  *
- * METHODS:
- * - alliance(): Implemented by subclasses (TeleOp_Red / TeleOp_Blue).
- * - init():     Initializes subsystems and VisionPortal.
- * - loop():     Main control logic and telemetry updates.
- * - stop():     Shuts down vision resources cleanly.
+ *   // Vision / Aim (see vision/)
+ *   - TagAimController.kP ............ Proportional gain for bearing error (default 0.02)
+ *   - TagAimController.kD ............ Damping gain (default 0.003)
+ *   - TagAimController twist clamp ... Max ±0.6 twist power to preserve driver control while translating
+ *   - TagAimController deadband ...... ±1.5° stop band to prevent hunting
+ *   - VisionAprilTag.rangeScale ...... Distance scale factor (default 1.0); set via one-point calibration
+ *   - VisionAprilTag.cameraResolution . 640×480 (uses built-in calibration)
+ *   - VisionAprilTag.streamFormat .... MJPEG (higher FPS; ignored if unsupported)
+ *
+ * DISTANCE & UNITS:
+ *   - VisionAprilTag reports scaled range (meters) which TeleOp converts to inches (m × 39.3701) for display.
+ *
+ * NOTES:
+ *   - Webcam must be added to Robot Configuration as "Webcam 1".
+ *   - IMU physical orientation assumed: Logo UP, USB RIGHT.
+ *   - This file preserves all existing telemetry and subsystem logic; vision telemetry is appended.
  */
+
 
 public abstract class TeleOpAllianceBase extends OpMode {
     // Alliance is implemented by TeleOp_Red / TeleOp_Blue

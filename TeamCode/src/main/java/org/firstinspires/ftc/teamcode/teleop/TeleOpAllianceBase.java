@@ -22,7 +22,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Launcher;
  * - Right stick X:    twist/rotation
  * - Left trigger:     BRAKE (scales power down toward slowestSpeed)
  * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true)
- * - X:                FIRE one ball (runs Feed motor single shot)   [edge]
+ * - X (A):                FIRE one ball (runs Feed motor single shot)   [edge]
  * - Left Bumper:      Toggle Intake on/off                          [edge]
  * - Triangle:         Toggle ManualSpeed mode on/off                [edge]
  * - Right Bumper:     (optional placeholder) Aim-assist enable while held

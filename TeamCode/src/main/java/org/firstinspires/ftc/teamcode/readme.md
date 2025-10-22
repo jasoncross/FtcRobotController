@@ -1,10 +1,56 @@
-# Indianola Robotics – FTC 2025 Robot Code
+# Indianola Robotics – FTC 2025 Robot Code - DECODE Season
 
-## Overview
-This project contains the full robot control code for the **Indianola Robotics Team** (FTC 2025 season).  
+## Project Overview
+This repository contains the complete robot control code for the **FTC 2025–2026 DECODE** season.  
 The robot uses a **mecanum drivetrain**, **dual flywheel launcher**, **feed motor**, **intake**, and **AprilTag-based targeting**.
 
-All TeleOps and Autos share the same subsystem classes for consistency and easy maintenance.
+All TeleOps and Autos share the same subsystem classes for consistency and easy maintenance.  
+The codebase follows a modular architecture designed for both student development and future maintainers.
+
+---
+
+## Controller Bindings System
+
+### Purpose
+All controller input mappings are centralized in **`ControllerBindings.java`**.  
+This allows any driver button or trigger assignments to be changed in one place  
+without modifying the TeleOp or subsystem code.
+
+### Location
+```
+TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.java
+```
+
+### Features
+- Press, Hold, and Toggle detection (built-in debouncing)  
+- Axis mapping for triggers (LT/RT)  
+- Support for both Gamepad 1 and Gamepad 2  
+- Optional rear-paddle (M1/M2) readers  
+- Fully compatible with existing subsystems and TeleOp logic
+
+---
+
+## Controller Layout (Default Bindings)
+
+### Gamepad 1 – Driver
+| Control | Function |
+|----------|-----------|
+| **Left Stick** | Drive (forward/back & strafe) |
+| **Right Stick X** | Rotation |
+| **Left Trigger** | Brake – reduces top speed |
+| **Right Trigger** | Manual RPM control (only when manualSpeedMode = true) |
+| **Left Bumper (LB)** | **Feed once (Feed subsystem)** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Right Stick Button (RS)** | **Toggle Aim‑Assist** |
+| **Y / Triangle** | **Toggle Manual‑Speed Mode** |
+
+### Gamepad 2 – Co‑Driver
+| Control | Function |
+|----------|-----------|
+| **Left Bumper (LB)** | **Feed once (Feed subsystem)** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Y / Triangle** | **Toggle Manual‑Speed Mode** |
+| *(RS / RT omitted)* | *(No joystick‑based controls on G2)* |
 
 ---
 
@@ -32,7 +78,7 @@ TeamCode/
                             │   ├── TeleOpAllianceBase.java
                             │   ├── TeleOp_Red.java
                             │   └── TeleOp_Blue.java
-                            └── auto/
+                            ├── auto/
                             │   ├── BaseAuto.java
                             │   ├── Auto_Red_Target.java
                             │   ├── Auto_Red_Human.java
@@ -41,6 +87,8 @@ TeamCode/
                             ├── vision/
                             │   ├── TagAimController.java
                             │   └── VisionAprilTag.java
+                            └── input/
+                                └── ControllerBindings.java
 ```
 
 ---
@@ -56,9 +104,9 @@ Enum for the current alliance (`RED` / `BLUE`). Used by TeleOp and Auto.
 Encapsulates all drivetrain control logic.
 
 **Provides**
-- `drive(drive, strafe, twist)` — TeleOp robot-centric control  
-- `move(distanceInches, degrees, speed)` — encoder-based translation  
-- `turn(degrees, speed)` — IMU-based rotation
+- `drive(drive, strafe, twist)` — TeleOp robot‑centric control  
+- `move(distanceInches, degrees, speed)` — encoder‑based translation  
+- `turn(degrees, speed)` — IMU‑based rotation
 
 **Key Tunables**
 | Variable | Meaning |
@@ -81,7 +129,7 @@ Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMod
 | File | Purpose | Key Tunables |
 |---|---|---|
 | **Launcher.java** | Controls dual flywheels. | `bottomRPM`, `topRPM`, `atSpeedToleranceRPM` |
-| **Feed.java** | Times single-ball feed into launcher. | `firePower`, `fireTimeMs`, `minCycleMs` |
+| **Feed.java** | Times single‑ball feed into launcher. | `firePower`, `fireTimeMs`, `minCycleMs` |
 | **Intake.java** | Toggles intake motor. | `powerOn` |
 
 ---
@@ -89,20 +137,11 @@ Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMod
 ### **teleop/**
 | File | Purpose |
 |---|---|
-| **TeleOpAllianceBase.java** | Shared TeleOp logic (sticks, braking, launcher/feed/intake, and AprilTag aim-assist). |
-| **TeleOp_Red.java** / **TeleOp_Blue.java** | Alliance-specific wrappers around the base TeleOp. |
+| **TeleOpAllianceBase.java** | Shared TeleOp logic (sticks, braking, launcher/feed/intake, and AprilTag aim‑assist). |
+| **TeleOp_Red.java** / **TeleOp_Blue.java** | Alliance‑specific wrappers around the base TeleOp. |
 
-**Control Summary (Gamepad 1)**
-| Control | Action |
-|---|---|
-| Left stick | Forward/back + strafe |
-| Right stick X | Rotate |
-| Left trigger | Brake (reduces top speed) |
-| Right trigger | Manual launch RPM (if manual mode ON) |
-| X / A | Feed one ball |
-| Left Bumper | Toggle intake ON/OFF |
-| Right Bumper | **Toggle Aim‑Assist** (maintains aim at alliance tag) |
-| Triangle / Y | Toggle manual launch‑speed mode |
+**Control Summary (Gamepad 1)**  
+LB = Feed once RB = Intake toggle RS = Aim‑Assist Y = Manual‑Speed Mode
 
 **Telemetry (always shown)**
 - Alliance, BrakeCap, Intake state, ManualSpeed, RT, RPM Target/Actual  
@@ -114,24 +153,26 @@ Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMod
 | File | Purpose |
 |---|---|
 | **BaseAuto.java** | Common Auto init/teardown. |
-| **Auto_*_Target.java** | Example “goal-side” routes. |
-| **Auto_*_Human.java** | Example human-player routes. |
+| **Auto_*_Target.java** | Example “goal‑side” routes. |
+| **Auto_*_Human.java** | Example human‑player routes. |
 
-Each Auto uses `@Autonomous(..., preselectTeleOp="TeleOp - Red/Blue")` so the Driver Station preloads the correct TeleOp.
+Each Auto uses `@Autonomous(..., preselectTeleOp="TeleOp - Red/Blue")`  
+so the Driver Station preloads the correct TeleOp.
 
 ---
 
 ## Vision (AprilTags)
 
-We use a USB webcam (“Webcam 1”) through VisionPortal + AprilTagProcessor to aim at the **alliance GOAL tag** and report heading/distance.
+We use a USB webcam (“Webcam 1”) through VisionPortal + AprilTagProcessor  
+to aim at the **alliance GOAL tag** and report heading/distance.
 
 **Files**
-- `vision/VisionAprilTag.java` – initializes VisionPortal, exposes a **compatibility getter** for detections across SDK versions, and supports **range scaling** to correct distance. Uses **640×480 MJPEG** for built‑in calibration and higher FPS.
+- `vision/VisionAprilTag.java` – initializes VisionPortal, exposes a **compatibility getter** for detections across SDK versions, and supports **range scaling** to correct distance. Uses **640×480 MJPEG** for built‑in calibration and higher FPS.  
 - `vision/TagAimController.java` – computes twist correction from tag **bearing** (deg) with simple PD control.
 
 **TeleOp Integration**
-- Right Bumper **toggles** Aim‑Assist ON/OFF (not hold).  
-- When Aim‑Assist is **ON** and a tag is visible, TeleOp **overrides only twist** so drivers can still translate normally.
+- RS Button **toggles** Aim‑Assist ON/OFF (not hold).  
+- When Aim‑Assist is **ON** and a tag is visible, TeleOp **overrides only twist** so drivers can still translate normally.  
 - Telemetry **always** shows tag info: heading (deg) and distance (**inches**).
 
 **Alliance Targeting**
@@ -139,7 +180,8 @@ We use a USB webcam (“Webcam 1”) through VisionPortal + AprilTagProcessor to
 - Red  GOAL = **ID 24**
 
 **Distance Calibration**
-- Field tags are **8.125 in** squares. If distance appears linearly off, set a **range scale**:
+- Field tags are **8.125 in** squares.  
+- If distance appears linearly off, set a **range scale**:  
   ```java
   vision.setRangeScale(trueMeters / measuredMeters);
   ```
@@ -157,17 +199,49 @@ We use a USB webcam (“Webcam 1”) through VisionPortal + AprilTagProcessor to
 | `streamFormat` | `VisionAprilTag` | MJPEG | Higher FPS; ignored if unsupported |
 
 **Hardware Setup**
-- Plug webcam into the Control Hub’s **blue USB 3.0** port.
+- Plug webcam into the Control Hub’s **blue USB 3.0** port.  
 - Add as **“Webcam 1”** in the active Robot Configuration.
 
 ---
 
-## Development Tips
-1. Build/deploy frequently and test one subsystem at a time.  
-2. Verify motor directions after firmware/SDK changes.  
-3. IMU orientation: **Logo UP, USB RIGHT**.  
-4. Tune strafing on carpet (adjust `STRAFE_CORRECTION`).  
-5. Use telemetry for RPM, heading, distance (inches), and aim state.
+## Quick Start for New Developers
+
+1. Open project in **Android Studio** (FTC SDK 9.x+).  
+2. To change controller bindings → edit `ControllerBindings.java`.  
+3. To change drive tuning → adjust constants in `Drivebase.java`.  
+4. To calibrate aim behavior → tune `TagAimController.kP` / `kD`.  
+5. To add a new subsystem → create it under `/subsystems/` and initialize in `TeleOpAllianceBase.java`.  
+6. Use Driver Station to select **TeleOp_Red** or **TeleOp_Blue**.
+
+---
+
+## Development Context
+
+For maintainers, mentors, and future developers:
+- **Robot Architecture:** Mecanum drivetrain with IMU heading control.  
+- **Launcher:** Dual goBILDA 5202 6000‑RPM motors, closed‑loop PID.  
+- **IMU Orientation:** Logo Up, USB Right.  
+- **Vision:** `VisionAprilTag.java` → `TagAimController.java` for twist correction.  
+- **Goal Selection:** Based on alliance color (Tag 20 = Blue, Tag 24 = Red).  
+- **Control Flow:** `TeleOpAllianceBase` (input + control loop), `ControllerBindings` (button edges), subsystems (hardware logic).  
+- **Telemetry:** Drive, launcher RPM, intake state, aim status, tag heading, tag distance.  
+- **File Header Standard:** Every Java file includes structured comments (`FILE / LOCATION / PURPOSE / NOTES / METHODS`).  
+- **Rule Reference:** Follow the **FTC 2025–2026 Competition Manual** and all **Team Updates** included with this project.
+
+---
+
+## Notes
+- Vision system and telemetry are fully preserved from earlier builds.  
+- Alliance selection determines tag target.  
+- Webcam configured as “Webcam 1”.  
+- Field rules and sizing per 2025–2026 DECODE manual.
+
+---
+
+### Revision History
+**2025‑10‑22** – ControllerBindings integration finalized.  
+**2025‑10‑23** – LB ↔ RB control swap; readme updated.  
+**2025‑10‑24** – Integrated original readme content and expanded for DECODE season.
 
 ---
 

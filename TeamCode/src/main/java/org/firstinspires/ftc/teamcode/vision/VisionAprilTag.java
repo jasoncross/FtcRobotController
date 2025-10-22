@@ -1,11 +1,13 @@
 package org.firstinspires.ftc.teamcode.vision;
 
 import android.util.Size;
+
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+
 import java.util.List;
 
 /*
@@ -13,20 +15,35 @@ import java.util.List;
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/vision/
  *
  * PURPOSE:
- * - Provides AprilTag vision support compatible with **all FTC SDK versions**.
- * - Initializes a VisionPortal and AprilTagProcessor.
- * - Returns a list of detections or the best detection for a specific tag ID.
+ *   Cross-SDK AprilTag helper that:
+ *     - Initializes VisionPortal + AprilTagProcessor (SDK-neutral).
+ *     - Provides a compatibility getter for detections across SDK versions.
+ *     - Returns the "best" detection for a specific Tag ID (closest range).
+ *     - Adds a configurable RANGE SCALE to correct distance if pose is off
+ *       by a constant factor (common with older SDKs or uncalibrated cams).
  *
  * NOTES:
- * - Works without any AprilTagLibrary or addTag() calls (older SDKs don’t support them).
- * - Uses MJPEG @ 640x480 for built-in calibration and higher FPS.
- * - Compatible with SDKs from 2022 → 2025.
+ *   - We use 640x480 with MJPEG when available (built-in calibration + better FPS).
+ *   - No AprilTagLibrary/addTag() calls so this compiles on older SDKs.
+ *   - Bearing/pose are taken from AprilTagDetection.ftcPose.
  *
- * ALLIANCE TAG IDS:
- * - Blue GOAL tag: ID 20
- * - Red  GOAL tag: ID 24
+ * ALLIANCE TAG IDS (DECODE field):
+ *   - BLUE GOAL: 20
+ *   - RED  GOAL: 24
+ *
+ * TUNING:
+ *   - Call setRangeScale(s) after a 1-point calibration:
+ *       s = true_distance_meters / measured_distance_meters
+ *     Then use getScaledRange(det) anywhere you display/use distance.
+ *
+ * METHODS:
+ *   - init(hw, "Webcam 1")
+ *   - List<AprilTagDetection> getDetectionsCompat()
+ *   - AprilTagDetection getDetectionFor(int tagId)
+ *   - void   setRangeScale(double s)
+ *   - double getScaledRange(AprilTagDetection det)
+ *   - void   stop()
  */
-
 public class VisionAprilTag {
 
     // === CONSTANTS ===
@@ -37,75 +54,72 @@ public class VisionAprilTag {
     private VisionPortal portal;
     private AprilTagProcessor tagProcessor;
 
+    // === RANGE SCALING ===
+    // Multiply raw ftcPose.range (meters) by this factor to correct distance.
+    // Set via setRangeScale() after quick tape-measure calibration.
+    private double rangeScale = 1.0;
+
     // =============================================================
     //  METHOD: init
     //  PURPOSE:
-    //     - Initializes the VisionPortal + AprilTagProcessor.
+    //     - Initialize the VisionPortal + AprilTagProcessor.
     //     - Uses webcam defined in Robot Configuration.
     // =============================================================
     public void init(HardwareMap hw, String webcamName) {
-
-        // --- Create AprilTag processor with default settings ---
+        // Build AprilTag processor with widely supported options
         tagProcessor = new AprilTagProcessor.Builder()
                 .setDrawAxes(true)            // Draw XYZ axes on detected tags
                 .setDrawCubeProjection(true)  // Draw cube overlay on each tag
-                .setDrawTagID(true)           // Display Tag ID on screen
+                .setDrawTagID(true)           // Display Tag ID on stream
                 .build();
 
-        // --- Build the VisionPortal stream ---
+        // Build VisionPortal
         VisionPortal.Builder builder = new VisionPortal.Builder()
                 .addProcessor(tagProcessor)
                 .setCamera(hw.get(WebcamName.class, webcamName))
-                .setCameraResolution(new Size(640, 480));   // Built-in calibration resolution
+                .setCameraResolution(new Size(640, 480));   // Built-in calibration res
 
-        // Try enabling MJPEG stream format (if SDK supports it)
-        try {
-            builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG);
-        } catch (Exception ignored) {
-            // Older SDKs may not implement setStreamFormat(); safe to ignore.
-        }
+        // Prefer MJPEG for higher FPS (older SDKs may not support; ignore if so)
+        try { builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG); } catch (Exception ignored) {}
 
-        // --- Start the vision portal ---
         portal = builder.build();
     }
 
     // =============================================================
     //  METHOD: getDetectionsCompat
     //  PURPOSE:
-    //     - Returns the current list of AprilTag detections.
-    //     - Compatible with all SDK versions by trying multiple APIs.
+    //     - Return a list of detections regardless of SDK version.
+    //     - Tries multiple APIs, then falls back to a public field.
     // =============================================================
     @SuppressWarnings("unchecked")
     public List<AprilTagDetection> getDetectionsCompat() {
         if (tagProcessor == null) return java.util.Collections.emptyList();
 
         try {
-            // Newer SDKs (2023+)
+            // Newer SDKs
             return tagProcessor.getDetections();
         } catch (Throwable ignored1) {
             try {
-                // Mid-generation SDKs (2022–2023)
+                // Mid-generation SDKs
                 return tagProcessor.getFreshDetections();
             } catch (Throwable ignored2) {
                 try {
-                    // Earliest VisionPortal builds exposed a public 'detections' field
+                    // Earliest VisionPortal builds: public field "detections"
                     java.lang.reflect.Field f = tagProcessor.getClass().getField("detections");
                     Object val = f.get(tagProcessor);
                     if (val instanceof List) {
                         return (List<AprilTagDetection>) val;
                     }
-                } catch (Throwable ignored3) { }
+                } catch (Throwable ignored3) { /* fall through */ }
             }
         }
-
         return java.util.Collections.emptyList();
     }
 
     // =============================================================
     //  METHOD: getDetectionFor
     //  PURPOSE:
-    //     - Returns the closest detection matching a desired Tag ID.
-    //     - Uses ftcPose.range to select the nearest visible tag.
+    //     - Return the closest visible detection matching the given Tag ID.
     // =============================================================
     public AprilTagDetection getDetectionFor(int desiredId) {
         AprilTagDetection best = null;
@@ -115,6 +129,18 @@ public class VisionAprilTag {
             }
         }
         return best;
+    }
+
+    // =============================================================
+    //  METHOD: setRangeScale / getScaledRange
+    //  PURPOSE:
+    //     - Apply a constant multiplier to correct distance output.
+    //     - Use getScaledRange(det) anywhere you display/use distance.
+    // =============================================================
+    public void setRangeScale(double s) { this.rangeScale = s; }
+
+    public double getScaledRange(AprilTagDetection det) {
+        return (det == null) ? Double.NaN : det.ftcPose.range * rangeScale;
     }
 
     // =============================================================

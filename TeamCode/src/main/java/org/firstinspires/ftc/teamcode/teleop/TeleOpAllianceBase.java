@@ -101,6 +101,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1"); // Must match Robot Configuration
+        vision.setRangeScale(1.0); // <-- your calibrated value
+
 
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Aim: Right Bumper toggles ON/OFF");
@@ -218,12 +220,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // Prefer smoothed values if present
         double headingDeg = (smHeadingDeg == null) ? Double.NaN : smHeadingDeg;
-        double distM      = (smRangeMeters == null) ? Double.NaN : smRangeMeters;
-        double distIn     = Double.isNaN(distM) ? Double.NaN : (distM * M_TO_IN);
+        double distM = vision.getScaledRange(det);
+        double distIn = Double.isNaN(distM) ? Double.NaN : distM * 39.3701;  // meters → inches
 
         telemetry.addData("Goal Tag Visible", goalDet != null);
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
-        telemetry.addData("Goal Distance (in)", Double.isNaN(distIn)     ? "---" : String.format("%.1f", distIn));
+        // --- Tag distance telemetry (converted to inches) ---
+        telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
+
 
         telemetry.update();
     }

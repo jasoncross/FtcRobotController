@@ -154,14 +154,6 @@ private static double clamp(double v, double lo, double hi) {
         telemetry.update();
 
 
-// --- RPM Test Mode (D-pad) ---
-// Up: enable test mode
-controls.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_UP, () -> {
-    rpmTestEnabled = true;
-})
-// Left/Right: adjust target by ±50 (clamped)
-.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_LEFT, () -> {
-    if (rpmTestEnabled) rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
 })
 .bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_RIGHT, () -> {
     if (rpmTestEnabled) rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
@@ -250,8 +242,8 @@ controls.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_UP, ()
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
         telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
 
-        telemetry.addData("RPM Test", rpmTestEnabled ? "ENABLED" : "disabled");
-        telemetry.addData("RPM Test Target", "%.0f", rpmTestTarget);
+        if (rpmTestEnabled) telemetry.addData("RPM Test", "ENABLED");
+        if (rpmTestEnabled) telemetry.addData("RPM Test Target", "%.0f", rpmTestTarget);
         telemetry.update();
     }
 

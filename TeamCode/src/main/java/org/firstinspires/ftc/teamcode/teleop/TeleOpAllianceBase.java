@@ -135,11 +135,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 () -> { manualSpeedMode = true;  },
                 () -> { manualSpeedMode = false; })
             .bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
-                if (manualSpeedMode) {
+                if (manualSpeedMode && !rpmTestEnabled) {
                     double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
                     launcher.setTargetRpm(target);
                 }
             })
+
             // --- RPM TEST MODE (D-PAD) kept in the same chain ---
             // Up: enable test mode and apply current target immediately
             .bindPress(Pad.G1, Btn.DPAD_UP, () -> {

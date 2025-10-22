@@ -27,7 +27,7 @@ import org.firstinspires.ftc.teamcode.vision.TagAimController;
  * - Right stick X:    Twist/rotation.
  * - Left trigger:     Brake (scales power down toward slowestSpeed).
  * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true).
- * - X (A):            Fire one ball (runs Feed motor single shot).          [edge]
+ * - X (A):            Feed one ball (runs Feed motor single shot).          [edge]
  * - Left Bumper:      Toggle Intake ON/OFF.                                [edge]
  * - Triangle (Y):     Toggle ManualSpeed mode ON/OFF.                      [edge]
  * - Right Bumper:     Toggle Aim-Assist (keeps robot aimed at alliance tag). [edge]
@@ -69,7 +69,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // Button edge tracking
     private boolean prevY  = false; // Triangle
     private boolean prevLB = false; // Left Bumper (Intake)
-    private boolean prevA  = false; // X/A (Fire)
+    private boolean prevA  = false; // X/A (Feed)
     private boolean prevRB = false; // Right Bumper (Aim toggle)
 
     // ---------------- Vision + Aim ----------------
@@ -107,6 +107,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double twist   = cap * -gamepad1.right_stick_x; // Rotation
 
         // ==============================================================
+        // LAUNCHER: RIGHT TRIGGER → MANUAL RPM (WHEN ENABLED)
+        // ==============================================================
+        if (manualSpeedMode) {
+            double rt = gamepad1.right_trigger; // 0..1
+            double target = rpmBottom + rt * (rpmTop - rpmBottom);
+            launcher.setTargetRpm(target);
+        }
+
+        // ==============================================================
         // AIM TOGGLE (Right Bumper)
         // ==============================================================
         boolean rb = gamepad1.right_bumper;
@@ -124,6 +133,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // ==============================================================
         // APRILTAG DETECTION + AIM OVERRIDE
+        // - We ALWAYS read the detection (for telemetry).
+        // - We ONLY override twist when Aim is enabled *and* the goal tag is visible.
         // ==============================================================
         AprilTagDetection det = vision.getDetectionFor(targetId);
 
@@ -138,7 +149,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         drive.drive(driveY, strafeX, twist);
 
         // ==============================================================
-        // BUTTON EDGE DETECTION (INTAKE, LAUNCHER, FEED)
+        // BUTTON EDGE DETECTION (INTAKE, FEED, MODE TOGGLES)
         // ==============================================================
         boolean y  = gamepad1.y;
         boolean lb = gamepad1.left_bumper;
@@ -150,7 +161,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Toggle intake
         if (lb && !prevLB) intake.toggle();
 
-        // Fire one ball (feed cycle)
+        // Feed one ball (single cycle)
         if (a && !prevA) feed.feedOnceBlocking();
 
         prevY  = y;
@@ -169,7 +180,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("RPM Target", "%.0f", launcher.targetRpm);
         telemetry.addData("RPM Actual", "%.0f", launcher.getCurrentRpm());
 
-        // ---- VISION TELEMETRY ----
+        // ---- VISION TELEMETRY (ALWAYS SHOWN) ----
         telemetry.addData("Aim Enabled", aimEnabled);
         telemetry.addData("Target Tag ID", targetId);
         double headingDeg = TagAimController.headingDeg(det);

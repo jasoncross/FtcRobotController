@@ -94,6 +94,11 @@ public class VisionAprilTag {
         return best;
     }
 
+    public java.util.List<AprilTagDetection> getAllDetections() {
+        if (tagProcessor == null) return java.util.Collections.emptyList();
+    return tagProcessor.getDetections();
+}
+
     /**
      * Close the VisionPortal and free camera resources.
      * Safe to call multiple times or when portal is null.

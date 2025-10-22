@@ -35,7 +35,7 @@ import java.util.function.DoubleConsumer;
  *   - M1/M2 paddles:
  *       If your controller maps paddles to normal buttons (A/B/X/Y/LB/RB), just bind those.
  *       If your hardware exposes unique paddle signals, register them with:
- *         registerExtraButtonReader(Pad.G1, Btn.M1, () -> /* read hardware */ );
+ *         // Example: registerExtraButtonReader(Pad.G1, Btn.M1, () -> { ##read hardware##  });
  *
  * METHODS:
  *   - bindPress(pad, btn, onPress)

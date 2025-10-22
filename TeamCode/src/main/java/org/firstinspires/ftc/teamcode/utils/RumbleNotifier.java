@@ -1,34 +1,27 @@
 // ====================================================================================================
 //  FILE:           RumbleNotifier.java
 //  LOCATION:       org.firstinspires.ftc.teamcode.util
-//  PURPOSE:        Provides controller haptic feedback (rumble) when the robot is aimed within
-//                  a specified angular threshold of the detected AprilTag target.
+//  PURPOSE:        Haptic feedback that scales with aiming accuracy. When the absolute yaw error
+//                  to the target is within a ±threshold, it rumbles the controller. Intensity grows
+//                  from minStrength (at the window edge) up to maxStrength (at 0° error).
 //
 //  NOTES:
-//      - Uses FTC SDK's Gamepad rumble API to give tactile feedback to the driver.
-//      - Can be configured for strength, pulse length, and cooldown between pulses.
-//      - Ideal for use in TeleOp when aligning with field targets using AprilTags.
-//      - Designed to be updated once per control loop.
+//      - Uses FTC SDK Gamepad rumble(left,right,int durationMs).
+//      - Cooldown prevents constant buzzing when hovering at threshold.
+//      - Call update(...) once per loop with current yaw error and visibility.
+//      - If your controller lacks rumble hardware (e.g., some Logitech pads), nothing will happen.
 //
-//  USAGE EXAMPLE:
-//      RumbleNotifier rumble = new RumbleNotifier(gamepad1);
-//      rumble.setThresholdDeg(1.0);      // Buzz when within ±1 degree
-//      rumble.setStrength(0.6);          // 60% rumble strength
-//      rumble.update(yawError, visible); // Call each loop with tag data
-//
-//  DEPENDENCIES:
-//      - Requires valid Gamepad instance (e.g. gamepad1 or gamepad2)
-//      - Vision or targeting system must provide yaw error (in degrees) and visibility flag.
-//
-//  CREATED:        October 2025
-//  AUTHORS:        Indianola Robotics – FTC TeamCode (DECODE Season)
+//  CONFIG:
+//      • thresholdDeg     : ±degrees for “on target” window.
+//      • minStrength/maxStrength : intensity range [0..1] mapped from edge→center.
+//      • pulseMs          : pulse duration (ms).
+//      • cooldownMs       : time between pulses (ms).
 //
 //  METHODS:
-//      • setThresholdDeg(double)     → sets angular tolerance for rumble activation.
-//      • setStrength(double)         → sets rumble intensity (0.0–1.0).
-//      • setPulseMs(long)            → sets pulse duration per rumble event.
-//      • setCooldownMs(long)         → sets minimum time between pulses.
-//      • update(double, boolean)     → checks if yaw error is within threshold and triggers rumble.
+//      • setThresholdDeg(double)
+//      • setStrengthRange(double min, double max)
+//      • setPulseMs(int), setCooldownMs(int)
+//      • update(double yawErrorDeg, boolean tagVisible)
 // ====================================================================================================
 
 package org.firstinspires.ftc.teamcode.util;
@@ -39,61 +32,76 @@ import android.os.SystemClock;
 public class RumbleNotifier {
 
     // --- Instance Variables ---
-    private final Gamepad gamepad;         // Gamepad reference for rumble control
-    private double thresholdDeg = 1.0;     // Default angular window in degrees (±)
-    private long cooldownMs = 250;         // Delay between rumble pulses (ms)
-    private long pulseMs = 180;            // Duration of a single rumble pulse (ms)
-    private double strength = 0.6;         // Intensity (0.0–1.0)
-    private long lastBuzzMs = 0;           // Timestamp of last rumble event
-    private boolean insideWindowLastLoop = false; // Tracks whether last loop was within threshold
+    private final Gamepad gamepad;
+
+    private double thresholdDeg = 1.0;     // ± degrees window
+    private double minStrength  = 0.25;    // rumble intensity at the window edge
+    private double maxStrength  = 0.80;    // rumble intensity at 0° error
+
+    private int    pulseMs      = 180;     // duration per buzz (ms)
+    private int    cooldownMs   = 250;     // min gap between buzzes (ms)
+
+    private long   lastBuzzMs   = 0;       // last buzz time
+    private boolean insideWindowLastLoop = false;
 
     // ------------------------------------------------------------------------------------------------
-    //  CONSTRUCTOR:  RumbleNotifier(Gamepad gamepad)
-    //  PURPOSE:      Creates a new notifier tied to the specified controller.
+    //  CONSTRUCTOR
     // ------------------------------------------------------------------------------------------------
     public RumbleNotifier(Gamepad gamepad) {
         this.gamepad = gamepad;
     }
 
     // ------------------------------------------------------------------------------------------------
-    //  CONFIGURATION METHODS
+    //  CONFIGURATION
     // ------------------------------------------------------------------------------------------------
-    public void setThresholdDeg(double deg) { this.thresholdDeg = Math.max(0, deg); }
+    public void setThresholdDeg(double deg) {
+        this.thresholdDeg = Math.max(0, deg);
+    }
     public double getThresholdDeg() { return thresholdDeg; }
 
-    public void setStrength(double s) { this.strength = Math.max(0, Math.min(1, s)); }
-    public void setPulseMs(long ms) { this.pulseMs = Math.max(20, ms); }
-    public void setCooldownMs(long ms) { this.cooldownMs = Math.max(0, ms); }
+    /** Sets the intensity range; values are clamped to [0..1] and sorted (min ≤ max). */
+    public void setStrengthRange(double min, double max) {
+        double lo = clamp01(min);
+        double hi = clamp01(max);
+        if (hi < lo) { double t = lo; lo = hi; hi = t; }
+        this.minStrength = lo;
+        this.maxStrength = hi;
+    }
+
+    public void setPulseMs(int ms)    { this.pulseMs = Math.max(20, ms); }
+    public void setCooldownMs(int ms) { this.cooldownMs = Math.max(0, ms); }
 
     // ------------------------------------------------------------------------------------------------
-    //  METHOD:       update(double yawErrorDeg, boolean tagVisible)
-    //  PURPOSE:      Evaluates the current yaw error to determine if the robot is aligned
-    //                with the AprilTag target. When within threshold, triggers a controller rumble.
-    //
-    //  PARAMETERS:
-    //      yawErrorDeg  → Signed angular error (in degrees) from tag centerline.
-    //                     Use NaN if no valid target is detected.
-    //      tagVisible   → True if the target is currently detected by vision.
-    //
-    //  OPERATION:
-    //      1. If tag is visible and yaw error is within threshold, rumble is triggered.
-    //      2. Rumble will not repeat until cooldown period has passed.
-    //      3. The gamepad’s left and right motors both activate at the same intensity.
-    // ------------------------------------------------------------------------------------------------
+    //  UPDATE: Call once per loop with current yaw error (deg) and target visibility.
+    //  • Computes scaled intensity = min + (max-min)*(1 - |err|/threshold), clamped 0..1.
+    //  • Triggers a short rumble pulse when entering the window or after cooldown.
+// ------------------------------------------------------------------------------------------------
     public void update(double yawErrorDeg, boolean tagVisible) {
-        boolean inside = tagVisible && !Double.isNaN(yawErrorDeg) && Math.abs(yawErrorDeg) <= thresholdDeg;
-        long now = SystemClock.uptimeMillis();
+        boolean valid = tagVisible && !Double.isNaN(yawErrorDeg) && thresholdDeg > 0;
+        boolean inside = valid && Math.abs(yawErrorDeg) <= thresholdDeg;
 
+        long now = SystemClock.uptimeMillis();
         if (inside) {
-            boolean cooled = now - lastBuzzMs >= cooldownMs;
+            // Map |error| within [0..threshold] to intensity within [minStrength..maxStrength]
+            double absErr = Math.abs(yawErrorDeg);
+            double frac = 1.0 - (absErr / thresholdDeg);     // edge→0.0 … center→1.0
+            frac = clamp01(frac);
+
+            double strength = minStrength + (maxStrength - minStrength) * frac;
+            strength = clamp01(strength);
+
+            boolean cooled = (now - lastBuzzMs) >= cooldownMs;
             if (!insideWindowLastLoop || cooled) {
-                // Trigger rumble (both motors)
-                // If your SDK version supports runRumbleEffect(), that can be used for patterns.
-                gamepad.rumble(strength, strength, pulseMs);
+                gamepad.rumble(strength, strength, (int) pulseMs);  // duration expects int
                 lastBuzzMs = now;
             }
         }
 
         insideWindowLastLoop = inside;
     }
+
+    // ------------------------------------------------------------------------------------------------
+    //  HELPERS
+    // ------------------------------------------------------------------------------------------------
+    private static double clamp01(double v) { return Math.max(0.0, Math.min(1.0, v)); }
 }

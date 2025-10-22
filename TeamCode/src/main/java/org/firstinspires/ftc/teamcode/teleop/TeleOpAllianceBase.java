@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.hardware.Gamepad; // for Gamepad.RumbleEffect
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.subsystems.Feed;
@@ -32,6 +33,8 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  *   Shared TeleOp base for both Red and Blue alliances.
  *   Manages driver input, drivetrain, launcher, feed, intake, and AprilTag-based auto-aim.
  *   Aim-Assist keeps the robot pointed at the alliance GOAL tag while preserving full translation control.
+ *   OPTIONAL: Haptic "aim rumble" tells the driver when robot heading is within a small window of the tag,
+ *             scaled from softer at the window edge to stronger at center (0° error).
  *
  * CONTROLS (Gamepad 1):
  *   Left stick ........ Forward/back + strafe
@@ -40,8 +43,8 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  *   Right trigger ..... Manual launch RPM (only when manualSpeedMode == true)
  *   Left Bumper ....... Feed one ball (Feed subsystem)
  *   Right Bumper ...... Toggle intake ON/OFF
- *   Right Stick Btn ... TOGGLE Aim-Assist (not hold)
- *   Triangle / Y ...... Toggle manual launch-speed mode
+ *   Right Stick Btn ... TOGGLE Aim-Assist (not hold)  [double-rumble on toggle]
+ *   Triangle / Y ...... Toggle manual launch-speed mode [double-rumble on toggle]
  *   D-pad Up .......... Enable RPM TEST MODE
  *   D-pad Left/Right .. -/+ 50 RPM while TEST MODE enabled (applies immediately)
  *   D-pad Down ........ Disable RPM TEST MODE and STOP launcher
@@ -49,7 +52,7 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  * TELEMETRY (always shown):
  *   Alliance, BrakeCap, Intake state, ManualSpeed, RT value,
  *   RPM Target/Actual, Aim Enabled, Tag Visible, Tag Heading (deg),
- *   Tag Distance (inches).
+ *   Tag Distance (inches), Aim Rumble status.
  *
  * TELEMETRY (only when enabled):
  *   RPM Test, RPM Test Target.
@@ -57,6 +60,7 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  * NOTES:
  *   - See ControllerBindings.java header for authoritative binding list.
  *   - Gamepad rumble requires a controller with haptics (e.g., Xbox/PS). Some pads (e.g., Logitech F310) do not rumble.
+ *   - Aim rumble policy: ONLY active when Aim-Assist is OFF (manual aiming).
  */
 
 public abstract class TeleOpAllianceBase extends OpMode {
@@ -74,8 +78,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private double rpmTop       = 6000;
 
     // ---------------- State ----------------
-    private boolean manualSpeedMode = true;
-    private boolean aimEnabled = false;
+    private boolean manualSpeedMode = true;   // TOGGLED (Y) — double-pulse on change
+    private boolean aimEnabled = false;       // TOGGLED (R-Click) — double-pulse on change
 
     // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;
@@ -101,12 +105,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     // ---------------- Aim Rumble (Haptics) ----------------
     // PURPOSE: Tactile feedback when heading to the selected AprilTag is within ±aimRumbleDeg.
+    // POLICY:  ONLY rumble when Aim-Assist is OFF (aimEnabled == false).
+    // CONTROL: Master switch aimRumbleEnabled allows disabling haptics.
     private RumbleNotifier aimRumbleDriver1;
-    private double aimRumbleDeg = 1.0;          // CONFIGURABLE: angular window in degrees (±)
-    private double aimRumbleStrength = 0.6;     // CONFIGURABLE: intensity (0.0–1.0)
-    private int    aimRumblePulseMs = 180;      // CONFIGURABLE: pulse duration (ms)
-    private int    aimRumbleCooldownMs = 250;   // CONFIGURABLE: cooldown between pulses (ms)
-    private boolean rumbleOnlyWhenAimEnabled = false; // If true, only buzz while Aim-Assist is toggled on
+    private boolean aimRumbleEnabled       = true;   // master enable/disable
+    private double  aimRumbleDeg           = 2.5;    // ±degrees window for "on target"
+    private double  aimRumbleMinStrength   = 0.25;   // intensity at the window edge
+    private double  aimRumbleMaxStrength   = 0.65;   // intensity at 0° error
+    private int     aimRumblePulseMs       = 180;    // buzz length (ms)
+    private int     aimRumbleCooldownMs    = 250;    // min gap between buzzes (ms)
+
+    // ---------------- Toggle Pulse Settings ----------------
+    // PURPOSE: Double-pulse the controller on key state changes for clarity to the driver.
+    private double togglePulseStrength     = 0.8;    // double-pulse intensity for toggles
+    private int    togglePulseStepMs       = 120;    // each step duration
+    private int    togglePulseGapMs        = 80;     // gap between pulses (handled by effect)
 
     // Local clamp helper (keeps RPM in range)
     private static double clamp(double v, double lo, double hi) {
@@ -133,8 +146,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
          * GAMEPAD 1 (Driver)
          *   LB  -> Feed once
          *   RB  -> Intake toggle
-         *   RS  -> Aim-assist toggle
-         *   Y   -> Manual-speed mode toggle
+         *   RS  -> Aim-assist toggle (double-pulse on toggle)
+         *   Y   -> Manual-speed mode toggle (double-pulse on toggle)
          *   RT  -> Manual RPM set (axis) [G1 ONLY]
          *   D-PAD -> RPM Test Mode controls (Up/Left/Right/Down)
          */
@@ -142,11 +155,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
             .bindPress(Pad.G1, Btn.LB, () -> feed.feedOnceBlocking())
             .bindPress(Pad.G1, Btn.RB, () -> intake.toggle())
             .bindToggle(Pad.G1, Btn.R_STICK_BTN,
-                () -> { aimEnabled = true;  },
-                () -> { aimEnabled = false; })
+                () -> { aimEnabled = true;  pulseDoubleToggle(gamepad1); },
+                () -> { aimEnabled = false; pulseDoubleToggle(gamepad1); })
             .bindToggle(Pad.G1, Btn.Y,
-                () -> { manualSpeedMode = true;  },
-                () -> { manualSpeedMode = false; })
+                () -> { manualSpeedMode = true;  pulseDoubleToggle(gamepad1); },
+                () -> { manualSpeedMode = false; pulseDoubleToggle(gamepad1); })
             .bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
                 if (manualSpeedMode && !rpmTestEnabled) {
                     double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
@@ -183,14 +196,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
          * GAMEPAD 2 (Co-Driver) — Same functions, EXCEPT anything involving joysticks:
          *   LB -> Feed once
          *   RB -> Intake toggle
-         *   Y  -> Manual-speed mode toggle
+         *   Y  -> Manual-speed mode toggle (mirrors state; feedback is on G1 only)
          */
         controls
             .bindPress(Pad.G2, Btn.LB, () -> feed.feedOnceBlocking())
             .bindPress(Pad.G2, Btn.RB, () -> intake.toggle())
             .bindToggle(Pad.G2, Btn.Y,
-                () -> { manualSpeedMode = true;  },
-                () -> { manualSpeedMode = false; });
+                () -> { manualSpeedMode = true;  pulseDoubleToggle(gamepad1); },
+                () -> { manualSpeedMode = false; pulseDoubleToggle(gamepad1); });
 
         // ---- Haptics Init ----
         initAimRumble();
@@ -281,15 +294,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // ==============================================================
         // AIM RUMBLE UPDATE (HAPTICS)
-        // PURPOSE:
-        //   Buzz the driver's controller when |Goal Heading (deg)| ≤ aimRumbleDeg (± window)
-        //   and the target tag is visible, so the driver knows they're pointed at the goal.
-        // NOTES:
-        //   - Uses the same variables as telemetry to avoid drift or duplicated logic.
-        //   - If rumbleOnlyWhenAimEnabled == true, we require aimEnabled as an extra gate.
-        //   - Internally rate-limited to avoid constant buzzing when hovering at threshold.
+        // POLICY: Only rumble when Aim-Assist is OFF (aimEnabled == false) and master switch is ON.
+        // PURPOSE: Give subtle aim feedback during manual aiming; silence when auto-aim is controlling twist.
         // ==============================================================
-        boolean allowRumble = !rumbleOnlyWhenAimEnabled || aimEnabled;
+        boolean allowRumble = aimRumbleEnabled && !aimEnabled;
+        telemetry.addData("Aim Rumble", allowRumble ? "ENABLED (Aim OFF)" :
+                (aimRumbleEnabled ? "DISABLED (Aim ON)" : "DISABLED (Switch)"));
+
         if (allowRumble) {
             updateAimRumbleWith(headingDeg, tagVisible);
         }
@@ -308,14 +319,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     // ====================================================================================================
     //  SECTION:       HAPTICS (RUMBLE) HELPERS
-    //  PURPOSE:       Initialization + per-loop update using the smoothed heading and visibility state.
-    //  CONFIG:        aimRumbleDeg (± degrees), aimRumbleStrength, aimRumblePulseMs, aimRumbleCooldownMs.
-    //  USAGE:         Called from init() and loop() above.
+    //  PURPOSE:       Initialization, per-loop aim rumble update, and toggle double-pulse.
+    //  CONFIG:        aimRumbleEnabled (master), aimRumbleDeg (± degrees),
+    //                 aimRumbleMinStrength/aimRumbleMaxStrength, aimRumblePulseMs, aimRumbleCooldownMs.
     // ====================================================================================================
     private void initAimRumble() {
         aimRumbleDriver1 = new RumbleNotifier(gamepad1);
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
-        aimRumbleDriver1.setStrength(aimRumbleStrength);
+        aimRumbleDriver1.setStrengthRange(aimRumbleMinStrength, aimRumbleMaxStrength);
         aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
         aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
     }
@@ -323,17 +334,31 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void updateAimRumbleWith(double yawErrorDeg, boolean tagVisible) {
         if (aimRumbleDriver1 == null) return;
 
-        // Re-apply config in case you modify fields during runtime (optional; cheap)
+        // Keep helper in sync with any runtime tweaks (cheap, safe)
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
-        aimRumbleDriver1.setStrength(aimRumbleStrength);
+        aimRumbleDriver1.setStrengthRange(aimRumbleMinStrength, aimRumbleMaxStrength);
         aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
         aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
 
-        // yawErrorDeg should be degrees, NaN when invalid/no target; tagVisible is based on goalDet
+        // Use smoothed heading (deg) and current visibility.
         aimRumbleDriver1.update(yawErrorDeg, tagVisible);
 
-        // Telemetry to make the behavior obvious to drivers
         telemetry.addData("Rumble Window (±deg)", aimRumbleDeg);
-        telemetry.addData("Rumble Allowed", true);
+        telemetry.addData("Rumble Scale", String.format("min=%.2f max=%.2f", aimRumbleMinStrength, aimRumbleMaxStrength));
+    }
+
+    /** Plays a crisp double-pulse on the given gamepad for state toggles (Aim/ManualSpeed). */
+    private void pulseDoubleToggle(Gamepad pad) {
+        try {
+            Gamepad.RumbleEffect effect = new Gamepad.RumbleEffect.Builder()
+                    .addStep(togglePulseStrength, togglePulseStrength, togglePulseStepMs) // pulse 1
+                    .addStep(0, 0, togglePulseGapMs)                                     // gap
+                    .addStep(togglePulseStrength, togglePulseStrength, togglePulseStepMs) // pulse 2
+                    .build();
+            pad.runRumbleEffect(effect);
+        } catch (Throwable t) {
+            // Fallback: single pulse if effect not supported (very old SDK/controllers)
+            pad.rumble(togglePulseStrength, togglePulseStrength, togglePulseStepMs);
+        }
     }
 }

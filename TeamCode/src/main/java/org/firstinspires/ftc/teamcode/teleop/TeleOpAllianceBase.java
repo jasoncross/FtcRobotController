@@ -80,7 +80,23 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Controller Bindings ----------------
     private ControllerBindings controls;
 
-    @Override
+
+// ---------------- RPM Test Mode ----------------
+// FILE: TeleOpAllianceBase.java
+// PURPOSE: Allow bench-testing launcher RPM via D-pad (Up/Down/Left/Right).
+private boolean rpmTestEnabled = false;
+private double  rpmTestTarget  = 0.0;
+
+private static final double RPM_TEST_STEP = 50.0;   // increment per Left/Right press
+private static final double RPM_TEST_MIN  = 0.0;
+private static final double RPM_TEST_MAX  = 6000.0;
+
+// Local clamp helper (keeps RPM in range)
+private static double clamp(double v, double lo, double hi) {
+    return Math.max(lo, Math.min(hi, v));
+}
+
+@Override
     public void init() {
         // ---- Subsystem Initialization ----
         drive    = new Drivebase(hardwareMap, telemetry);
@@ -136,6 +152,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Bindings: See ControllerBindings.java for bound functions.");
         telemetry.update();
+
+
+// --- RPM Test Mode (D-pad) ---
+// Up: enable test mode
+controls.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_UP, () -> {
+    rpmTestEnabled = true;
+})
+// Left/Right: adjust target by ±50 (clamped)
+.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_LEFT, () -> {
+    if (rpmTestEnabled) rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
+})
+.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_RIGHT, () -> {
+    if (rpmTestEnabled) rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
+})
+// Down: disable test mode and stop launcher
+.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_DOWN, () -> {
+    rpmTestEnabled = false;
+    launcher.stop();
+});
+
     }
 
     @Override
@@ -144,6 +180,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // UPDATE CONTROLLER BINDINGS FIRST
         // ==============================================================
         controls.update(gamepad1, gamepad2);
+
+
+        // RPM Test Mode override
+        if (rpmTestEnabled) { launcher.setTargetRpm(rpmTestTarget); }
 
         // ==============================================================
         // DRIVETRAIN CONTROL
@@ -210,6 +250,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
         telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
 
+        telemetry.addData("RPM Test", rpmTestEnabled ? "ENABLED" : "disabled");
+        telemetry.addData("RPM Test Target", "%.0f", rpmTestTarget);
         telemetry.update();
     }
 

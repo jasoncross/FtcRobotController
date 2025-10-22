@@ -31,8 +31,10 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 public class Launcher {
     private final DcMotorEx left, right;
 
-    public double bottomRPM = 2000;
-    public double topRPM = 4500;
+    // THESE ARE CLAMP VALUES - the values in TeleOpAllianceBasic set the actual
+    // limits within these
+    public double bottomRPM = 0;
+    public double topRPM = 6000;
     public double atSpeedToleranceRPM = 100;
     public double targetRpm = 0;
 

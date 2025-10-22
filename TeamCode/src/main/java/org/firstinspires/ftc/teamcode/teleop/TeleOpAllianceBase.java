@@ -54,8 +54,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     // ---- Tunables ----
     private double slowestSpeed = 0.25;     // full brake cap
-    private double rpmBottom    = 2000;     // manual RPM range bottom
-    private double rpmTop       = 4500;     // manual RPM range top
+    private double rpmBottom    = 0;     // manual RPM range bottom
+    private double rpmTop       = 6000;     // manual RPM range top
 
     // ---- State ----
     private boolean manualSpeedMode = true; // Triangle toggles this
@@ -63,7 +63,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // Button edge tracking (so we toggle once per press)
     private boolean prevY  = false; // Triangle
     private boolean prevLB = false; // Left Bumper (intake toggle)
-    private boolean prevX  = false; // X (fire)
+    private boolean prevA  = false; // X/A (fire)
 
     @Override
     public void init() {
@@ -102,7 +102,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---------------- Button edge detection ----------------
         boolean y  = gamepad1.y;
         boolean lb = gamepad1.left_bumper;
-        boolean x  = gamepad1.x;
+        boolean a  = gamepad1.a;
 
         // Triangle: toggle manual/auto speed mode (edge)
         if (y && !prevY) manualSpeedMode = !manualSpeedMode;
@@ -110,8 +110,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Left Bumper: toggle intake (edge)
         if (lb && !prevLB) intake.toggle();
 
-        // X: fire one ball (edge)
-        if (x && !prevX) {
+        // X (A): fire one ball (edge)
+        if (a && !prevA) {
             // Add interlock when you wire real RPM sensing:
             // if (launcher.isAtSpeed(100)) { feed.feedOnceBlocking(); }
             feed.feedOnceBlocking();
@@ -119,7 +119,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         prevY  = y;
         prevLB = lb;
-        prevX  = x;
+        prevA  = a;
 
         // ---------------- Launcher RPM control ----------------
         if (manualSpeedMode) {

@@ -61,7 +61,7 @@ public class Drivebase {
         // Standard mecanum directions (flip FR/BR if your robot goes backwards)
         fl.setDirection(DcMotorSimple.Direction.FORWARD);
         bl.setDirection(DcMotorSimple.Direction.FORWARD);
-        fr.setDirection(DcMotorSimple.Direction.FORWARD);
+        fr.setDirection(DcMotorSimple.Direction.REVERSE);
         br.setDirection(DcMotorSimple.Direction.REVERSE);
 
         for (DcMotorEx m : new DcMotorEx[]{fl, fr, bl, br}) {

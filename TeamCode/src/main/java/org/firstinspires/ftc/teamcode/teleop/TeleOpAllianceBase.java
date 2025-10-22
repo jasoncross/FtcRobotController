@@ -12,6 +12,9 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /*
  * FILE: TeleOpAllianceBase.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
@@ -40,6 +43,8 @@ import org.firstinspires.ftc.teamcode.vision.TagAimController;
  * - Aim-Assist overrides *only twist* to keep the robot facing the AprilTag.
  * - Forward/back + strafe remain fully driver-controlled.
  * - Always displays tag telemetry (distance, heading, visibility).
+ * - Adds simple smoothing for heading & distance to reduce jitter.
+ * - Telemetry shows distance in INCHES (converted from meters).
  *
  * METHODS:
  * - alliance(): Implemented by subclasses (TeleOp_Red / TeleOp_Blue).
@@ -76,6 +81,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private VisionAprilTag vision;
     private TagAimController aim = new TagAimController();
     private boolean aimEnabled = false;  // Toggled via Right Bumper
+
+    // ---------------- Pose Smoothing (simple EMA) ----------------
+    private Double smHeadingDeg = null;       // smoothed bearing (deg)
+    private Double smRangeMeters = null;      // smoothed distance (m)
+    private static final double SMOOTH_A = 0.25; // 0..1 (higher=snappier, lower=smoother)
+
+    // ---------------- Units ----------------
+    private static final double M_TO_IN = 39.37007874015748; // meters → inches
 
     @Override
     public void init() {
@@ -132,15 +145,27 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 : VisionAprilTag.TAG_RED_GOAL;   // 24
 
         // ==============================================================
-        // APRILTAG DETECTION + AIM OVERRIDE
-        // - We ALWAYS read the detection (for telemetry).
+        // APRILTAG DETECTION + SMOOTHING + AIM OVERRIDE
+        // - We ALWAYS read detection list (for telemetry).
         // - We ONLY override twist when Aim is enabled *and* the goal tag is visible.
         // ==============================================================
-        AprilTagDetection det = vision.getDetectionFor(targetId);
+        AprilTagDetection goalDet = vision.getDetectionFor(targetId);
 
-        if (aimEnabled && det != null) {
+        // Smooth heading/range for steadier telemetry (and steadier aim if desired)
+        if (goalDet != null) {
+            double h = goalDet.ftcPose.bearing; // degrees
+            double r = goalDet.ftcPose.range;   // meters (already scaled if set in Vision)
+            smHeadingDeg  = (smHeadingDeg  == null) ? h : (SMOOTH_A * h + (1 - SMOOTH_A) * smHeadingDeg);
+            smRangeMeters = (smRangeMeters == null) ? r : (SMOOTH_A * r + (1 - SMOOTH_A) * smRangeMeters);
+        } else {
+            // Keep previous smoothed values; they will show as last-known until we see the tag again.
+            // (Alternatively, set to null to blank when not visible)
+        }
+
+        if (aimEnabled && goalDet != null) {
             // Override only twist — driver retains full translation control.
-            twist = aim.turnPower(det);
+            // If you wish to aim using smoothed bearing instead, swap to smHeadingDeg below.
+            twist = aim.turnPower(goalDet);
         }
 
         // ==============================================================
@@ -183,11 +208,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- VISION TELEMETRY (ALWAYS SHOWN) ----
         telemetry.addData("Aim Enabled", aimEnabled);
         telemetry.addData("Target Tag ID", targetId);
-        double headingDeg = TagAimController.headingDeg(det);
-        double distM      = TagAimController.distanceMeters(det);
-        telemetry.addData("Tag Visible", det != null);
-        telemetry.addData("Tag Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
-        telemetry.addData("Tag Distance (m)",  Double.isNaN(distM) ? "---" : String.format("%.2f", distM));
+
+        // Show all seen tag IDs for quick debugging
+        List<Integer> seenIds = new ArrayList<>();
+        for (AprilTagDetection d : vision.getAllDetections()) seenIds.add(d.id);
+        telemetry.addData("Seen Tags (count)", seenIds.size());
+        telemetry.addData("Seen Tag IDs", seenIds.isEmpty() ? "[]" : seenIds.toString());
+
+        // Prefer smoothed values if present
+        double headingDeg = (smHeadingDeg == null) ? Double.NaN : smHeadingDeg;
+        double distM      = (smRangeMeters == null) ? Double.NaN : smRangeMeters;
+        double distIn     = Double.isNaN(distM) ? Double.NaN : (distM * M_TO_IN);
+
+        telemetry.addData("Goal Tag Visible", goalDet != null);
+        telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
+        telemetry.addData("Goal Distance (in)", Double.isNaN(distIn)     ? "---" : String.format("%.1f", distIn));
 
         telemetry.update();
     }

@@ -209,11 +209,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("Aim Enabled", aimEnabled);
         telemetry.addData("Target Tag ID", targetId);
 
-        // Show all seen tag IDs for quick debugging
-        List<Integer> seenIds = new ArrayList<>();
-        for (AprilTagDetection d : vision.getDetections()) seenIds.add(d.id);
+        // Show all seen tag IDs (always shown)
+        java.util.List<Integer> seenIds = new java.util.ArrayList<>();
+        for (AprilTagDetection d : vision.getDetectionsCompat()) seenIds.add(d.id);
         telemetry.addData("Seen Tags (count)", seenIds.size());
         telemetry.addData("Seen Tag IDs", seenIds.isEmpty() ? "[]" : seenIds.toString());
+
 
         // Prefer smoothed values if present
         double headingDeg = (smHeadingDeg == null) ? Double.NaN : smHeadingDeg;

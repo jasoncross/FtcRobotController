@@ -33,11 +33,14 @@ TeamCode/
                             │   ├── TeleOp_Red.java
                             │   └── TeleOp_Blue.java
                             └── auto/
-                                ├── BaseAuto.java
-                                ├── Auto_Red_Target.java
-                                ├── Auto_Red_Human.java
-                                ├── Auto_Blue_Target.java
-                                └── Auto_Blue_Human.java
+                            │   ├── BaseAuto.java
+                            │   ├── Auto_Red_Target.java
+                            |   ├── Auto_Red_Human.java
+                            |   ├── Auto_Blue_Target.java
+                            |   └── Auto_Blue_Human.java
+                            ├── vision/
+                            |   ├── TagAimController.java
+                            │   └── VisionAprilTag.java
 ```
 
 ---

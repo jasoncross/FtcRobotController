@@ -41,16 +41,16 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Right Trigger** | Manual RPM control (only when manualSpeedMode = true) |
 | **Left Bumper (LB)** | **Feed once (Feed subsystem)** |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
-| **Right Stick Button (RS)** | **Toggle Aim‑Assist** |
-| **Y / Triangle** | **Toggle Manual‑Speed Mode** |
+| **Right Stick Button (RS)** | **Toggle Aim-Assist** *(double-pulse rumble confirmation)* |
+| **Y / Triangle** | **Toggle Manual-Speed Mode** *(double-pulse rumble confirmation)* |
 
-### Gamepad 2 – Co‑Driver
+### Gamepad 2 – Co-Driver
 | Control | Function |
 |----------|-----------|
 | **Left Bumper (LB)** | **Feed once (Feed subsystem)** |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
-| **Y / Triangle** | **Toggle Manual‑Speed Mode** |
-| *(RS / RT omitted)* | *(No joystick‑based controls on G2)* |
+| **Y / Triangle** | **Toggle Manual-Speed Mode** |
+| *(RS / RT omitted)* | *(No joystick-based controls on G2)* |
 
 ---
 
@@ -69,7 +69,7 @@ TeamCode/
                             ├── drive/
                             │   └── Drivebase.java
                             ├── util/
-                            │   └── OpModeShim.java
+                            │   └── RumbleNotifier.java   <-- Adaptive haptics (aim feedback + toggle pulses)
                             ├── subsystems/
                             │   ├── Launcher.java
                             │   ├── Feed.java
@@ -104,9 +104,9 @@ Enum for the current alliance (`RED` / `BLUE`). Used by TeleOp and Auto.
 Encapsulates all drivetrain control logic.
 
 **Provides**
-- `drive(drive, strafe, twist)` — TeleOp robot‑centric control  
-- `move(distanceInches, degrees, speed)` — encoder‑based translation  
-- `turn(degrees, speed)` — IMU‑based rotation
+- `drive(drive, strafe, twist)` — TeleOp robot-centric control  
+- `move(distanceInches, degrees, speed)` — encoder-based translation  
+- `turn(degrees, speed)` — IMU-based rotation
 
 **Key Tunables**
 | Variable | Meaning |
@@ -120,8 +120,14 @@ Encapsulates all drivetrain control logic.
 
 ---
 
-### **util/OpModeShim.java**
-Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMode context.
+### **util/RumbleNotifier.java**
+Provides **adaptive haptic feedback** when the robot is aimed near an AprilTag and **toggle feedback** when major driver modes change.
+
+**Key Features**
+- Scales rumble intensity from **minStrength → maxStrength** as heading error approaches 0°.  
+- Adjustable `thresholdDeg`, `pulseMs`, and `cooldownMs`.  
+- Supports **double-pulse patterns** when Aim-Assist or Manual-Speed is toggled.  
+- Automatically disabled when Aim-Assist is active.
 
 ---
 
@@ -129,7 +135,7 @@ Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMod
 | File | Purpose | Key Tunables |
 |---|---|---|
 | **Launcher.java** | Controls dual flywheels. | `bottomRPM`, `topRPM`, `atSpeedToleranceRPM` |
-| **Feed.java** | Times single‑ball feed into launcher. | `firePower`, `fireTimeMs`, `minCycleMs` |
+| **Feed.java** | Times single-ball feed into launcher. | `firePower`, `fireTimeMs`, `minCycleMs` |
 | **Intake.java** | Toggles intake motor. | `powerOn` |
 
 ---
@@ -137,15 +143,16 @@ Adapter to allow Iterative OpModes to reuse components that expect a LinearOpMod
 ### **teleop/**
 | File | Purpose |
 |---|---|
-| **TeleOpAllianceBase.java** | Shared TeleOp logic (sticks, braking, launcher/feed/intake, and AprilTag aim‑assist). |
-| **TeleOp_Red.java** / **TeleOp_Blue.java** | Alliance‑specific wrappers around the base TeleOp. |
+| **TeleOpAllianceBase.java** | Shared TeleOp logic (drivetrain, launcher, feed, intake, AprilTag aim, and adaptive haptic feedback). |
+| **TeleOp_Red.java** / **TeleOp_Blue.java** | Alliance-specific wrappers around the base TeleOp. |
 
 **Control Summary (Gamepad 1)**  
-LB = Feed once RB = Intake toggle RS = Aim‑Assist Y = Manual‑Speed Mode
+LB = Feed once RB = Intake toggle RS = Aim-Assist *(double-pulse confirmation on toggle)* Y = Manual-Speed *(double-pulse confirmation on toggle)*
 
 **Telemetry (always shown)**
 - Alliance, BrakeCap, Intake state, ManualSpeed, RT, RPM Target/Actual  
-- Aim Enabled, Tag Visible, Tag Heading (deg), **Tag Distance (inches)**
+- Aim Enabled, Tag Visible, Tag Heading (deg), **Tag Distance (inches)**  
+- **Aim Rumble status** — shows if haptics are active and why.
 
 ---
 
@@ -153,8 +160,8 @@ LB = Feed once RB = Intake toggle RS = Aim‑Assist Y = Manual‑Speed Mod
 | File | Purpose |
 |---|---|
 | **BaseAuto.java** | Common Auto init/teardown. |
-| **Auto_*_Target.java** | Example “goal‑side” routes. |
-| **Auto_*_Human.java** | Example human‑player routes. |
+| **Auto_*_Target.java** | Example “goal-side” routes. |
+| **Auto_*_Human.java** | Example human-player routes. |
 
 Each Auto uses `@Autonomous(..., preselectTeleOp="TeleOp - Red/Blue")`  
 so the Driver Station preloads the correct TeleOp.
@@ -167,12 +174,12 @@ We use a USB webcam (“Webcam 1”) through VisionPortal + AprilTagProcessor
 to aim at the **alliance GOAL tag** and report heading/distance.
 
 **Files**
-- `vision/VisionAprilTag.java` – initializes VisionPortal, exposes a **compatibility getter** for detections across SDK versions, and supports **range scaling** to correct distance. Uses **640×480 MJPEG** for built‑in calibration and higher FPS.  
+- `vision/VisionAprilTag.java` – initializes VisionPortal, exposes a **compatibility getter** for detections across SDK versions, and supports **range scaling** to correct distance. Uses **640×480 MJPEG** for built-in calibration and higher FPS.  
 - `vision/TagAimController.java` – computes twist correction from tag **bearing** (deg) with simple PD control.
 
 **TeleOp Integration**
-- RS Button **toggles** Aim‑Assist ON/OFF (not hold).  
-- When Aim‑Assist is **ON** and a tag is visible, TeleOp **overrides only twist** so drivers can still translate normally.  
+- RS Button **toggles** Aim-Assist ON/OFF (not hold).  
+- When Aim-Assist is **ON** and a tag is visible, TeleOp **overrides only twist** so drivers can still translate normally.  
 - Telemetry **always** shows tag info: heading (deg) and distance (**inches**).
 
 **Alliance Targeting**
@@ -194,13 +201,33 @@ to aim at the **alliance GOAL tag** and report heading/distance.
 | `kD` | `TagAimController` | 0.003 | Raise to reduce oscillation |
 | Twist Clamp | `TagAimController` | ±0.6 | Cap rotational authority while strafing |
 | Deadband | `TagAimController` | 1.5° | Prevents hunting near 0° error |
-| `rangeScale` | `VisionAprilTag` | 1.0 | Apply after 1‑point calibration |
-| `cameraResolution` | `VisionAprilTag` | 640×480 | Uses built‑in calibration |
+| `rangeScale` | `VisionAprilTag` | 1.0 | Apply after 1-point calibration |
+| `cameraResolution` | `VisionAprilTag` | 640×480 | Uses built-in calibration |
 | `streamFormat` | `VisionAprilTag` | MJPEG | Higher FPS; ignored if unsupported |
 
 **Hardware Setup**
 - Plug webcam into the Control Hub’s **blue USB 3.0** port.  
 - Add as **“Webcam 1”** in the active Robot Configuration.
+
+---
+
+## Haptics / Aim-Assist Rumble
+
+**When active:** Only while **Aim-Assist is OFF** (manual rotation).  
+This gives the driver tactile feedback to center on the goal without visual overload.
+
+**Behavior**
+- Rumbles when `|heading error| ≤ aimRumbleDeg` (± window).  
+- **Scaled intensity:** increases from a lower intensity at the window edge to a higher intensity at **0°** error.  
+- Short pulses repeat with a cooldown to avoid constant buzzing.  
+- **Double-pulse confirmations** play when **Aim-Assist** or **Manual-Speed** is toggled ON/OFF.
+
+**Key Settings (in TeleOpAllianceBase.java)**
+- `aimRumbleEnabled` — master on/off  
+- `aimRumbleDeg` — window in degrees (±)  
+- `aimRumbleMinStrength` / `aimRumbleMaxStrength` — intensity range  
+- `aimRumblePulseMs` — pulse duration (ms)  
+- `aimRumbleCooldownMs` — min gap between pulses (ms)
 
 ---
 
@@ -210,8 +237,9 @@ to aim at the **alliance GOAL tag** and report heading/distance.
 2. To change controller bindings → edit `ControllerBindings.java`.  
 3. To change drive tuning → adjust constants in `Drivebase.java`.  
 4. To calibrate aim behavior → tune `TagAimController.kP` / `kD`.  
-5. To add a new subsystem → create it under `/subsystems/` and initialize in `TeleOpAllianceBase.java`.  
-6. Use Driver Station to select **TeleOp_Red** or **TeleOp_Blue**.
+5. To adjust haptics → modify the Aim-Assist rumble settings in `TeleOpAllianceBase.java`.  
+6. To add a new subsystem → create it under `/subsystems/` and initialize in `TeleOpAllianceBase.java`.  
+7. Use Driver Station to select **TeleOp_Red** or **TeleOp_Blue**.
 
 ---
 
@@ -219,7 +247,7 @@ to aim at the **alliance GOAL tag** and report heading/distance.
 
 For maintainers, mentors, and future developers:
 - **Robot Architecture:** Mecanum drivetrain with IMU heading control.  
-- **Launcher:** Dual goBILDA 5202 6000‑RPM motors, closed‑loop PID.  
+- **Launcher:** Dual goBILDA 5202 6000-RPM motors, closed-loop PID.  
 - **IMU Orientation:** Logo Up, USB Right.  
 - **Vision:** `VisionAprilTag.java` → `TagAimController.java` for twist correction.  
 - **Goal Selection:** Based on alliance color (Tag 20 = Blue, Tag 24 = Red).  
@@ -239,9 +267,10 @@ For maintainers, mentors, and future developers:
 ---
 
 ### Revision History
-**2025‑10‑22** – ControllerBindings integration finalized.  
-**2025‑10‑23** – LB ↔ RB control swap; readme updated.  
-**2025‑10‑24** – Integrated original readme content and expanded for DECODE season.
+**2025-10-22** – ControllerBindings integration finalized.  
+**2025-10-23** – LB ↔ RB control swap; readme updated.  
+**2025-10-24** – Integrated original readme content and expanded for DECODE season.  
+**2025-10-22** – Added adaptive aim-rumble (scaled intensity) and double-pulse confirmations in TeleOp.
 
 ---
 

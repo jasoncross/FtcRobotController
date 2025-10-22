@@ -135,12 +135,30 @@ so the correct TeleOp automatically preloads on the Driver Station.
 | **Intake** | `powerOn` | Adjust to maintain control without stalling. |
 
 ---
+## Vision (AprilTags)
 
-## Adding Vision (Future)
-- Create `vision/TargetingConfig.java` and `vision/Vision.java`.
-- Implement AprilTag angle/distance reading.
-- Modify TeleOp (R2) to blend twist correction toward target.
-- Auto-adjust flywheel speed from distance (linear interpolation between Near/Far).
+We use a single USB webcam (“Webcam 1”) via VisionPortal + AprilTagProcessor to aim at the **alliance GOAL tag**.
+
+**Files**
+- `vision/VisionAprilTag.java` – initializes VisionPortal, returns the best detection for a requested tag ID.
+- `vision/TagAimController.java` – computes twist (rotation) correction from tag bearing.
+
+**TeleOp integration**
+- `teleop/TeleOpAllianceBase.java`:
+  - Right Bumper **toggles** Aim-Assist ON/OFF (not hold).
+  - While Aim-Assist is **ON** and the alliance tag is visible, TeleOp **overrides only twist** to keep the robot aimed at the tag. Forward/back and strafe remain fully driver-controlled.
+  - Telemetry adds: aim enabled, tag visible, tag heading (deg), tag distance (m).
+  - All **existing telemetry** (intake, RPM, throttle cap, etc.) remains unchanged.
+
+**Alliance targeting**
+- Blue uses tag ID **20**; Red uses tag ID **24**.
+
+**Tuning**
+- In `TagAimController`: start with `kP=0.02`, `kD=0.003`. Increase `kP` for faster response; increase `kD` to reduce oscillation. Twist is clamped to ±0.6 and deadband is 1.5°.
+
+**Notes**
+- Plug webcam into the Control Hub’s blue USB 3.0 port and name it **"Webcam 1"** in the active configuration.
+
 
 ---
 

@@ -9,7 +9,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit; // ✅ correct AngleUnit
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit; 
 
 import static java.lang.Math.*;
 
@@ -73,7 +73,7 @@ public class Drivebase {
         imu.initialize(new IMU.Parameters(
                 new RevHubOrientationOnRobot(
                         RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                        RevHubOrientationOnRobot.UsbFacingDirection.FORWARD)));
+                        RevHubOrientationOnRobot.UsbFacingDirection.RIGHT)));
         resetHeading();
     }
 

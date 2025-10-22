@@ -7,7 +7,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Feed;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 
-// === NEW: vision imports ===
+// === VISION IMPORTS ===
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
@@ -19,74 +19,75 @@ import org.firstinspires.ftc.teamcode.vision.TagAimController;
  * PURPOSE:
  * - Shared TeleOp base used by TeleOp_Red and TeleOp_Blue.
  * - Wires the drivetrain (Drivebase), Launcher, Feed, and Intake subsystems.
- * - Implements the control mapping with button edge-detection so toggles
- *   flip exactly once per press.
+ * - Implements button edge-detection for toggles and manual controls.
+ * - Integrates AprilTag-based Aim-Assist (Right Bumper toggle).
  *
  * CONTROLS (PS layout; adjust if using Xbox/Logitech):
- * - Left stick (Y/X): forward/back + strafe
- * - Right stick X:    twist/rotation
- * - Left trigger:     BRAKE (scales power down toward slowestSpeed)
- * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true)
- * - X (A):            FIRE one ball (runs Feed motor single shot)         [edge]
- * - Left Bumper:      Toggle Intake on/off                                [edge]
- * - Triangle:         Toggle ManualSpeed mode on/off                      [edge]
- * - Right Bumper:     TOGGLE Aim-Assist (keep robot aimed at alliance tag) [edge]
+ * - Left stick (Y/X): Forward/back + strafe.
+ * - Right stick X:    Twist/rotation.
+ * - Left trigger:     Brake (scales power down toward slowestSpeed).
+ * - Right trigger:    Manual launch RPM (only when manualSpeedMode == true).
+ * - X (A):            Fire one ball (runs Feed motor single shot).          [edge]
+ * - Left Bumper:      Toggle Intake ON/OFF.                                [edge]
+ * - Triangle (Y):     Toggle ManualSpeed mode ON/OFF.                      [edge]
+ * - Right Bumper:     Toggle Aim-Assist (keeps robot aimed at alliance tag). [edge]
  *
  * TUNABLES:
- * - slowestSpeed:   Cap when fully braking with Left trigger (e.g. 0.25)
- * - rpmBottom/Top:  Manual RPM range mapped from Right trigger
+ * - slowestSpeed:   Cap when fully braking with Left Trigger (e.g., 0.25).
+ * - rpmBottom/Top:  Manual RPM range mapped from Right Trigger.
  *
  * NEW (VISION):
- * - Aim-Assist uses AprilTag bearing to override twist only; forward/back + strafe remain
- *   under driver control. When enabled but no tag is visible, we fall back to manual twist.
+ * - Aim-Assist overrides *only twist* to keep the robot facing the AprilTag.
+ * - Forward/back + strafe remain fully driver-controlled.
+ * - Always displays tag telemetry (distance, heading, visibility).
  *
- * IMPORTANT METHODS:
- * - alliance(): implemented by subclasses (TeleOp_Red/TeleOp_Blue)
- * - init():     creates subsystems (+ vision)
- * - loop():     applies drive/launcher/feed/intake logic (+ aim), updates telemetry
- * - stop():     closes vision resources
+ * METHODS:
+ * - alliance(): Implemented by subclasses (TeleOp_Red / TeleOp_Blue).
+ * - init():     Initializes subsystems and VisionPortal.
+ * - loop():     Main control logic and telemetry updates.
+ * - stop():     Shuts down vision resources cleanly.
  */
 
 public abstract class TeleOpAllianceBase extends OpMode {
-    // Implemented by TeleOp_Red / TeleOp_Blue
+    // Alliance is implemented by TeleOp_Red / TeleOp_Blue
     protected abstract Alliance alliance();
 
-    // Subsystems
+    // ---------------- Subsystems ----------------
     protected Drivebase drive;
     protected Launcher launcher;
     protected Feed feed;
     protected Intake intake;
 
-    // ---- Tunables ----
-    private double slowestSpeed = 0.25;  // full brake cap
-    private double rpmBottom    = 0;     // manual RPM range bottom
-    private double rpmTop       = 6000;  // manual RPM range top
+    // ---------------- Tunables ----------------
+    private double slowestSpeed = 0.25;  // Brake cap
+    private double rpmBottom    = 0;     // Manual RPM bottom range
+    private double rpmTop       = 6000;  // Manual RPM top range
 
-    // ---- State ----
+    // ---------------- State ----------------
     private boolean manualSpeedMode = true; // Triangle toggles this
 
-    // Button edge tracking (so we toggle once per press)
+    // Button edge tracking
     private boolean prevY  = false; // Triangle
-    private boolean prevLB = false; // Left Bumper (intake toggle)
-    private boolean prevA  = false; // X/A (fire)
-    private boolean prevRB = false; // Right Bumper (aim toggle)
+    private boolean prevLB = false; // Left Bumper (Intake)
+    private boolean prevA  = false; // X/A (Fire)
+    private boolean prevRB = false; // Right Bumper (Aim toggle)
 
-    // ==== NEW: Vision + Aim state ====
+    // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;
     private TagAimController aim = new TagAimController();
-    private boolean aimEnabled = false;  // toggled via Right Bumper
+    private boolean aimEnabled = false;  // Toggled via Right Bumper
 
     @Override
     public void init() {
-        // Use TeleOp-friendly Drivebase constructor (no shim, no blocking)
+        // ---- Subsystem Initialization ----
         drive    = new Drivebase(hardwareMap, telemetry);
         launcher = new Launcher(hardwareMap);
         feed     = new Feed(hardwareMap);
         intake   = new Intake(hardwareMap);
 
-        // === NEW: VisionPortal + AprilTag ===
+        // ---- Vision Initialization ----
         vision = new VisionAprilTag();
-        vision.init(hardwareMap, "Webcam 1"); // must match Robot Configuration
+        vision.init(hardwareMap, "Webcam 1"); // Must match Robot Configuration
 
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Aim: Right Bumper toggles ON/OFF");
@@ -95,84 +96,94 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void loop() {
-        // ---------------- Drivetrain with brake scaling ----------------
+        // ==============================================================
+        // DRIVETRAIN CONTROL
+        // ==============================================================
         double brake = gamepad1.left_trigger; // 0..1
-        // Cap scales from 1.0 (no brake) down to slowestSpeed (full brake)
         double cap = 1.0 - brake * (1.0 - slowestSpeed);
 
-        double driveY  = cap * gamepad1.left_stick_y;   // +forward
-        double strafeX = cap * -gamepad1.left_stick_x;  // +right (matches original sign)
-        double twist   = cap * -gamepad1.right_stick_x; // +CCW  (matches original sign)
+        double driveY  = cap * gamepad1.left_stick_y;   // Forward/back
+        double strafeX = cap * -gamepad1.left_stick_x;  // Left/right
+        double twist   = cap * -gamepad1.right_stick_x; // Rotation
 
-        // ---------------- Aim toggle (Right Bumper) [edge] ----------------
+        // ==============================================================
+        // AIM TOGGLE (Right Bumper)
+        // ==============================================================
         boolean rb = gamepad1.right_bumper;
         if (rb && !prevRB) {
             aimEnabled = !aimEnabled;
         }
         prevRB = rb;
 
-        // ---------------- Alliance tag selection ----------------
+        // ==============================================================
+        // ALLIANCE TARGET TAG SELECTION
+        // ==============================================================
         int targetId = (alliance() == Alliance.BLUE)
                 ? VisionAprilTag.TAG_BLUE_GOAL   // 20
                 : VisionAprilTag.TAG_RED_GOAL;   // 24
 
-        // ---------------- Aim override (twist only) ----------------
-        AprilTagDetection det = null;
-        if (aimEnabled) {
-            det = vision.getDetectionFor(targetId);
-            if (det != null) {
-                // Override twist with controller output so we keep facing the tag;
-                // translation (driveY/strafeX) remains under driver control.
-                twist = aim.turnPower(det);
-            }
+        // ==============================================================
+        // APRILTAG DETECTION + AIM OVERRIDE
+        // ==============================================================
+        AprilTagDetection det = vision.getDetectionFor(targetId);
+
+        if (aimEnabled && det != null) {
+            // Override only twist — driver retains full translation control.
+            twist = aim.turnPower(det);
         }
 
-        // ---------------- Drive ----------------
+        // ==============================================================
+        // DRIVEBASE EXECUTION
+        // ==============================================================
         drive.drive(driveY, strafeX, twist);
 
-        // ---------------- Button edge detection ----------------
+        // ==============================================================
+        // BUTTON EDGE DETECTION (INTAKE, LAUNCHER, FEED)
+        // ==============================================================
         boolean y  = gamepad1.y;
         boolean lb = gamepad1.left_bumper;
         boolean a  = gamepad1.a;
 
-        // Triangle: toggle manual/auto speed mode (edge)
+        // Toggle manual speed mode
         if (y && !prevY) manualSpeedMode = !manualSpeedMode;
 
-        // Left Bumper: toggle intake (edge)
+        // Toggle intake
         if (lb && !prevLB) intake.toggle();
 
-        // X/A: fire once (edge)
-        if (a && !prevA) feed.fireOnce();
+        // Fire one ball (feed cycle)
+        if (a && !prevA) feed.feedOnceBlocking();
 
         prevY  = y;
         prevLB = lb;
         prevA  = a;
 
-        // ---------------- Telemetry ----------------
+        // ==============================================================
+        // TELEMETRY OUTPUT
+        // (Original lines preserved + added vision telemetry)
+        // ==============================================================
         telemetry.addData("Alliance", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "On" : "Off");
         telemetry.addData("ManualSpeed", manualSpeedMode);
         telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
         telemetry.addData("RPM Target", "%.0f", launcher.targetRpm);
-        telemetry.addData("RPM Actual", "%.0f", launcher.getCurrentRpm()); // placeholder until closed-loop RPM wired
+        telemetry.addData("RPM Actual", "%.0f", launcher.getCurrentRpm());
 
-        // --- NEW vision/aim telemetry appended without removing any existing lines ---
+        // ---- VISION TELEMETRY ----
         telemetry.addData("Aim Enabled", aimEnabled);
-        if (aimEnabled) {
-            double headingDeg = TagAimController.headingDeg(det);
-            double distM      = TagAimController.distanceMeters(det);
-            telemetry.addData("Tag Visible", det != null);
-            telemetry.addData("Tag Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
-            telemetry.addData("Tag Distance (m)",  Double.isNaN(distM) ? "---" : String.format("%.2f", distM));
-        }
+        telemetry.addData("Target Tag ID", targetId);
+        double headingDeg = TagAimController.headingDeg(det);
+        double distM      = TagAimController.distanceMeters(det);
+        telemetry.addData("Tag Visible", det != null);
+        telemetry.addData("Tag Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
+        telemetry.addData("Tag Distance (m)",  Double.isNaN(distM) ? "---" : String.format("%.2f", distM));
 
         telemetry.update();
     }
 
     @Override
     public void stop() {
-        // Close vision resources
+        // ---- Cleanup Vision Resources ----
         if (vision != null) vision.stop();
     }
 }

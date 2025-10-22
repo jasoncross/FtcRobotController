@@ -211,7 +211,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // Show all seen tag IDs for quick debugging
         List<Integer> seenIds = new ArrayList<>();
-        for (AprilTagDetection d : vision.getAllDetections()) seenIds.add(d.id);
+        for (AprilTagDetection d : vision.getDetections()) seenIds.add(d.id);
         telemetry.addData("Seen Tags (count)", seenIds.size());
         telemetry.addData("Seen Tag IDs", seenIds.isEmpty() ? "[]" : seenIds.toString());
 

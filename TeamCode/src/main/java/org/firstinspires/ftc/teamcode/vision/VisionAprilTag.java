@@ -51,16 +51,37 @@ public class VisionAprilTag {
 
     /** Returns the closest detection for the given tag id, or null if none visible. */
     public AprilTagDetection getDetectionFor(int desiredId) {
-        if (tagProcessor == null) return null;
-        List<AprilTagDetection> detections = tagProcessor.getDetections();
-        AprilTagDetection best = null;
-        for (AprilTagDetection d : detections) {
-            if (d.id == desiredId) {
-                if (best == null || d.ftcPose.range < best.ftcPose.range) best = d;
-            }
+    if (tagProcessor == null) return null;
+    List<AprilTagDetection> detections = null;
+
+    try {
+        // Works on SDKs that have getDetections()
+        detections = tagProcessor.getDetections();
+    } catch (Exception e1) {
+        try {
+            // Works on older SDKs with getFreshDetections()
+            detections = tagProcessor.getFreshDetections();
+        } catch (Exception e2) {
+            try {
+                // Works on earliest SDKs exposing a public field 'detections'
+                java.lang.reflect.Field f = tagProcessor.getClass().getField("detections");
+                Object val = f.get(tagProcessor);
+                if (val instanceof List) detections = (List<AprilTagDetection>) val;
+            } catch (Exception ignored) { }
         }
-        return best;
     }
+
+    if (detections == null || detections.isEmpty()) return null;
+
+    AprilTagDetection best = null;
+    for (AprilTagDetection d : detections) {
+        if (d.id == desiredId) {
+            if (best == null || d.ftcPose.range < best.ftcPose.range) best = d;
+        }
+    }
+    return best;
+}
+
 
     public void stop() {
         if (portal != null) portal.close();

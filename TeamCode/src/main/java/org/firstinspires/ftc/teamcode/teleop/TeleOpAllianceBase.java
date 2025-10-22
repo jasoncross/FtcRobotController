@@ -101,7 +101,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1"); // Must match Robot Configuration
-        vision.setRangeScale(1.0); // <-- your calibrated value
+        vision.setRangeScale(0.03); // <-- your calibrated value
 
 
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
@@ -220,7 +220,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // Prefer smoothed values if present
         double headingDeg = (smHeadingDeg == null) ? Double.NaN : smHeadingDeg;
-        double distM = vision.getScaledRange(det);
+        double distM = vision.getScaledRange(goalDet);
         double distIn = Double.isNaN(distM) ? Double.NaN : distM * 39.3701;  // meters → inches
 
         telemetry.addData("Goal Tag Visible", goalDet != null);

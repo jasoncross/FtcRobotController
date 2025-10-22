@@ -21,6 +21,9 @@ import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Pad;
 import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Btn;
 import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Trigger;
 
+// === HAPTICS (RUMBLE) ===
+import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
+
 /*
  * FILE: TeleOpAllianceBase.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
@@ -53,6 +56,7 @@ import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Trigger;
  *
  * NOTES:
  *   - See ControllerBindings.java header for authoritative binding list.
+ *   - Gamepad rumble requires a controller with haptics (e.g., Xbox/PS). Some pads (e.g., Logitech F310) do not rumble.
  */
 
 public abstract class TeleOpAllianceBase extends OpMode {
@@ -94,6 +98,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private static final double RPM_TEST_STEP = 50.0;   // increment per Left/Right press
     private static final double RPM_TEST_MIN  = 0.0;
     private static final double RPM_TEST_MAX  = 6000.0;
+
+    // ---------------- Aim Rumble (Haptics) ----------------
+    // PURPOSE: Tactile feedback when heading to the selected AprilTag is within ±aimRumbleDeg.
+    private RumbleNotifier aimRumbleDriver1;
+    private double aimRumbleDeg = 1.0;          // CONFIGURABLE: angular window in degrees (±)
+    private double aimRumbleStrength = 0.6;     // CONFIGURABLE: intensity (0.0–1.0)
+    private int    aimRumblePulseMs = 180;      // CONFIGURABLE: pulse duration (ms)
+    private int    aimRumbleCooldownMs = 250;   // CONFIGURABLE: cooldown between pulses (ms)
+    private boolean rumbleOnlyWhenAimEnabled = false; // If true, only buzz while Aim-Assist is toggled on
 
     // Local clamp helper (keeps RPM in range)
     private static double clamp(double v, double lo, double hi) {
@@ -179,6 +192,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 () -> { manualSpeedMode = true;  },
                 () -> { manualSpeedMode = false; });
 
+        // ---- Haptics Init ----
+        initAimRumble();
+
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Bindings: See ControllerBindings.java for bound functions.");
         telemetry.update();
@@ -257,9 +273,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double distM = vision.getScaledRange(goalDet);
         double distIn = Double.isNaN(distM) ? Double.NaN : distM * 39.3701;
 
-        telemetry.addData("Goal Tag Visible", goalDet != null);
+        boolean tagVisible = (goalDet != null);
+
+        telemetry.addData("Goal Tag Visible", tagVisible);
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
         telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
+
+        // ==============================================================
+        // AIM RUMBLE UPDATE (HAPTICS)
+        // PURPOSE:
+        //   Buzz the driver's controller when |Goal Heading (deg)| ≤ aimRumbleDeg (± window)
+        //   and the target tag is visible, so the driver knows they're pointed at the goal.
+        // NOTES:
+        //   - Uses the same variables as telemetry to avoid drift or duplicated logic.
+        //   - If rumbleOnlyWhenAimEnabled == true, we require aimEnabled as an extra gate.
+        //   - Internally rate-limited to avoid constant buzzing when hovering at threshold.
+        // ==============================================================
+        boolean allowRumble = !rumbleOnlyWhenAimEnabled || aimEnabled;
+        if (allowRumble) {
+            updateAimRumbleWith(headingDeg, tagVisible);
+        }
 
         // Show RPM Test telemetry only when enabled
         if (rpmTestEnabled) telemetry.addData("RPM Test", "ENABLED");
@@ -271,5 +304,36 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void stop() {
         if (vision != null) vision.stop();
+    }
+
+    // ====================================================================================================
+    //  SECTION:       HAPTICS (RUMBLE) HELPERS
+    //  PURPOSE:       Initialization + per-loop update using the smoothed heading and visibility state.
+    //  CONFIG:        aimRumbleDeg (± degrees), aimRumbleStrength, aimRumblePulseMs, aimRumbleCooldownMs.
+    //  USAGE:         Called from init() and loop() above.
+    // ====================================================================================================
+    private void initAimRumble() {
+        aimRumbleDriver1 = new RumbleNotifier(gamepad1);
+        aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
+        aimRumbleDriver1.setStrength(aimRumbleStrength);
+        aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
+        aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
+    }
+
+    private void updateAimRumbleWith(double yawErrorDeg, boolean tagVisible) {
+        if (aimRumbleDriver1 == null) return;
+
+        // Re-apply config in case you modify fields during runtime (optional; cheap)
+        aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
+        aimRumbleDriver1.setStrength(aimRumbleStrength);
+        aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
+        aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
+
+        // yawErrorDeg should be degrees, NaN when invalid/no target; tagVisible is based on goalDet
+        aimRumbleDriver1.update(yawErrorDeg, tagVisible);
+
+        // Telemetry to make the behavior obvious to drivers
+        telemetry.addData("Rumble Window (±deg)", aimRumbleDeg);
+        telemetry.addData("Rumble Allowed", true);
     }
 }

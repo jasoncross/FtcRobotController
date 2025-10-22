@@ -39,11 +39,17 @@ import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Trigger;
  *   Right Bumper ...... Toggle intake ON/OFF
  *   Right Stick Btn ... TOGGLE Aim-Assist (not hold)
  *   Triangle / Y ...... Toggle manual launch-speed mode
+ *   D-pad Up .......... Enable RPM TEST MODE
+ *   D-pad Left/Right .. -/+ 50 RPM while TEST MODE enabled (applies immediately)
+ *   D-pad Down ........ Disable RPM TEST MODE and STOP launcher
  *
  * TELEMETRY (always shown):
  *   Alliance, BrakeCap, Intake state, ManualSpeed, RT value,
  *   RPM Target/Actual, Aim Enabled, Tag Visible, Tag Heading (deg),
  *   Tag Distance (inches).
+ *
+ * TELEMETRY (only when enabled):
+ *   RPM Test, RPM Test Target.
  *
  * NOTES:
  *   - See ControllerBindings.java header for authoritative binding list.
@@ -80,23 +86,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Controller Bindings ----------------
     private ControllerBindings controls;
 
+    // ---------------- RPM Test Mode ----------------
+    // PURPOSE: Allow bench-testing launcher RPM via D-pad (Up/Down/Left/Right).
+    private boolean rpmTestEnabled = false;
+    private double  rpmTestTarget  = 0.0;
 
-// ---------------- RPM Test Mode ----------------
-// FILE: TeleOpAllianceBase.java
-// PURPOSE: Allow bench-testing launcher RPM via D-pad (Up/Down/Left/Right).
-private boolean rpmTestEnabled = false;
-private double  rpmTestTarget  = 0.0;
+    private static final double RPM_TEST_STEP = 50.0;   // increment per Left/Right press
+    private static final double RPM_TEST_MIN  = 0.0;
+    private static final double RPM_TEST_MAX  = 6000.0;
 
-private static final double RPM_TEST_STEP = 50.0;   // increment per Left/Right press
-private static final double RPM_TEST_MIN  = 0.0;
-private static final double RPM_TEST_MAX  = 6000.0;
+    // Local clamp helper (keeps RPM in range)
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
 
-// Local clamp helper (keeps RPM in range)
-private static double clamp(double v, double lo, double hi) {
-    return Math.max(lo, Math.min(hi, v));
-}
-
-@Override
+    @Override
     public void init() {
         // ---- Subsystem Initialization ----
         drive    = new Drivebase(hardwareMap, telemetry);
@@ -119,6 +123,7 @@ private static double clamp(double v, double lo, double hi) {
          *   RS  -> Aim-assist toggle
          *   Y   -> Manual-speed mode toggle
          *   RT  -> Manual RPM set (axis) [G1 ONLY]
+         *   D-PAD -> RPM Test Mode controls (Up/Left/Right/Down)
          */
         controls
             .bindPress(Pad.G1, Btn.LB, () -> feed.feedOnceBlocking())
@@ -134,6 +139,30 @@ private static double clamp(double v, double lo, double hi) {
                     double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
                     launcher.setTargetRpm(target);
                 }
+            })
+            // --- RPM TEST MODE (D-PAD) kept in the same chain ---
+            // Up: enable test mode and apply current target immediately
+            .bindPress(Pad.G1, Btn.DPAD_UP, () -> {
+                rpmTestEnabled = true;
+                launcher.setTargetRpm(rpmTestTarget); // immediate apply helps convergence
+            })
+            // Left/Right: adjust target by ±50 (clamped) and apply immediately
+            .bindPress(Pad.G1, Btn.DPAD_LEFT, () -> {
+                if (rpmTestEnabled) {
+                    rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
+                    launcher.setTargetRpm(rpmTestTarget);
+                }
+            })
+            .bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> {
+                if (rpmTestEnabled) {
+                    rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
+                    launcher.setTargetRpm(rpmTestTarget);
+                }
+            })
+            // Down: disable test mode and stop launcher
+            .bindPress(Pad.G1, Btn.DPAD_DOWN, () -> {
+                rpmTestEnabled = false;
+                launcher.stop();
             });
 
         /*
@@ -152,18 +181,6 @@ private static double clamp(double v, double lo, double hi) {
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Bindings: See ControllerBindings.java for bound functions.");
         telemetry.update();
-
-
-})
-.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_RIGHT, () -> {
-    if (rpmTestEnabled) rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
-})
-// Down: disable test mode and stop launcher
-.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.DPAD_DOWN, () -> {
-    rpmTestEnabled = false;
-    launcher.stop();
-});
-
     }
 
     @Override
@@ -173,9 +190,10 @@ private static double clamp(double v, double lo, double hi) {
         // ==============================================================
         controls.update(gamepad1, gamepad2);
 
-
-        // RPM Test Mode override
-        if (rpmTestEnabled) { launcher.setTargetRpm(rpmTestTarget); }
+        // RPM Test Mode override (wins over RT mapping in the same loop)
+        if (rpmTestEnabled) {
+            launcher.setTargetRpm(rpmTestTarget);
+        }
 
         // ==============================================================
         // DRIVETRAIN CONTROL
@@ -242,8 +260,10 @@ private static double clamp(double v, double lo, double hi) {
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
         telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
 
+        // Show RPM Test telemetry only when enabled
         if (rpmTestEnabled) telemetry.addData("RPM Test", "ENABLED");
         if (rpmTestEnabled) telemetry.addData("RPM Test Target", "%.0f", rpmTestTarget);
+
         telemetry.update();
     }
 

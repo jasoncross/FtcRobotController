@@ -9,11 +9,11 @@
 //   distance using a tunable mapping.
 //
 //   Aim-Assist keeps the robot pointed at the alliance GOAL tag while preserving
-//   full translation control. Haptics give the driver tactile feedback when
-//   heading error is within a small window of the tag (“aim rumble”).
+//   full translation control. Haptics give the driver tactile feedback on
+//   toggles and while manually aiming (“aim window” rumble).
 //
 //   AutoSpeed continuously computes launcher RPM from tag distance. If the tag
-//   isn’t visible, the launcher holds the most recent auto RPM.  When AutoSpeed
+//   isn’t visible, the launcher holds the most recent auto RPM. When AutoSpeed
 //   is first enabled with no visible tag, the launcher runs at InitialAutoDefaultSpeed
 //   until a tag is seen.
 //
@@ -43,25 +43,22 @@
 //
 // NOTES:
 //   - AutoAim may only be ENABLED if the goal tag is currently visible.
-//   - NEW: If the tag is lost while AutoAim is ON, a GRACE TIMER runs for
-//          autoAimLossGraceMs. If the tag reappears before the timer expires,
-//          AutoAim continues seamlessly. If not, AutoAim DISABLES and a
-//          single haptic pulse confirms shutdown.
+//   - If the tag is lost while AutoAim is ON, a GRACE TIMER runs for
+//     autoAimLossGraceMs. If the tag reappears before the timer expires,
+//     AutoAim continues seamlessly. If not, AutoAim DISABLES and a single
+//     haptic pulse confirms shutdown.
 //   - While AutoAim is ON (including grace), the right stick cannot rotate the robot.
-//     Aim logic owns twist when a tag is visible; otherwise twist=0 during grace.
-//   - Distance smoothing uses the *scaled* range (meters) from VisionAprilTag to
-//     keep telemetry, auto RPM, and driver feedback consistent.
-//   - AutoSpeed mapping is linear (with extrapolation).
-//   - Haptics: AutoAim/AutoSpeed use double-pulse on enable, single-pulse on disable.
-//   - Aim rumble policy: ONLY active when AutoAim is OFF (manual aiming).
+//     Aim logic owns twist when a tag is visible; during grace, twist=0.
+//   - “Aim window” rumble (manual aiming) is active ONLY when AutoAim is OFF.
+//   - Haptic helpers use gamepad.rumble(left,right,durationMs) for SDK compatibility.
 //
 // AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
-// LAST UPDATED:   2025-10-22
+// LAST UPDATED:   2025-10-23
 // ============================================================================
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
-import com.qualcomm.robotcore.hardware.Gamepad; // Gamepad.RumbleEffect
+import com.qualcomm.robotcore.hardware.Gamepad;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.subsystems.Feed;
@@ -74,8 +71,6 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 
 import static java.lang.Math.*;
-import java.util.ArrayList;
-import java.util.List;
 
 // === CONTROLLER BINDINGS ===
 import org.firstinspires.ftc.teamcode.input.ControllerBindings;
@@ -123,10 +118,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private TagAimController aim = new TagAimController();
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
-    // If tag is lost while AutoAim is ON, we wait up to this many milliseconds
-    // before disabling AutoAim. If the tag reappears in that window, AutoAim continues.
-    private int autoAimLossGraceMs = 4000;
-    private long aimLossStartMs = -1L; // <0 means not in loss/grace
+    private int  autoAimLossGraceMs = 4000; // 4s grace to reacquire tag before disabling
+    private long aimLossStartMs = -1L;      // <0 means not in loss/grace
 
     // ---------------- Pose/Range Smoothing (SCALED meters) ----------------
     private Double smHeadingDeg = null;
@@ -193,7 +186,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
-        vision.setRangeScale(0.03); // keep your current scale unless re-calibrated
+        // Keep your current scale (adjust via calibration as needed)
+        vision.setRangeScale(0.03);
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -420,6 +414,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     twist = 0.0; // hold heading during grace (no rotation)
                 }
             }
+        } else {
+            // === MANUAL AIM WINDOW RUMBLE (AutoAim is OFF) ===
+            // Provide tactile feedback to help the driver line up on the tag without looking.
+            if (aimRumbleEnabled && goalDet != null && aimRumbleDriver1 != null) {
+                // heading error in degrees
+                aimRumbleDriver1.update(goalDet.ftcPose.bearing);
+            }
         }
 
         // ==========================
@@ -515,19 +516,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void initAimRumble() {
         aimRumbleDriver1 = new RumbleNotifier(gamepad1);
-        aimRumbleDriver1.setActive(false); // policy: disabled while AutoAim is ON
+        // Policy: aim-rumble only when AutoAim is OFF, so start enabled = true
+        aimRumbleDriver1.setActive(true);
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
-        aimRumbleDriver1.setMinMax(aimRumbleMinStrength, aimRumbleMaxStrength,
-                aimRumbleMinPulseMs, aimRumbleMaxPulseMs,
-                aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs);
+        aimRumbleDriver1.setMinMax(
+                aimRumbleMinStrength, aimRumbleMaxStrength,
+                aimRumbleMinPulseMs,  aimRumbleMaxPulseMs,
+                aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs
+        );
     }
 
+    // --- Rumble helpers (SDK-compatible: no RumbleEffect.builder) ---
     private void pulseDouble(Gamepad gp) {
-        gp.rumble(com.qualcomm.robotcore.hardware.Gamepad.RumbleEffect.builder()
-                .addStep((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs)
-                .addStep(0, 0, togglePulseGapMs)
-                .addStep((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs)
-                .build());
+        gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
+        sleepMs(togglePulseGapMs);
+        gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
     }
 
     private void pulseSingle(Gamepad gp) {

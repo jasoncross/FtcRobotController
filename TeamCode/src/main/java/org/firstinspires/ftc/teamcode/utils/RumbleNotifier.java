@@ -3,24 +3,34 @@
 // LOCATION:       TeamCode/src/main/java/org/firstinspires/ftc/teamcode/util/
 //
 // PURPOSE:
-//   Small helper for controller rumble behaviors:
-//   - Toggle pulses (enable/disable haptics cues)
-//   - Optional “aim window” rumble that scales with heading error
+//   Utility for gamepad rumble/haptics with simple, tunable behavior that works
+//   across FTC SDK versions (no dependency on Gamepad.RumbleEffect.builder()).
+//
+//   Typical use cases:
+//     • Toggle feedback (you can still call gamepad.rumble(...) directly).
+//     • "Aim window" feedback: when heading error is within a threshold, emit a
+//       short pulse whose strength/duration scales as the error approaches 0°.
+//
+// API (kept intentionally small & backwards-compatible):
+//   RumbleNotifier(Gamepad gp);
+//   void setActive(boolean enable);          // master on/off
+//   boolean isActive();
+//   void setThresholdDeg(double deg);        // start rumbling when |err| <= deg
+//   void setMinMax(double minStr, double maxStr,
+//                  int minPulseMs, int maxPulseMs,
+//                  int minCooldownMs, int maxCooldownMs);
+//   void update(double headingErrorDeg);     // call periodically; safe to call fast
 //
 // NOTES:
-//   This class is intentionally lightweight so it compiles on a wide range
-//   of FTC SDK versions. It does NOT depend on Gamepad.RumbleEffect in looped
-//   logic; only simple rumble(duration) calls are used here.
-//   TeleOp handles its own enable/disable pulses.
+//   • Uses gp.rumble(left,right,durationMs) only — compatible with older SDKs.
+//   • Internal simple rate limiting via cooldown to avoid constant rumble.
+//   • If you never call update(...), this class is a harmless no-op after config.
+//   • All values are clamped defensively; nothing throws if misconfigured.
+//   • If you prefer continuous rumble instead of pulsed, call update() more
+//     frequently with a small cooldown.
 //
-// METHODS:
-//   RumbleNotifier(Gamepad gp)
-//   setActive(boolean enable)
-//   setThresholdDeg(double deg)
-//   setMinMax(double minStrength, double maxStrength,
-//             int minPulseMs, int maxPulseMs,
-//             int minCooldownMs, int maxCooldownMs)
-//   update(double headingErrorDeg)   // call periodically if you want aim-rumble
+// AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
+// LAST UPDATED:   2025-10-23
 // ============================================================================
 package org.firstinspires.ftc.teamcode.util;
 
@@ -28,86 +38,118 @@ import com.qualcomm.robotcore.hardware.Gamepad;
 
 public class RumbleNotifier {
 
-    private final Gamepad gamepad;
+    // --- Config (tunable via setters) ---
+    private boolean active = true;            // master enable
+    private double  thresholdDeg = 2.5;       // begin rumble when |error| <= threshold
 
-    // Master enable for aim-rumble behavior
-    private boolean active = false;
+    private double  minStrength = 0.10;       // 0..1
+    private double  maxStrength = 0.65;       // 0..1
 
-    // Angle at/inside which rumble begins to appear
-    private double thresholdDeg = 2.5;
+    private int     minPulseMs = 120;         //  ms
+    private int     maxPulseMs = 200;         //  ms
 
-    // Strength 0..1
-    private double minStrength = 0.10;
-    private double maxStrength = 0.65;
+    private int     minCooldownMs = 120;      //  ms
+    private int     maxCooldownMs = 350;      //  ms
 
-    // Pulse/cooldown ranges (milliseconds)
-    private int minPulseMs     = 120;
-    private int maxPulseMs     = 200;
-    private int minCooldownMs  = 120;
-    private int maxCooldownMs  = 350;
-
-    // Internal timing state
-    private long nextAllowedMs = 0L;
+    // --- Runtime ---
+    private final Gamepad gp;
+    private long lastPulseAtMs = 0L;
 
     public RumbleNotifier(Gamepad gp) {
-        this.gamepad = gp;
+        this.gp = gp;
     }
 
-    /** Master on/off for aim-rumble behavior. */
-    public void setActive(boolean enable) {
-        this.active = enable;
-    }
+    // =========================
+    // PUBLIC CONFIG METHODS
+    // =========================
+    public void setActive(boolean enable) { this.active = enable; }
+    public boolean isActive() { return this.active; }
 
-    /** Degrees from 0 where haptics begin to kick in. */
     public void setThresholdDeg(double deg) {
-        this.thresholdDeg = Math.max(0, deg);
+        if (Double.isNaN(deg) || deg <= 0) return;
+        this.thresholdDeg = deg;
     }
 
     /**
-     * Configure strength and timing ranges for adaptive aim-rumble.
-     *
-     * @param minStrength     0..1 minimum rumble intensity
-     * @param maxStrength     0..1 maximum rumble intensity
-     * @param minPulseMs      minimum pulse duration in ms
-     * @param maxPulseMs      maximum pulse duration in ms
-     * @param minCooldownMs   minimum cooldown between pulses in ms
-     * @param maxCooldownMs   maximum cooldown between pulses in ms
+     * Configure scaling ranges for strength, pulse length, and cooldown.
+     * All values are clamped to sane bounds.
      */
-    public void setMinMax(double minStrength, double maxStrength,
+    public void setMinMax(double minStr, double maxStr,
                           int minPulseMs, int maxPulseMs,
                           int minCooldownMs, int maxCooldownMs) {
-        this.minStrength    = clamp01(minStrength);
-        this.maxStrength    = clamp01(maxStrength);
-        this.minPulseMs     = Math.max(1, minPulseMs);
-        this.maxPulseMs     = Math.max(this.minPulseMs, maxPulseMs);
-        this.minCooldownMs  = Math.max(1, minCooldownMs);
-        this.maxCooldownMs  = Math.max(this.minCooldownMs, maxCooldownMs);
+        // Strength 0..1
+        this.minStrength = clamp(minStr, 0.0, 1.0);
+        this.maxStrength = clamp(maxStr, 0.0, 1.0);
+        if (this.maxStrength < this.minStrength) {
+            double t = this.minStrength; this.minStrength = this.maxStrength; this.maxStrength = t;
+        }
+
+        // Pulse duration
+        this.minPulseMs = clamp(minPulseMs, 20, 2000);
+        this.maxPulseMs = clamp(maxPulseMs, 20, 2000);
+        if (this.maxPulseMs < this.minPulseMs) {
+            int t = this.minPulseMs; this.minPulseMs = this.maxPulseMs; this.maxPulseMs = t;
+        }
+
+        // Cooldown
+        this.minCooldownMs = clamp(minCooldownMs, 20, 5000);
+        this.maxCooldownMs = clamp(maxCooldownMs, 20, 5000);
+        if (this.maxCooldownMs < this.minCooldownMs) {
+            int t = this.minCooldownMs; this.minCooldownMs = this.maxCooldownMs; this.maxCooldownMs = t;
+        }
     }
 
-    /** Call periodically with signed heading error in degrees (target is 0°). */
+    // =========================
+    // PUBLIC UPDATE
+    // =========================
+    /**
+     * Call periodically with current heading error (deg).
+     * Emits a short rumble pulse when |error| <= thresholdDeg and cooldown elapsed.
+     * Safe to call at any rate; internal cooldown avoids over-rumble.
+     */
     public void update(double headingErrorDeg) {
-        if (!active) return;
+        if (!active || gp == null) return;
 
         double absErr = Math.abs(headingErrorDeg);
-        if (absErr > thresholdDeg) return; // outside window → no rumble
+        if (Double.isNaN(absErr)) return;
+
+        if (absErr > thresholdDeg) {
+            // Outside window → do nothing (no hum)
+            return;
+        }
 
         long now = System.currentTimeMillis();
-        if (now < nextAllowedMs) return;
+        int cooldown = lerpI(absErr / thresholdDeg, minCooldownMs, maxCooldownMs);
+        if (now - lastPulseAtMs < cooldown) return;
 
-        // Map error → intensity (closer to 0° = stronger rumble) and pulse/cooldown
-        double t = 1.0 - clamp01(absErr / Math.max(1e-6, thresholdDeg));
-        double strength = lerp(minStrength, maxStrength, t);
-        int pulseMs     = (int)Math.round(lerp(minPulseMs,  maxPulseMs,  t));
-        int cooldownMs  = (int)Math.round(lerp(minCooldownMs, maxCooldownMs, t));
+        // Map smaller error → bigger strength & longer pulse.
+        double strength = lerpD(absErr / thresholdDeg, minStrength, maxStrength);
+        int durationMs  = lerpI(absErr / thresholdDeg, minPulseMs, maxPulseMs);
 
-        // Simple one-shot pulse (SDK compatible)
-        gamepad.rumble((float)strength, (float)strength, pulseMs);
-        nextAllowedMs = now + pulseMs + cooldownMs;
+        // FTC older SDK-compatible rumble call
+        gp.rumble((float)strength, (float)strength, durationMs);
+
+        lastPulseAtMs = now;
     }
 
-    // ------------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------------
-    private static double clamp01(double v) { return Math.max(0.0, Math.min(1.0, v)); }
-    private static double lerp(double a, double b, double t) { return a + (b - a) * t; }
+    // =========================
+    // HELPERS
+    // =========================
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // t expected 0..1 (but we clamp defensively)
+    private static double lerpD(double t, double a, double b) {
+        t = clamp(t, 0.0, 1.0);
+        return a + (b - a) * (1.0 - t); // note: invert so smaller error → larger output
+    }
+
+    private static int lerpI(double t, int a, int b) {
+        return (int)Math.round(lerpD(t, a, b));
+    }
 }

@@ -25,7 +25,7 @@
 //   LB ..................... Feed one ball — with Intake Assist if Intake is OFF
 //   RB ..................... Toggle intake ON/OFF
 //   Right Stick Btn ........ TOGGLE AutoAim  [double-pulse on ENABLE, single on DISABLE]
-//                            (ENABLE only when goal tag is visible)
+//                            (ENABLE only when goal tag is visible; 4s grace on loss)
 //   Triangle / Y ........... TOGGLE AutoSpeed [double-pulse on ENABLE, single on DISABLE]
 //   Square / X ............. TOGGLE Manual RPM LOCK (only when AutoSpeed == false)
 //   Circle / B ............. EJECT (temporary RPM = EjectRPM; feeds once with Intake Assist; restores prior RPM)
@@ -33,24 +33,17 @@
 //   D-pad Left/Right ....... -/+ 50 RPM while TEST MODE enabled (applies immediately)
 //   D-pad Down ............. Disable RPM TEST MODE and STOP launcher
 //
-// TELEMETRY (always shown):
-//   Alliance, BrakeCap, Intake state, AutoSpeed (ON/OFF), ManualLock (when locked),
-//   RT value, RPM Target/Actual, AutoAim Enabled, Tag Visible, Tag Heading (deg),
-//   Tag Distance (in), Tag Distance (in, sm)
-//
-// TELEMETRY (only when AutoSpeed is ON and Test Mode is OFF):
-//   AutoRPM In (in), AutoRPM Out, AutoRPM Tunables, AutoRPM Smoothing, AutoRPM Last
+// TELEMETRY:
+//   Alliance, BrakeCap, Intake state, AutoSpeed, ManualLock, RT, RPM Target/Actual,
+//   AutoAim Enabled, Tag Visible, Tag Heading (deg), Tag Distance (in/raw+smoothed),
+//   AutoRPM In/Out, AutoRPM tunables/smoothing, AutoAim grace countdown.
 //
 // NOTES:
-//   - AutoAim may only be ENABLED if the goal tag is currently visible.
-//   - If the tag is lost while AutoAim is ON, a GRACE TIMER runs for
-//     autoAimLossGraceMs. If the tag reappears before the timer expires,
-//     AutoAim continues seamlessly. If not, AutoAim DISABLES and a single
-//     haptic pulse confirms shutdown.
-//   - While AutoAim is ON (including grace), the right stick cannot rotate the robot.
-//     Aim logic owns twist when a tag is visible; during grace, twist=0.
-//   - “Aim window” rumble (manual aiming) is active ONLY when AutoAim is OFF.
-//   - Haptic helpers use gamepad.rumble(left,right,durationMs) for SDK compatibility.
+//   - AutoAim enable requires a visible goal tag. If tag is lost, a GRACE TIMER runs
+//     for autoAimLossGraceMs; tag seen again within grace = continue; else disable + pulse.
+//   - While AutoAim is ON (including grace), right-stick rotation is ignored.
+//   - Manual aim-window rumble runs ONLY when AutoAim is OFF.
+//   - Rumble helpers use gamepad.rumble(left,right,durationMs) for SDK compatibility.
 //
 // AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
 // LAST UPDATED:   2025-10-23
@@ -186,18 +179,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
-        // Keep your current scale (adjust via calibration as needed)
-        vision.setRangeScale(0.03);
+        vision.setRangeScale(0.03); // keep your calibration scale unless re-tuned
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
 
-        // Simple actions (LB = feed, RB = toggle intake)
-        controls
-            .bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist())
-            .bindPress(Pad.G1, Btn.RB, () -> intake.toggle());
+        // =========================================================================
+        // ========== CONTROLLER BINDINGS: ALL MAPPINGS CENTRALIZED (EDIT HERE) ====
+        // =========================================================================
 
-        // === AutoAim toggle (Right Stick Button) — gated by tag visibility ===
+        // -------- Gamepad 1 (Driver) --------
+        // Feed / Intake
+        controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
+        controls.bindPress(Pad.G1, Btn.RB, () -> intake.toggle());
+
+        // AutoAim toggle (gated by current tag visibility)
         controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
             int targetId = (alliance() == Alliance.BLUE)
                     ? VisionAprilTag.TAG_BLUE_GOAL
@@ -207,11 +203,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (!autoAimEnabled) {
                 if (detNow != null) {
                     autoAimEnabled = true;
-                    aimLossStartMs = -1; // clear any prior loss state
+                    aimLossStartMs = -1;
                     pulseDouble(gamepad1);
                 } else {
-                    // Can't enable without a visible tag; optional short pulse to indicate "not available"
-                    pulseSingle(gamepad1);
+                    pulseSingle(gamepad1); // not available
                 }
             } else {
                 autoAimEnabled = false;
@@ -220,7 +215,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
-        // === AutoSpeed toggle (Y) — flip + seed ===
+        // AutoSpeed toggle (seed RPM if tag; else use InitialAutoDefaultSpeed)
         controls.bindPress(Pad.G1, Btn.Y, () -> {
             autoSpeedEnabled = !autoSpeedEnabled;
             ensureAutoCtrl();
@@ -228,7 +223,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
             if (autoSpeedEnabled) {
                 autoHadTagFix = false;
-
                 int targetId = (alliance() == Alliance.BLUE)
                         ? VisionAprilTag.TAG_BLUE_GOAL
                         : VisionAprilTag.TAG_RED_GOAL;
@@ -252,15 +246,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
-        // Manual RPM set from RT — ONLY when AutoSpeed == false, not locked, not test
-        controls.bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
-            if (!autoSpeedEnabled && !manualRpmLocked && !rpmTestEnabled) {
-                double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
-                launcher.setTargetRpm(target);
-            }
-        });
-
-        // === Manual RPM LOCK (Square/X) ===
+        // Manual RPM LOCK (X/Square) — only when AutoSpeed == false & not in Test
         controls.bindPress(Pad.G1, Btn.X, () -> {
             if (!autoSpeedEnabled && !rpmTestEnabled) {
                 if (!manualRpmLocked) {
@@ -274,67 +260,59 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
-
-        // RPM TEST MODE
-        controls
-            .bindPress(Pad.G1, Btn.DPAD_UP, () -> {
-                rpmTestEnabled = true;
-                launcher.setTargetRpm(rpmTestTarget);
-            })
-            .bindPress(Pad.G1, Btn.DPAD_LEFT, () -> {
-                if (rpmTestEnabled) {
-                    rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
-                    launcher.setTargetRpm(rpmTestTarget);
-                }
-            })
-            .bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> {
-                if (rpmTestEnabled) {
-                    rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX);
-                    launcher.setTargetRpm(rpmTestTarget);
-                }
-            })
-            .bindPress(Pad.G1, Btn.DPAD_DOWN, () -> {
-                rpmTestEnabled = false;
-                launcher.stop();
-            });
-
-        // === EJECT (Circle/B) ===
+        // EJECT (B/Circle)
         controls.bindPress(Pad.G1, Btn.B, () -> ejectOnce());
 
-        // Co-driver essentials
-        controls
-            .bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist())
-            .bindPress(Pad.G2, Btn.RB, () -> intake.toggle())
-            .bindPress(Pad.G2, Btn.Y,  () -> {
-                autoSpeedEnabled = !autoSpeedEnabled;
-                ensureAutoCtrl();
-                autoCtrl.setAutoEnabled(autoSpeedEnabled);
+        // RPM TEST MODE (D-Pad)
+        controls.bindPress(Pad.G1, Btn.DPAD_UP,    () -> { rpmTestEnabled = true;  launcher.setTargetRpm(rpmTestTarget); });
+        controls.bindPress(Pad.G1, Btn.DPAD_LEFT,  () -> { if (rpmTestEnabled) { rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX); launcher.setTargetRpm(rpmTestTarget); }});
+        controls.bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> { if (rpmTestEnabled) { rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX); launcher.setTargetRpm(rpmTestTarget); }});
+        controls.bindPress(Pad.G1, Btn.DPAD_DOWN,  () -> { rpmTestEnabled = false; launcher.stop(); });
 
-                if (autoSpeedEnabled) {
-                    autoHadTagFix = false;
+        // Right Trigger (manual RPM) — only when AutoSpeed == false, not locked, not test
+        controls.bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
+            if (!autoSpeedEnabled && !manualRpmLocked && !rpmTestEnabled) {
+                double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
+                launcher.setTargetRpm(target);
+            }
+        });
 
-                    int targetId = (alliance() == Alliance.BLUE)
-                            ? VisionAprilTag.TAG_BLUE_GOAL
-                            : VisionAprilTag.TAG_RED_GOAL;
-                    AprilTagDetection detNow = vision.getDetectionFor(targetId);
-                    Double seedIn = getGoalDistanceInchesScaled(detNow);
+        // -------- Gamepad 2 (Co-driver) --------
+        controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
+        controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
+        controls.bindPress(Pad.G2, Btn.Y,  () -> {
+            autoSpeedEnabled = !autoSpeedEnabled;
+            ensureAutoCtrl();
+            autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
-                    double seededRpm;
-                    if (seedIn != null) {
-                        seededRpm = autoCtrl.updateWithVision(seedIn);
-                        autoHadTagFix = true;
-                    } else {
-                        seededRpm = InitialAutoDefaultSpeed;
-                    }
-                    launcher.setTargetRpm(seededRpm);
+            if (autoSpeedEnabled) {
+                autoHadTagFix = false;
+                int targetId = (alliance() == Alliance.BLUE)
+                        ? VisionAprilTag.TAG_BLUE_GOAL
+                        : VisionAprilTag.TAG_RED_GOAL;
+                AprilTagDetection detNow = vision.getDetectionFor(targetId);
+                Double seedIn = getGoalDistanceInchesScaled(detNow);
 
-                    manualRpmLocked = false;
-                    pulseDouble(gamepad1);
+                double seededRpm;
+                if (seedIn != null) {
+                    seededRpm = autoCtrl.updateWithVision(seedIn);
+                    autoHadTagFix = true;
                 } else {
-                    autoCtrl.onManualOverride(launcher.getCurrentRpm());
-                    pulseSingle(gamepad1);
+                    seededRpm = InitialAutoDefaultSpeed;
                 }
-            });
+                launcher.setTargetRpm(seededRpm);
+
+                manualRpmLocked = false;
+                pulseDouble(gamepad1);
+            } else {
+                autoCtrl.onManualOverride(launcher.getCurrentRpm());
+                pulseSingle(gamepad1);
+            }
+        });
+
+        // =========================================================================
+        // ========================= END CONTROLLER BINDINGS ========================
+        // =========================================================================
 
         // ---- Haptics Init ----
         initAimRumble();
@@ -353,24 +331,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void loop() {
-        // ==========================
-        // UPDATE CONTROLLER BINDINGS
-        // ==========================
+        // Update bindings
         controls.update(gamepad1, gamepad2);
 
-        // If manual lock is on, continuously hold the locked RPM in manual mode
+        // Honor manual lock in manual mode
         if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled) {
             launcher.setTargetRpm(manualLockedRpm);
         }
 
-        // RPM Test Mode override
-        if (rpmTestEnabled) {
-            launcher.setTargetRpm(rpmTestTarget);
-        }
+        // RPM Test override
+        if (rpmTestEnabled) launcher.setTargetRpm(rpmTestTarget);
 
-        // ==========================
-        // DRIVETRAIN CONTROL
-        // ==========================
+        // Drive inputs
         double brake = gamepad1.left_trigger;
         double cap = 1.0 - brake * (1.0 - slowestSpeed);
 
@@ -378,92 +350,65 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double strafeX = cap * -gamepad1.left_stick_x;
         double twist   = cap * -gamepad1.right_stick_x;
 
-        // ==========================
-        // ALLIANCE TARGET TAG
-        // ==========================
+        // Alliance target
         int targetId = (alliance() == Alliance.BLUE)
                 ? VisionAprilTag.TAG_BLUE_GOAL
                 : VisionAprilTag.TAG_RED_GOAL;
 
-        // ==============================================================
-        // APRILTAG DETECTION + SMOOTHING (use *SCALED* meters)
-        // ==============================================================
+        // Vision
         AprilTagDetection goalDet = vision.getDetectionFor(targetId);
 
         if (goalDet != null) {
-            double hDeg  = goalDet.ftcPose.bearing;        // degrees
-            double rM_sc = vision.getScaledRange(goalDet); // SCALED meters (NaN if invalid)
-
-            // Smooth heading
-            smHeadingDeg = (smHeadingDeg == null) ? hDeg
-                    : (SMOOTH_A * hDeg + (1 - SMOOTH_A) * smHeadingDeg);
-
-            // Smooth *scaled* range if valid
+            double hDeg  = goalDet.ftcPose.bearing;
+            double rM_sc = vision.getScaledRange(goalDet);
+            smHeadingDeg = (smHeadingDeg == null) ? hDeg : (SMOOTH_A * hDeg + (1 - SMOOTH_A) * smHeadingDeg);
             if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) {
-                smRangeMeters = (smRangeMeters == null) ? rM_sc
-                        : (SMOOTH_A * rM_sc + (1 - SMOOTH_A) * smRangeMeters);
+                smRangeMeters = (smRangeMeters == null) ? rM_sc : (SMOOTH_A * rM_sc + (1 - SMOOTH_A) * smRangeMeters);
             }
         }
 
-        // ==========================
-        // AUTOAIM: gating + twist control + GRACE WINDOW
-        // ==========================
+        // AutoAim + grace handling
         long now = System.currentTimeMillis();
-
         if (autoAimEnabled) {
             if (goalDet != null) {
-                // Tag visible → clear loss state and own twist
                 aimLossStartMs = -1L;
-                twist = aim.turnPower(goalDet); // right stick rotation is ignored
+                twist = aim.turnPower(goalDet); // ignore right stick
             } else {
-                // Tag lost → start/continue grace window; right stick still ignored; twist=0 during grace
-                if (aimLossStartMs < 0) {
-                    aimLossStartMs = now;
-                }
+                if (aimLossStartMs < 0) aimLossStartMs = now;
                 if ((now - aimLossStartMs) >= autoAimLossGraceMs) {
                     autoAimEnabled = false;
                     aimLossStartMs = -1L;
-                    pulseSingle(gamepad1); // indicate auto-aim disabled after grace expiry
-                    // once disabled, right stick rotation control returns next loop
+                    pulseSingle(gamepad1); // disabled after grace
                 } else {
-                    twist = 0.0; // hold heading during grace (no rotation)
+                    twist = 0.0; // hold heading during grace
                 }
             }
         } else {
-            // === MANUAL AIM WINDOW RUMBLE (AutoAim is OFF) ===
-            // Provide tactile feedback to help the driver line up on the tag without looking.
+            // Manual aim-window rumble when AutoAim is OFF
             if (aimRumbleEnabled && goalDet != null && aimRumbleDriver1 != null) {
-                // heading error in degrees
                 aimRumbleDriver1.update(goalDet.ftcPose.bearing);
             }
         }
 
-        // ==========================
-        // DRIVEBASE EXECUTION
-        // ==========================
+        // Drive it
         drive.drive(driveY, strafeX, twist);
 
-        // ==============================================================
-        // AUTOSPEED (Auto RPM) UPDATE (only when AutoSpeed ON and Test OFF)
-        // ==============================================================
+        // AutoSpeed update
         boolean autoRpmActive = (autoSpeedEnabled && !rpmTestEnabled);
         Double autoDistIn = null;
-        double autoOutRpm = launcher.targetRpm; // for telemetry
+        double autoOutRpm = launcher.targetRpm;
 
         if (autoRpmActive) {
             ensureAutoCtrl();
             autoCtrl.setParams(autoNearDistIn, autoNearRpm, autoFarDistIn, autoFarRpm);
             autoCtrl.setSmoothingAlpha(autoSmoothingAlpha);
 
-            // Use smoothed *scaled* meters where possible, else instantaneous reading
             Double rangeM = null;
             if (smRangeMeters != null && Double.isFinite(smRangeMeters)) {
                 rangeM = smRangeMeters;
             } else if (goalDet != null) {
                 double rM_sc = vision.getScaledRange(goalDet);
-                if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) {
-                    rangeM = rM_sc;
-                }
+                if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) rangeM = rM_sc;
             }
 
             if (rangeM != null) {
@@ -471,27 +416,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 autoOutRpm = autoCtrl.updateWithVision(autoDistIn);
                 autoHadTagFix = true;
             } else {
-                if (!autoHadTagFix) {
-                    autoOutRpm = InitialAutoDefaultSpeed;
-                } else {
-                    autoOutRpm = autoCtrl.updateWithVision(null); // hold last
-                }
+                autoOutRpm = (!autoHadTagFix) ? InitialAutoDefaultSpeed : autoCtrl.updateWithVision(null);
             }
-
             launcher.setTargetRpm(autoOutRpm);
         } else {
-            // Manual mode: enforce rpmBottom floor if applicable
+            // Enforce manual floor if applicable
             if (!manualRpmLocked && !rpmTestEnabled) {
                 double currentCmd = launcher.targetRpm;
-                if (rpmBottom > 0 && currentCmd < rpmBottom) {
-                    launcher.setTargetRpm(rpmBottom);
-                }
+                if (rpmBottom > 0 && currentCmd < rpmBottom) launcher.setTargetRpm(rpmBottom);
             }
         }
 
-        // ==========================
-        // TELEMETRY
-        // ==========================
+        // Telemetry
         telemetry.addData("Alliance", "%s", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "ON" : "OFF");
@@ -531,7 +467,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void initAimRumble() {
         aimRumbleDriver1 = new RumbleNotifier(gamepad1);
-        // Policy: aim-rumble only when AutoAim is OFF, so start enabled = true
+        // Aim-window rumble only when AutoAim is OFF → keep enabled here
         aimRumbleDriver1.setActive(true);
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
         aimRumbleDriver1.setMinMax(
@@ -577,14 +513,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double tempCmd = clamp(ejectRpm, 0, rpmTop);
 
         launcher.setTargetRpm(tempCmd);
-        sleepMs( Math.max(100, ejectTimeMs / 3) );
+        sleepMs(Math.max(100, ejectTimeMs / 3));
 
         boolean wasOn = intake.isOn();
         if (!wasOn) intake.set(true);
 
         feed.feedOnceBlocking();
 
-        sleepMs( ejectTimeMs );
+        sleepMs(ejectTimeMs);
 
         if (!wasOn) {
             sleepMs(intakeAssistMs);

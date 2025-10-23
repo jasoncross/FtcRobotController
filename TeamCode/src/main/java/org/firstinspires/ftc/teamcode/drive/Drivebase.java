@@ -183,8 +183,9 @@ public class Drivebase {
 
         // Polar (robot-centric) with 0°=forward
         double rad = toRadians(degrees);
-        double x =  cos(rad); // +right
-        double y =  sin(rad); // +forward
+        double y =  cos(rad); // +forward   (0° = forward)
+        double x =  sin(rad); // +right     (+90° = right)
+
 
         // Compensate lateral losses
         double xAdj = x * STRAFE_CORRECTION;

@@ -6,7 +6,7 @@
 //                 AUTO LAUNCHER RPM based on AprilTag distance.
 //
 // STARTUP DEFAULTS (edit here):
-//   • DEFAULT_MANUAL_SPEED_MODE = false  → Manual Speed OFF at start (AutoRPM ON)
+//   • DEFAULT_MANUAL_SPEED_MODE = true   → Manual Speed ON at start (AutoRPM OFF)
 //   • DEFAULT_AIM_ENABLED       = false  → Auto-Aim OFF at start
 //
 // HIGHLIGHTS:
@@ -17,22 +17,24 @@
 //   • Distance smoothing uses the *scaled* range (meters) from VisionAprilTag so
 //     telemetry, auto RPM, and driver info are consistent.
 //   • AutoRPM telemetry is SHOWN ONLY when Manual Speed is OFF (AutoRPM ON).
+//   • NEW: Manual RPM Lock (Square/X) in manual mode to freeze current RPM.
 //
 // CONTROLS (Gamepad 1):
 //   Left stick .......... Fwd/Back + Strafe
 //   Right stick X ....... Rotation
 //   Left trigger ........ Brake (caps speed toward slowestSpeed)
-//   Right trigger ....... Manual launch RPM (only when manualSpeedMode == true)
+//   Right trigger ....... Manual launch RPM (only when manual & not locked & not test)
 //   LB .................. Feed one ball
 //   RB .................. Toggle intake ON/OFF
 //   Right Stick Button .. Toggle Aim-Assist  [double-rumble]
 //   Y (Triangle) ........ Toggle Manual/Auto RPM mode  [double-rumble]
+//   X (Square) .......... Toggle Manual RPM LOCK (manual mode only)  [double-rumble]
 //   D-pad Up ............ Enable RPM TEST MODE
 //   D-pad Left/Right .... -/+ 50 RPM while TEST MODE enabled (applies immediately)
 //   D-pad Down .......... Disable RPM TEST MODE and STOP launcher
 //
 // TELEMETRY:
-//   Always: Alliance, BrakeCap, Intake, ManualSpeed, RT, RPM Target/Actual,
+//   Always: Alliance, BrakeCap, Intake, ManualSpeed, ManualLock, RT, RPM Target/Actual,
 //           Aim Enabled, Tag Visible, Heading (deg), Tag Distance (in), Tag Distance (in, sm)
 //   When AutoRPM active (ManualSpeed OFF and Test OFF): AutoRPM In/Out, Tunables, Smoothing, Last
 //
@@ -77,7 +79,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (change here) ----------------
-    private static final boolean DEFAULT_MANUAL_SPEED_MODE = false; // Manual OFF → AutoRPM ON
+    private static final boolean DEFAULT_MANUAL_SPEED_MODE = true;  // Manual ON → AutoRPM OFF
     private static final boolean DEFAULT_AIM_ENABLED       = false; // Auto-Aim OFF
 
     // ---------------- Subsystems ----------------
@@ -94,6 +96,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- State ----------------
     private boolean manualSpeedMode = DEFAULT_MANUAL_SPEED_MODE;  // toggled by Y
     private boolean aimEnabled      = DEFAULT_AIM_ENABLED;        // toggled by Right Stick Button
+
+    // Manual RPM Lock (Square/X)
+    private boolean manualRpmLocked = false;
+    private double  manualLockedRpm = 0.0;
 
     // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;
@@ -199,8 +205,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
                     pulseDoubleToggle(gamepad1);
                 })
+            // Manual RPM set from RT — ONLY when manual, not locked, and not in test
             .bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
-                if (manualSpeedMode && !rpmTestEnabled) {
+                if (manualSpeedMode && !manualRpmLocked && !rpmTestEnabled) {
                     double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
                     launcher.setTargetRpm(target);
                 }
@@ -225,7 +232,23 @@ public abstract class TeleOpAllianceBase extends OpMode {
             .bindPress(Pad.G1, Btn.DPAD_DOWN, () -> {
                 rpmTestEnabled = false;
                 launcher.stop();
-            });
+            })
+            // === NEW: Manual RPM LOCK (Square/X) toggle ===
+            .bindToggle(Pad.G1, Btn.X,
+                // -> LOCK ON
+                () -> {
+                    if (manualSpeedMode) {
+                        manualRpmLocked = true;
+                        manualLockedRpm = launcher.targetRpm; // lock what we’re currently commanding
+                        launcher.setTargetRpm(manualLockedRpm); // ensure it’s applied
+                        pulseDoubleToggle(gamepad1);
+                    }
+                },
+                // -> LOCK OFF
+                () -> {
+                    manualRpmLocked = false;
+                    pulseDoubleToggle(gamepad1);
+                });
 
         // Co-driver mirrors key toggles (no joysticks)
         controls
@@ -274,6 +297,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // UPDATE CONTROLLER BINDINGS
         // ==========================
         controls.update(gamepad1, gamepad2);
+
+        // If manual lock is on, continuously hold the locked RPM in manual mode
+        if (manualSpeedMode && manualRpmLocked && !rpmTestEnabled) {
+            launcher.setTargetRpm(manualLockedRpm);
+        }
 
         // RPM Test Mode override (wins over manual/auto this loop)
         if (rpmTestEnabled) {
@@ -360,6 +388,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "On" : "Off");
         telemetry.addData("ManualSpeed", manualSpeedMode);
+        telemetry.addData("ManualLock", manualRpmLocked ? String.format("LOCKED @ %.0f", manualLockedRpm) : "UNLOCKED");
         telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
         telemetry.addData("RPM Target", "%.0f", launcher.targetRpm);
         telemetry.addData("RPM Actual", "%.0f", launcher.getCurrentRpm());
@@ -447,7 +476,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs));
     }
 
-    /** Plays a crisp double-pulse on the given gamepad for state toggles (Aim/ManualSpeed). */
+    /** Plays a crisp double-pulse on the given gamepad for state toggles (Aim/ManualSpeed/Lock). */
     private void pulseDoubleToggle(Gamepad pad) {
         try {
             Gamepad.RumbleEffect effect = new Gamepad.RumbleEffect.Builder()

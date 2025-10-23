@@ -260,6 +260,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
+        // === Manual RPM LOCK (Square/X) ===
+        controls.bindPress(Pad.G1, Btn.X, () -> {
+            if (!autoSpeedEnabled && !rpmTestEnabled) {
+                if (!manualRpmLocked) {
+                    manualRpmLocked = true;
+                    manualLockedRpm = launcher.targetRpm;
+                    pulseDouble(gamepad1);
+                } else {
+                    manualRpmLocked = false;
+                    pulseSingle(gamepad1);
+                }
+            }
+        });
+
+
         // RPM TEST MODE
         controls
             .bindPress(Pad.G1, Btn.DPAD_UP, () -> {

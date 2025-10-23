@@ -16,7 +16,6 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.assist.AutoAimSpeed;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 
-// NEW: shared tunables
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
@@ -72,17 +71,16 @@ public abstract class BaseAuto extends LinearOpMode {
             vision = null;
         }
 
-        // Mechs
-        launcher = new Launcher(hardwareMap, telemetry);
-        feed     = new Feed(hardwareMap, telemetry);
-        intake   = new Intake(hardwareMap, telemetry);
+        // Mechs  (match TeleOp constructors: HardwareMap only)
+        launcher = new Launcher(hardwareMap);
+        feed     = new Feed(hardwareMap);
+        intake   = new Intake(hardwareMap);
 
-        // Controllers + helper
-        aimCtrl  = new TagAimController(telemetry);
-        autoCtrl = new LauncherAutoSpeedController(telemetry);
-        AutoRpmConfig.apply(autoCtrl); // <— CENTRALIZED: used to be scattered (TeleOp + base defaults)
+        // Controllers + helper  (match TeleOp: no-arg TagAimController; no-arg AutoSpeedController)
+        aimCtrl  = new TagAimController();
+        autoCtrl = new LauncherAutoSpeedController();
+        AutoRpmConfig.apply(autoCtrl); // centralized tunables
         autoAssist = new AutoAimSpeed(vision, aimCtrl, autoCtrl, launcher);
-        // Reflect central tunables (was local here before)
         autoAssist.maxTwist = SharedRobotTuning.TURN_TWIST_CAP;
         autoAssist.rpmTolerance = SharedRobotTuning.RPM_TOLERANCE;
         autoAssist.initialAutoDefaultSpeed = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
@@ -121,14 +119,12 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // ==================== Convenience helpers ====================
 
-    /** Get the current goal detection for this alliance (closest by range). */
     protected AprilTagDetection goalDet() {
         if (vision == null) return null;
         int id = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         return vision.getDetectionFor(id);
     }
 
-    /** Face the goal briefly so AutoAim can lock quickly. */
     protected void turnToGoalTag(double timeoutMs) {
         long end = System.currentTimeMillis() + (long)timeoutMs;
         autoAssist.enable();
@@ -142,7 +138,6 @@ public abstract class BaseAuto extends LinearOpMode {
         drive.stopAll();
     }
 
-    /** Keep aiming + spinning until at speed (or timeout). */
     protected void aimSpinUntilReady(long timeoutMs) {
         long end = System.currentTimeMillis() + timeoutMs;
         autoAssist.enable();
@@ -150,14 +145,14 @@ public abstract class BaseAuto extends LinearOpMode {
             AprilTagDetection det = goalDet();
             double twist = autoAssist.update(det, drive.heading());
             drive.drive(0, 0, twist);
-            telemetry.addData("AutoSpeed", "tgt=%.0f at=%s", launcher.targetRpm, autoAssist.atSpeed(SharedRobotTuning.RPM_TOLERANCE));
+            boolean atSpd = autoAssist.atSpeed(SharedRobotTuning.RPM_TOLERANCE);
+            telemetry.addData("AutoSpeed", "tgt=%.0f at=%s", launcher.targetRpm, atSpd);
             telemetry.update();
-            if (autoAssist.atSpeed(SharedRobotTuning.RPM_TOLERANCE)) break;
+            if (atSpd) break;
         }
         drive.stopAll();
     }
 
-    /** Fire once with Intake Assist (same behavior as TeleOp fire). */
     protected void fireOnceWithIntakeAssist() throws InterruptedException {
         boolean wasOn = intake.isOn();
         if (!wasOn) intake.set(true);
@@ -168,7 +163,6 @@ public abstract class BaseAuto extends LinearOpMode {
         }
     }
 
-    /** Fire N shots separated by SharedRobotTuning.SHOT_BETWEEN_MS. */
     protected void fireN(int count) throws InterruptedException {
         for (int i = 0; i < count && opModeIsActive(); i++) {
             fireOnceWithIntakeAssist();
@@ -176,19 +170,16 @@ public abstract class BaseAuto extends LinearOpMode {
         }
     }
 
-    /** Turn back to a specific absolute heading using Drivebase.turn(relative). */
     protected void turnBackTo(double targetHeadingDeg) {
         double cur = drive.heading();
         double diff = shortestDiff(targetHeadingDeg, cur);
         drive.turn(diff, clamp(SharedRobotTuning.TURN_TWIST_CAP, 0.2, 1.0));
     }
 
-    /** Drive forward N inches using your encoder move(). */
     protected void driveForwardInches(double inches) {
         drive.move(inches, /*degrees=*/0, clamp(SharedRobotTuning.DRIVE_MAX_POWER, 0.1, 1.0));
     }
 
-    /** Safety off across systems. */
     protected void stopAll() {
         try { drive.stopAll(); } catch (Exception ignored) {}
         try { launcher.stop(); }  catch (Exception ignored) {}

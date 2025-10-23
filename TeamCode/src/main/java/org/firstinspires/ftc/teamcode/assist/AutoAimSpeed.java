@@ -98,6 +98,7 @@ public class AutoAimSpeed {
     /** True when launcher RPM is within ±tolRpm (or default rpmTolerance). */
     public boolean atSpeed(Double tolRpm) {
         double tol = (tolRpm != null && tolRpm > 0) ? tolRpm : rpmTolerance;
-        return launcher.atSpeed(tol);
+        double err = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
+        return err <= tol;
     }
 }

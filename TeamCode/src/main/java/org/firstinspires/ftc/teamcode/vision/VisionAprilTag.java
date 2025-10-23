@@ -10,6 +10,9 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 import java.util.List;
 
+// NEW: shared latch for obelisk signal
+import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
+
 /*
  * FILE: VisionAprilTag.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/vision/
@@ -21,6 +24,8 @@ import java.util.List;
  *     - Returns the "best" detection for a specific Tag ID (closest range).
  *     - Adds a configurable RANGE SCALE to correct distance if pose is off
  *       by a constant factor (common with older SDKs or uncalibrated cams).
+ *     - (NEW) Adds DECODE Obelisk tag latch (IDs 21/22/23) with optional
+ *       background polling so Auto can capture late sightings during motion.
  *
  * NOTES:
  *   - We use 640x480 with MJPEG when available (built-in calibration + better FPS).
@@ -30,6 +35,9 @@ import java.util.List;
  * ALLIANCE TAG IDS (DECODE field):
  *   - BLUE GOAL: 20
  *   - RED  GOAL: 24
+ *
+ * OBELISK TAG IDS (DECODE field):
+ *   - 21 → GPP, 22 → PGP, 23 → PPG
  *
  * TUNING:
  *   - Call setRangeScale(s) after a 1-point calibration:
@@ -42,6 +50,8 @@ import java.util.List;
  *   - AprilTagDetection getDetectionFor(int tagId)
  *   - void   setRangeScale(double s)
  *   - double getScaledRange(AprilTagDetection det)
+ *   - void   observeObelisk() / observeObelisk(List<AprilTagDetection>)
+ *   - void   setObeliskAutoLatchEnabled(boolean enable)   // NEW
  *   - void   stop()
  */
 public class VisionAprilTag {
@@ -49,6 +59,11 @@ public class VisionAprilTag {
     // === CONSTANTS ===
     public static final int TAG_BLUE_GOAL = 20; // Blue alliance GOAL tag
     public static final int TAG_RED_GOAL  = 24; // Red alliance GOAL tag
+
+    // NEW: Obelisk IDs
+    public static final int TAG_OBELISK_GPP = 21;
+    public static final int TAG_OBELISK_PGP = 22;
+    public static final int TAG_OBELISK_PPG = 23;
 
     // === INTERNAL OBJECTS ===
     private VisionPortal portal;
@@ -58,6 +73,10 @@ public class VisionAprilTag {
     // Multiply raw ftcPose.range (meters) by this factor to correct distance.
     // Set via setRangeScale() after quick tape-measure calibration.
     private double rangeScale = 1.0;
+
+    // === OBELISK BACKGROUND POLLER (optional, for Auto) ===
+    private volatile boolean obeliskAutoLatch = false;
+    private Thread obeliskThread = null;
 
     // =============================================================
     //  METHOD: init
@@ -160,13 +179,50 @@ public class VisionAprilTag {
         for (AprilTagDetection d : dets) {
             if (d == null) continue;
             int id = d.id;
-            if (id == 21 || id == 22 || id == 23) {
-                org.firstinspires.ftc.teamcode.utils.ObeliskSignal.updateFromTagId(id);
+            if (id == TAG_OBELISK_GPP || id == TAG_OBELISK_PGP || id == TAG_OBELISK_PPG) {
+                ObeliskSignal.updateFromTagId(id);
                 return; // latch first seen
             }
         }
     }
-    
+
+    // =============================================================
+    //  METHOD: setObeliskAutoLatchEnabled  (NEW)
+    //  PURPOSE:
+    //     - Run a tiny background poller during Auto so tags seen while the
+    //       robot is executing motion still latch immediately.
+    // =============================================================
+    public void setObeliskAutoLatchEnabled(boolean enable) {
+        if (enable == obeliskAutoLatch) return;
+        obeliskAutoLatch = enable;
+        if (enable) startObeliskThread(); else stopObeliskThread();
+    }
+
+    private void startObeliskThread() {
+        if (obeliskThread != null && obeliskThread.isAlive()) return;
+        obeliskThread = new Thread(() -> {
+            try {
+                while (obeliskAutoLatch) {
+                    try { observeObelisk(); } catch (Throwable ignored) {}
+                    try { Thread.sleep(70); } catch (InterruptedException ie) { break; }
+                }
+            } finally { /* no-op */ }
+        }, "VA-ObeliskLatch");
+        obeliskThread.setDaemon(true);
+        obeliskThread.start();
+    }
+
+    private void stopObeliskThread() {
+        if (obeliskThread != null) {
+            try {
+                obeliskAutoLatch = false;
+                obeliskThread.join(150);
+            } catch (InterruptedException ignored) {
+            } finally {
+                obeliskThread = null;
+            }
+        }
+    }
 
     // =============================================================
     //  METHOD: stop
@@ -174,6 +230,9 @@ public class VisionAprilTag {
     //     - Safely close the VisionPortal when OpMode ends.
     // =============================================================
     public void stop() {
+        // ensure background poller is shut down
+        setObeliskAutoLatchEnabled(false);
+
         if (portal != null) portal.close();
     }
 }

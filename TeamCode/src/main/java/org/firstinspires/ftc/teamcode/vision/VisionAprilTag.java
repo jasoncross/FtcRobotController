@@ -144,6 +144,31 @@ public class VisionAprilTag {
     }
 
     // =============================================================
+    //  METHODS: observeObelisk
+    //  PURPOSE:
+    //     - Look through detections for obelisk tags (21,22,23).
+    //     - If found, update shared memory so Auto/TeleOp can read it.
+    //     - Call this once per loop in TeleOp and during Auto init.
+    // =============================================================
+    public void observeObelisk() {
+        List<AprilTagDetection> dets = getDetectionsCompat();
+        observeObelisk(dets);
+    }
+
+    public void observeObelisk(List<AprilTagDetection> dets) {
+        if (dets == null) return;
+        for (AprilTagDetection d : dets) {
+            if (d == null) continue;
+            int id = d.id;
+            if (id == 21 || id == 22 || id == 23) {
+                org.firstinspires.ftc.teamcode.utils.ObeliskSignal.updateFromTagId(id);
+                return; // latch first seen
+            }
+        }
+    }
+    
+
+    // =============================================================
     //  METHOD: stop
     //  PURPOSE:
     //     - Safely close the VisionPortal when OpMode ends.

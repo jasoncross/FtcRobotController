@@ -4,66 +4,67 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
+import org.firstinspires.ftc.teamcode.subsystems.Launcher;
+import org.firstinspires.ftc.teamcode.subsystems.Feed;
+import org.firstinspires.ftc.teamcode.subsystems.Intake;
+
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+
+import org.firstinspires.ftc.teamcode.assist.AutoAimSpeed;
+import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
+
+// NEW: shared tunables
+import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 /*
  * ============================================================================
  * FILE: BaseAuto.java
- * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
- *
  * PURPOSE:
- *   Abstract base class for all DECODE season Autonomous OpModes.
- *   Provides common setup/teardown for the drivetrain and (optionally) vision,
- *   ensures mechanisms are made safe at the end, and exposes a simple template:
+ *   Abstract base for DECODE Autonomous. Preserves obelisk-latch + HUD,
+ *   wires shared AutoAim/AutoSpeed helper, and provides convenience helpers.
  *
- *       - Subclasses implement alliance() and runSequence().
- *       - VisionAprilTag is started best-effort and stopped automatically.
- *       - Obelisk AprilTag signal (Tags 21/22/23) is RESET at Auto start,
- *         observed in prestart, and continuously latched via Vision's own
- *         background poller during Auto so late sightings are not missed.
- *       - A lightweight HUD thread refreshes FIRST-LINE telemetry during Auto
- *         so operators can see updates while the sequence is running.
+ * TUNING — READ THIS FIRST:
+ *   • Distance→RPM curve & smoothing: AutoRpmConfig.java
+ *   • Shared timing & limits (shot spacing, RPM tolerance, twist/drive caps,
+ *     intake assist, initial RPM seed): SharedRobotTuning.java
  *
- * NOTES:
- *   - Preserves prior functionality: Drivebase init, runSequence() call,
- *     and end-of-run drive.stopAll(). No autonomous behavior removed.
- *   - Vision is optional; if init fails, Auto continues without it.
- *   - The HUD thread only writes telemetry; all motion logic remains unchanged.
- *
- * METHODS (for subclasses to implement/override):
- *   - Alliance alliance(): which side are we running?
- *   - void runSequence() throws InterruptedException: main autonomous steps.
- *   - (Optional) void onPreStartLoop(): hook for additional prestart telemetry.
+ * NOTE (WHERE THESE USED TO LIVE):
+ *   • Previously, SHOT_BETWEEN_MS / RPM_TOLERANCE / TURN_TWIST_CAP /
+ *     DRIVE_MAX_POWER were tuned here; they now come from SharedRobotTuning.
  * ============================================================================
  */
 public abstract class BaseAuto extends LinearOpMode {
 
-    // ----------------------- Shared Subsystems -------------------------------
+    // ---- Subsystems ----
     protected Drivebase drive;
     protected VisionAprilTag vision; // optional; may be null if camera absent
+    protected Launcher  launcher;
+    protected Feed      feed;
+    protected Intake    intake;
 
-    // ----------------------- HUD (telemetry refresher) -----------------------
+    // ---- Controllers / helper ----
+    protected TagAimController            aimCtrl;
+    protected LauncherAutoSpeedController autoCtrl;
+    protected AutoAimSpeed                autoAssist;
+
+    // ---- HUD ----
     private volatile boolean hudRunning = false;
     private Thread hudThread = null;
 
-    // ----------------------- Template Methods --------------------------------
-    /** Return the alliance (RED/BLUE) for this Auto variant. */
+    // ---------------- Template methods ----------------
     protected abstract Alliance alliance();
-
-    /** Implement the autonomous path/sequence here. */
     protected abstract void runSequence() throws InterruptedException;
+    protected void onPreStartLoop() { /* optional */ }
 
-    /** Optional hook for subclasses to add prestart telemetry/logic. */
-    protected void onPreStartLoop() { /* no-op by default */ }
-
-    // ----------------------- OpMode Lifecycle --------------------------------
     @Override
     public void runOpMode() throws InterruptedException {
-        // Drivetrain
         drive = new Drivebase(this);
 
-        // Vision (optional – keep Auto robust even if no camera/driver issue)
+        // Vision (best-effort)
         try {
             vision = new VisionAprilTag();
             vision.init(hardwareMap, "Webcam 1");
@@ -71,66 +72,142 @@ public abstract class BaseAuto extends LinearOpMode {
             vision = null;
         }
 
-        // --------------------- Reset Obelisk for this Auto --------------------
-        // Requirement: At the start of AUTO, the observed value should be reset
-        // until seen. It may then persist into TeleOp (we do not clear later).
+        // Mechs
+        launcher = new Launcher(hardwareMap, telemetry);
+        feed     = new Feed(hardwareMap, telemetry);
+        intake   = new Intake(hardwareMap, telemetry);
+
+        // Controllers + helper
+        aimCtrl  = new TagAimController(telemetry);
+        autoCtrl = new LauncherAutoSpeedController(telemetry);
+        AutoRpmConfig.apply(autoCtrl); // <— CENTRALIZED: used to be scattered (TeleOp + base defaults)
+        autoAssist = new AutoAimSpeed(vision, aimCtrl, autoCtrl, launcher);
+        // Reflect central tunables (was local here before)
+        autoAssist.maxTwist = SharedRobotTuning.TURN_TWIST_CAP;
+        autoAssist.rpmTolerance = SharedRobotTuning.RPM_TOLERANCE;
+        autoAssist.initialAutoDefaultSpeed = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
+
+        // Reset obelisk and observe in prestart
         ObeliskSignal.clear();
 
-        // --------------------- Pre-Start Loop --------------------------------
-        // Let the robot sit on the field and watch the obelisk before start.
         while (!isStarted() && !isStopRequested()) {
-            if (vision != null) {
-                // Latch obelisk order (Tags 21/22/23) into shared memory
-                vision.observeObelisk();
-            }
-
-            // FIRST LINE: show the currently latched obelisk order (or ---)
+            if (vision != null) vision.observeObelisk();
             telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
             telemetry.addData("Auto", "Alliance: %s", alliance());
-
-            // Let subclass add extra prestart info without spamming new lines
             onPreStartLoop();
-
             telemetry.update();
             sleep(20);
         }
 
-        // Safety check
         if (isStopRequested()) {
             stopVisionIfAny();
             return;
         }
 
-        // --------------------- Enable vision auto-latch + HUD -----------------
         if (vision != null) vision.setObeliskAutoLatchEnabled(true);
         startHud();
 
-        // --------------------- Autonomous Sequence ---------------------------
         try {
             runSequence();
         } finally {
-            // --------------------- Cleanup / Safety --------------------------
             stopHud();
-            drive.stopAll(); // make sure all motion/mechanisms are stopped
-            stopVisionIfAny(); // stop camera cleanly
+            stopAll();
+            stopVisionIfAny();
+            telemetry.addLine("Auto complete – DS will queue TeleOp.");
+            telemetry.update();
+            sleep(750);
         }
-
-        telemetry.addLine("Auto complete – DS will queue TeleOp.");
-        telemetry.update();
-        sleep(750);
     }
 
-    // ----------------------- Helpers ----------------------------------------
+    // ==================== Convenience helpers ====================
+
+    /** Get the current goal detection for this alliance (closest by range). */
+    protected AprilTagDetection goalDet() {
+        if (vision == null) return null;
+        int id = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
+        return vision.getDetectionFor(id);
+    }
+
+    /** Face the goal briefly so AutoAim can lock quickly. */
+    protected void turnToGoalTag(double timeoutMs) {
+        long end = System.currentTimeMillis() + (long)timeoutMs;
+        autoAssist.enable();
+        while (opModeIsActive() && System.currentTimeMillis() < end) {
+            AprilTagDetection det = goalDet();
+            double twist = autoAssist.update(det, drive.heading());
+            drive.drive(0, 0, twist);
+            telemetry.addData("Aim", "twist=%.2f rpm=%.0f", twist, launcher.targetRpm);
+            telemetry.update();
+        }
+        drive.stopAll();
+    }
+
+    /** Keep aiming + spinning until at speed (or timeout). */
+    protected void aimSpinUntilReady(long timeoutMs) {
+        long end = System.currentTimeMillis() + timeoutMs;
+        autoAssist.enable();
+        while (opModeIsActive() && System.currentTimeMillis() < end) {
+            AprilTagDetection det = goalDet();
+            double twist = autoAssist.update(det, drive.heading());
+            drive.drive(0, 0, twist);
+            telemetry.addData("AutoSpeed", "tgt=%.0f at=%s", launcher.targetRpm, autoAssist.atSpeed(SharedRobotTuning.RPM_TOLERANCE));
+            telemetry.update();
+            if (autoAssist.atSpeed(SharedRobotTuning.RPM_TOLERANCE)) break;
+        }
+        drive.stopAll();
+    }
+
+    /** Fire once with Intake Assist (same behavior as TeleOp fire). */
+    protected void fireOnceWithIntakeAssist() throws InterruptedException {
+        boolean wasOn = intake.isOn();
+        if (!wasOn) intake.set(true);
+        feed.feedOnceBlocking();
+        if (!wasOn) {
+            sleep(SharedRobotTuning.INTAKE_ASSIST_MS);
+            intake.set(false);
+        }
+    }
+
+    /** Fire N shots separated by SharedRobotTuning.SHOT_BETWEEN_MS. */
+    protected void fireN(int count) throws InterruptedException {
+        for (int i = 0; i < count && opModeIsActive(); i++) {
+            fireOnceWithIntakeAssist();
+            if (i < count - 1) sleep(SharedRobotTuning.SHOT_BETWEEN_MS);
+        }
+    }
+
+    /** Turn back to a specific absolute heading using Drivebase.turn(relative). */
+    protected void turnBackTo(double targetHeadingDeg) {
+        double cur = drive.heading();
+        double diff = shortestDiff(targetHeadingDeg, cur);
+        drive.turn(diff, clamp(SharedRobotTuning.TURN_TWIST_CAP, 0.2, 1.0));
+    }
+
+    /** Drive forward N inches using your encoder move(). */
+    protected void driveForwardInches(double inches) {
+        drive.move(inches, /*degrees=*/0, clamp(SharedRobotTuning.DRIVE_MAX_POWER, 0.1, 1.0));
+    }
+
+    /** Safety off across systems. */
+    protected void stopAll() {
+        try { drive.stopAll(); } catch (Exception ignored) {}
+        try { launcher.stop(); }  catch (Exception ignored) {}
+        try { feed.stop(); }      catch (Exception ignored) {}
+        try { intake.stop(); }    catch (Exception ignored) {}
+        try { autoAssist.disable(); } catch (Exception ignored) {}
+    }
+
+    // ==================== Vision / HUD + math ====================
+
     protected final void stopVisionIfAny() {
         try {
             if (vision != null) {
                 vision.setObeliskAutoLatchEnabled(false);
                 vision.stop();
             }
-        } catch (Exception ignored) { /* ignore */ }
+        } catch (Exception ignored) { }
     }
 
-    /** Starts a lightweight HUD that refreshes FIRST-LINE telemetry during Auto. */
     protected final void startHud() {
         if (hudRunning) return;
         hudRunning = true;
@@ -141,23 +218,27 @@ public abstract class BaseAuto extends LinearOpMode {
                         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
                         telemetry.addData("Auto", "Alliance: %s", alliance());
                         telemetry.update();
-                    } catch (Exception ignored) { /* best effort */ }
+                    } catch (Exception ignored) { }
                     try { Thread.sleep(200); } catch (InterruptedException ie) { break; }
                 }
-            } finally {
-                hudRunning = false;
-            }
+            } finally { hudRunning = false; }
         }, "AutoHUD");
         hudThread.setDaemon(true);
         hudThread.start();
     }
 
-    /** Stops the HUD thread. */
     protected final void stopHud() {
         hudRunning = false;
         if (hudThread != null) {
             try { hudThread.join(150); } catch (InterruptedException ignored) {}
             hudThread = null;
         }
+    }
+
+    private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
+    private static double shortestDiff(double target, double current) {
+        double d = ((target - current) % 360 + 360) % 360;
+        if (d > 180) d -= 360;
+        return d;
     }
 }

@@ -1,21 +1,18 @@
 package org.firstinspires.ftc.teamcode.auto;
 
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.Alliance;
 
-/*
- * FILE: Auto_Blue_Target.java
- * PURPOSE:
- * - Blue-side target route example (mirror of Red).
- */
-@Autonomous(name="Auto: Blue Target", group="Auto", preselectTeleOp="TeleOp - Blue")
+/** Blue alliance – Target start. */
 public class Auto_Blue_Target extends BaseAuto {
     @Override protected Alliance alliance() { return Alliance.BLUE; }
 
     @Override
-    protected void runSequence() {
-        drive.move(24, 0, 0.6);
-        drive.turn(-30, 0.5);
-        drive.move(12, -90, 0.6);
+    protected void runSequence() throws InterruptedException {
+        double startHeading = drive.heading();
+        turnToGoalTag(1500);
+        aimSpinUntilReady(2500);
+        fireN(3);
+        turnBackTo(startHeading);
+        driveForwardInches(24.0);
     }
 }

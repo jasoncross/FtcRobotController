@@ -486,26 +486,33 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs));
     }
 
-    /** Plays a crisp **double** pulse (enable). */
+    /** Plays a crisp double pulse (used for ENABLE feedback). */
     private void pulseDouble(Gamepad pad) {
+        double s = togglePulseStrength;
+        int step = 120;    // each pulse length (ms)
+        int gap  = 160;    // pause between pulses (ms) – increased for clarity
         try {
             Gamepad.RumbleEffect effect = new Gamepad.RumbleEffect.Builder()
-                    .addStep(togglePulseStrength, togglePulseStrength, togglePulseStepMs) // pulse 1
-                    .addStep(0, 0, togglePulseGapMs)                                     // gap
-                    .addStep(togglePulseStrength, togglePulseStrength, togglePulseStepMs) // pulse 2
+                    .addStep(s, s, step)   // pulse 1
+                    .addStep(0, 0, gap)    // pause
+                    .addStep(s, s, step)   // pulse 2
                     .build();
             pad.runRumbleEffect(effect);
         } catch (Throwable t) {
-            pad.rumble(togglePulseStrength, togglePulseStrength, togglePulseStepMs * 2 + togglePulseGapMs);
+            // Fallback: approximate with a single long rumble
+            pad.rumble(s, s, step * 2 + gap);
         }
     }
 
-    /** Plays a clean **single** pulse (disable). */
+    /** Plays a single pulse (used for DISABLE feedback). */
     private void pulseSingle(Gamepad pad) {
+        double s = togglePulseStrength;
+        int step = 150;  // slightly longer single buzz
         try {
-            pad.rumble(togglePulseStrength, togglePulseStrength, togglePulseStepMs);
+            pad.rumble(s, s, step);
         } catch (Throwable ignored) { }
     }
+
 
     // ====================================================================================================
     //  AUTOSPEED CONTROLLER HELPERS

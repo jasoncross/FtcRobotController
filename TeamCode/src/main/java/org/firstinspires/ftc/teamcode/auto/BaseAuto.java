@@ -19,12 +19,13 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *
  *       - Subclasses implement alliance() and runSequence().
  *       - VisionAprilTag is started best-effort and stopped automatically.
- *       - The Obelisk AprilTag signal (Tags 21/22/23) is observed in the
- *         prestart loop and shown on the FIRST telemetry line.
+ *       - The Obelisk AprilTag signal (Tags 21/22/23) is RESET at Auto start,
+ *         then observed in the prestart loop and shown on the FIRST telemetry line.
+ *         Once latched, it persists into TeleOp (we do NOT clear it there).
  *
  * NOTES:
- *   - This preserves prior functionality: Drivebase init, runSequence() call,
- *     and end-of-run stopAll(). No autonomous behavior was removed.
+ *   - Preserves prior functionality: Drivebase init, runSequence() call,
+ *     and end-of-run drive.stopAll(). No autonomous behavior removed.
  *   - Vision is optional; if init fails, Auto continues without it.
  *   - Telemetry is kept lightweight in-loop to avoid frame drops.
  *
@@ -64,6 +65,11 @@ public abstract class BaseAuto extends LinearOpMode {
             vision = null;
         }
 
+        // --------------------- Reset Obelisk for this Auto --------------------
+        // Requirement: At the start of AUTO, the observed value should be reset
+        // until seen. It may then persist into TeleOp (we do not clear later).
+        ObeliskSignal.clear();
+
         // --------------------- Pre-Start Loop --------------------------------
         // Let the robot sit on the field and watch the obelisk before start.
         while (!isStarted() && !isStopRequested()) {
@@ -72,7 +78,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 vision.observeObelisk();
             }
 
-            // FIRST LINE: show the currently latched obelisk order
+            // FIRST LINE: show the currently latched obelisk order (or ---)
             telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
             telemetry.addData("Auto", "Alliance: %s", alliance());
 

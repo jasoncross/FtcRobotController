@@ -19,9 +19,11 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
  * - toggle(): flips intake state.
  * - set(boolean): explicitly sets intake on/off.
  * - isOn(): returns current state.
+ * - stop(): immediately turns intake OFF (used by TeleOp StopAll).
  *
  * NOTES:
  * - NEW: Startup ON/OFF is now controlled by TeleOp via DEFAULT_INTAKE_ENABLED.
+ * - NEW (2025-10-23): Added stop() for integration with StopAll.
  */
 public class Intake {
     private final DcMotorEx motor;
@@ -42,4 +44,9 @@ public class Intake {
     }
 
     public boolean isOn() { return on; }
+
+    /** Immediately turns intake OFF (safe to call repeatedly). */
+    public void stop() {
+        set(false);
+    }
 }

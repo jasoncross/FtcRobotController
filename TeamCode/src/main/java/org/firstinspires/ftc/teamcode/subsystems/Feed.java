@@ -20,10 +20,12 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
  * IMPORTANT FUNCTIONS:
  * - feedOnceBlocking(): perform one feed cycle (advance briefly then stop).
  * - canFire(): true if debounce interval has passed.
+ * - stop(): immediately stop the feed motor (used by TeleOp StopAll).
  *
  * NOTES:
  * - Motor is set to BRAKE to hold position/pressure when stopped.
  * - If you add encoder-based feed later, add advance/return ticks and RUN_TO_POSITION logic here.
+ * - NEW (2025-10-23): Added stop() and setPower(double) for integration with StopAll.
  */
 public class Feed {
     public double firePower = 0.9;
@@ -38,6 +40,7 @@ public class Feed {
         motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
     }
 
+    /** Returns true if enough time has passed since last feed to fire again. */
     public boolean canFire() {
         return System.currentTimeMillis() - lastFire >= minCycleMs;
     }
@@ -51,5 +54,17 @@ public class Feed {
         motor.setPower(0);
     }
 
-    private void sleep(int ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
+    /** Immediately stops the feed motor. */
+    public void stop() {
+        motor.setPower(0);
+    }
+
+    /** Helper exposed for safety fallbacks and testing. */
+    public void setPower(double p) {
+        motor.setPower(p);
+    }
+
+    private void sleep(int ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
 }

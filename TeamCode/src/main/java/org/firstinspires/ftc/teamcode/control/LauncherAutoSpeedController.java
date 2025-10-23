@@ -1,87 +1,43 @@
+// ============================================================================
+// FILE:           LauncherAutoSpeedController.java
+// LOCATION:       org/firstinspires/ftc/teamcode/control/
+// PURPOSE:        Compute automatic flywheel TARGET SPEED (in RPM) from robot
+//                 distance (inches) to the GOAL AprilTag using four tunables:
+//                   - nearDistanceIn (inches)
+//                   - nearSpeedRpm   (RPM)
+//                   - farDistanceIn  (inches)
+//                   - farSpeedRpm    (RPM)
+//                 Behavior:
+//                   - LINEAR mapping with EXTRAPOLATION beyond near/far bounds.
+//                   - Holds last auto-computed RPM when tag is not visible.
+//                   - Optional smoothing to reduce abrupt RPM changes.
+//                   - Clean handoff between manual and auto modes.
+// NOTES:
+//   • Units:
+//       - Distance: INCHES (convert from meters upstream if needed).
+//       - Speed:    RPM (matches Launcher closed-loop RPM control).
+//   • Extrapolation:
+//       - If d < nearDistanceIn or d > farDistanceIn, RPM is computed by
+//         extending the same line (no clamping). 12", 130" both work.
+//   • Initial Team Defaults (update via OpModes):
+//       - 24.0 in → 1000 RPM
+//       - 120.0 in → 4500 RPM
+//   • Curve Choice:
+//       - Start LINEAR. If testing shows systematic error, we can swap the
+//         mapping to piecewise/quadratic here without changing callers.
+// METHODS (PUBLIC):
+//   - setParams(nearDistIn, nearRpm, farDistIn, farRpm)
+//   - setSmoothingAlpha(alpha)          // 0.0 = no smoothing (default 0.15)
+//   - setAutoEnabled(enabled)
+//   - isAutoEnabled()
+//   - updateWithVision(distanceInchesOrNull)  // returns target RPM
+//   - onManualOverride(currentManualRpm)      // seeds last RPM & disables auto
+//   - hold()                                  // returns last auto RPM
+//   - getters for tunables and last RPM
+// AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
+// LAST UPDATED:   2025-10-22
+// ============================================================================
 package org.firstinspires.ftc.teamcode.control;
-
-/*
-================================================================================
-FILE:           LauncherAutoSpeedController.java
-LOCATION:       org.firstinspires.ftc.teamcode.control
-PURPOSE:        Compute an automatic flywheel TARGET SPEED (in RPM) from robot
-                distance (inches) to the GOAL AprilTag using four tunables:
-                  - nearDistanceIn  (inches)
-                  - nearSpeedRpm    (RPM)
-                  - farDistanceIn   (inches)
-                  - farSpeedRpm     (RPM)
-                Behavior:
-                  - LINEAR mapping with EXTRAPOLATION beyond near/far bounds.
-                  - Holds last auto-computed RPM when tag is not visible.
-                  - Optional smoothing to reduce abrupt RPM changes.
-                  - Clean handoff between manual and auto modes.
-
-NOTES:
-  • Units:
-      - Distance: INCHES (convert from meters upstream if needed).
-      - Speed:    RPM (matches Launcher closed-loop RPM control).
-  • Extrapolation:
-      - If d < nearDistanceIn or d > farDistanceIn, RPM is computed by extending
-        the same line (no clamping). Example: 12", 130" both produce valid RPM.
-  • Initial Tunables (team defaults to start testing):
-      - nearDistanceIn = 24.0 in
-      - nearSpeedRpm   = 1000.0 RPM
-      - farDistanceIn  = 120.0 in
-      - farSpeedRpm    = 4500.0 RPM
-    Update these after on-field testing via setParams(...).
-  • Curve Choice (Linear vs. Other):
-      - Start LINEAR. Real ballistics aren’t perfectly linear, but with a fixed
-        hood/angle and consistent compression, linear is a strong baseline.
-        If testing shows systematic error between anchors, we can swap mapping to
-        a piecewise or quadratic curve right inside mapDistanceToRpm(...).
-  • Threading:
-      - Intended to be called from the OpMode loop/state machine threads.
-
-METHODS (PUBLIC):
-  - setParams(nearDistIn, nearRpm, farDistIn, farRpm)
-  - setSmoothingAlpha(alpha)          // 0.0 = no smoothing (default 0.15)
-  - setAutoEnabled(enabled)
-  - isAutoEnabled()
-  - updateWithVision(distanceInchesOrNull)   // returns target RPM
-  - onManualOverride(currentManualRpm)       // seeds last RPM & disables auto
-  - hold()                                   // returns last auto RPM
-  - getters for tunables and last RPM
-
-USAGE (TeleOp EXAMPLE):
-  // init:
-  autoCtrl = new LauncherAutoSpeedController();
-  autoCtrl.setParams(24.0, 1000.0, 120.0, 4500.0);
-  autoCtrl.setSmoothingAlpha(0.15);
-
-  // loop:
-  boolean autoEnabled = controllerBindings.isAutoSpeedEnabled();
-  autoCtrl.setAutoEnabled(autoEnabled);
-
-  if (autoEnabled) {
-      Double distInches = vision.getGoalTagDistanceInches(); // null if not seen
-      double targetRpm  = autoCtrl.updateWithVision(distInches);
-      launcher.setTargetRpm(targetRpm);
-  } else {
-      double manualRpm = launcher.getManualTargetRpm(); // your existing source
-      launcher.setTargetRpm(manualRpm);
-      autoCtrl.onManualOverride(manualRpm);
-  }
-
-USAGE (Auto EXAMPLE):
-  autoCtrl = new LauncherAutoSpeedController();
-  autoCtrl.setParams(24.0, 1000.0, 120.0, 4500.0);
-  autoCtrl.setSmoothingAlpha(0.15);
-  autoCtrl.setAutoEnabled(true);
-
-  // periodic:
-  Double distInches = vision.getGoalTagDistanceInches(); // null if lost
-  double targetRpm  = autoCtrl.updateWithVision(distInches);
-  launcher.setTargetRpm(targetRpm);
-
-AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
-LAST UPDATED:   2025-10-22
-================================================================================
-*/
 
 public class LauncherAutoSpeedController {
 
@@ -101,14 +57,7 @@ public class LauncherAutoSpeedController {
     // -------------------------------------------------------------------------
     // CONFIGURATION
     // -------------------------------------------------------------------------
-
-    /**
-     * Configure the four key tunables.
-     * Distances are inches; speeds are RPM.
-     *
-     * If distances are out of order, they (and their paired speeds) are swapped
-     * to maintain a monotonic relationship.
-     */
+    /** Configure the four key tunables (inches + RPM). */
     public void setParams(double nearDistanceIn, double nearSpeedRpm,
                           double farDistanceIn,  double farSpeedRpm) {
         this.nearDistanceIn = nearDistanceIn;
@@ -116,7 +65,7 @@ public class LauncherAutoSpeedController {
         this.farDistanceIn  = farDistanceIn;
         this.farSpeedRpm    = farSpeedRpm;
 
-        // Normalize ordering: nearDistance <= farDistance
+        // Normalize ordering so nearDistance <= farDistance (swap paired values if needed)
         if (this.farDistanceIn < this.nearDistanceIn) {
             double td = this.farDistanceIn; this.farDistanceIn = this.nearDistanceIn; this.nearDistanceIn = td;
             double ts = this.farSpeedRpm;   this.farSpeedRpm   = this.nearSpeedRpm;  this.nearSpeedRpm   = ts;
@@ -135,7 +84,6 @@ public class LauncherAutoSpeedController {
     // -------------------------------------------------------------------------
     // RUNTIME
     // -------------------------------------------------------------------------
-
     /**
      * Update with latest distance to the GOAL AprilTag.
      * @param distanceInchesOrNull  Distance in INCHES, or null if tag not visible.
@@ -157,8 +105,8 @@ public class LauncherAutoSpeedController {
             return lastAutoRpm;
         }
 
-        double dIn   = distanceInchesOrNull;
-        double rpm   = mapDistanceToRpmLinearExtrapolate(dIn);
+        double dIn = distanceInchesOrNull;
+        double rpm = mapDistanceToRpmLinearExtrapolate(dIn);
 
         if (smoothingAlpha > 0.0) {
             rpm = lastAutoRpm + smoothingAlpha * (rpm - lastAutoRpm);
@@ -168,10 +116,7 @@ public class LauncherAutoSpeedController {
         return lastAutoRpm;
     }
 
-    /**
-     * Call when switching to manual control:
-     * seeds lastAutoRpm for a seamless transition back to auto later.
-     */
+    /** Call when switching to manual control to keep transitions seamless. */
     public void onManualOverride(double currentManualRpm) {
         this.lastAutoRpm = currentManualRpm;
         this.autoEnabled = false;
@@ -183,35 +128,26 @@ public class LauncherAutoSpeedController {
     // -------------------------------------------------------------------------
     // TELEMETRY GETTERS
     // -------------------------------------------------------------------------
-
-    public double getLastAutoRpm()       { return lastAutoRpm; }
-    public double getNearDistanceIn()    { return nearDistanceIn; }
-    public double getNearSpeedRpm()      { return nearSpeedRpm; }
-    public double getFarDistanceIn()     { return farDistanceIn; }
-    public double getFarSpeedRpm()       { return farSpeedRpm; }
-    public double getSmoothingAlpha()    { return smoothingAlpha; }
+    public double getLastAutoRpm()    { return lastAutoRpm; }
+    public double getNearDistanceIn() { return nearDistanceIn; }
+    public double getNearSpeedRpm()   { return nearSpeedRpm; }
+    public double getFarDistanceIn()  { return farDistanceIn; }
+    public double getFarSpeedRpm()    { return farSpeedRpm; }
+    public double getSmoothingAlpha() { return smoothingAlpha; }
 
     // -------------------------------------------------------------------------
     // INTERNALS
     // -------------------------------------------------------------------------
-
     /**
      * LINEAR interpolation with EXTRAPOLATION.
-     *
-     * Formula:
      *   slope = (farRPM - nearRPM) / (farDist - nearDist)
      *   rpm(d) = nearRPM + slope * (d - nearDist)
-     *
-     * This continues past both anchors (no clamping), so values like 12" or 130"
-     * still produce a deterministic RPM.
-     *
-     * TODO (future): Replace with piecewise or quadratic mapping if empirical data
-     * shows consistent mid-range deviations from linear.
+     * Continues past both anchors (no clamping).
      */
     private double mapDistanceToRpmLinearExtrapolate(double distanceInches) {
         double span = (farDistanceIn - nearDistanceIn);
         if (Math.abs(span) < 1e-9) {
-            // Degenerate case: distances equal; return near RPM.
+            // Degenerate: distances equal; return near RPM.
             return nearSpeedRpm;
         }
         double slope = (farSpeedRpm - nearSpeedRpm) / span;

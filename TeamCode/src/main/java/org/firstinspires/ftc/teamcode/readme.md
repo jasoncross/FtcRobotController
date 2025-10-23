@@ -32,7 +32,6 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 
 ## Controller Layout (Default Bindings)
 
-### Gamepad 1 – Driver
 | Control | Function |
 |---|---|
 | **Left Stick** | Drive (forward/back & strafe) |
@@ -46,8 +45,9 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **X / Square** | **Toggle Manual RPM LOCK** *(only when AutoSpeed = OFF; holds current RPM)* |
 | **B / Circle** | **Eject** *(temporary RPM = `EjectRPM`, feeds once with Intake Assist, then restores prior RPM)* |
 | **D-pad Up** | **Enable RPM TEST MODE** |
-| **D-pad Left/Right** | **- / + 50 RPM** while TEST MODE is enabled (applies immediately) |
+| **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled (applies immediately) |
 | **D-pad Down** | **Disable TEST MODE** and **STOP** launcher |
+| **Start** | **StopAll toggle** — latches an all-systems stop; press again to resume |
 
 ### Gamepad 2 – Co-Driver
 | Control | Function |
@@ -55,7 +55,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
-| *(RS / RT omitted)* | *(No joystick-based controls on G2)* |
+| **Start** | **StopAll toggle** (same behavior as G1) |
 
 **Startup defaults:**  
 `AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (editable in `TeleOpAllianceBase.java`).
@@ -185,7 +185,7 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 
 ---
 
-## Tunable Reference (by Functional Area)
+## Tunable Reference (by Functional Area) - May be incomplete
 
 | Functional Area | Variable | Default | Purpose | File |
 |---|---|---|---|
@@ -221,6 +221,27 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 | | `aimRumbleMaxPulseMs` | 200 | Max pulse length (ms) for aim rumble | TeleOpAllianceBase.java |
 | | `aimRumbleMinCooldownMs` | 120 | Min cooldown (ms) between pulses | TeleOpAllianceBase.java |
 | | `aimRumbleMaxCooldownMs` | 350 | Max cooldown (ms) between pulses | TeleOpAllianceBase.java |
+
+---
+## StopAll & Auto-Stop Timer (NEW)
+
+### What is StopAll?
+`StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.  
+While STOPPED, TeleOp ignores control outputs and keeps mechanisms at zero power.  
+Press **Start** again to **RESUME** normal control.
+
+- Engaged manually any time by pressing **Start** (G1 or G2).  
+- Also executed automatically by the **Auto-Stop timer** when enabled and the countdown reaches zero.  
+- `stopAll()` is also called in `OpMode.stop()` for safety.
+
+### Auto-Stop Timer
+- **Parameters:**
+  - `autoStopTimerEnabled` (default **false**)
+  - `autoStopTimerTimeSec` (default **119**)
+- **Behavior:**
+  - When enabled, the timer **starts at TeleOp INIT**.
+  - A **top-line telemetry countdown** is shown only while enabled.
+  - At 0, the timer **engages StopAll** (latches STOPPED). Press **Start** to resume if needed.
 
 ---
 

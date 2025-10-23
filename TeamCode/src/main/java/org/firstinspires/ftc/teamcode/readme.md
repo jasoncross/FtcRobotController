@@ -69,7 +69,7 @@ TeamCode/
                             ├── drive/
                             │   └── Drivebase.java
                             ├── util/
-                            │   └── RumbleNotifier.java   <-- Adaptive haptics (aim feedback + toggle pulses)
+                            │   └── RumbleNotifier.java   
                             ├── subsystems/
                             │   ├── Launcher.java
                             │   ├── Feed.java

@@ -34,7 +34,7 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  *   Manages driver input, drivetrain, launcher, feed, intake, and AprilTag-based auto-aim.
  *   Aim-Assist keeps the robot pointed at the alliance GOAL tag while preserving full translation control.
  *   OPTIONAL: Haptic "aim rumble" tells the driver when robot heading is within a small window of the tag,
- *             scaled from softer at the window edge to stronger at center (0° error).
+ *             scaled from softer at the window edge to stronger and faster near center (0° error).
  *
  * CONTROLS (Gamepad 1):
  *   Left stick ........ Forward/back + strafe
@@ -110,10 +110,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private RumbleNotifier aimRumbleDriver1;
     private boolean aimRumbleEnabled       = true;   // master enable/disable
     private double  aimRumbleDeg           = 2.5;    // ±degrees window for "on target"
-    private double  aimRumbleMinStrength   = 0.15;   // intensity at the window edge
+
+    // Intensity scales edge→center
+    private double  aimRumbleMinStrength   = 0.10;   // intensity at the window edge
     private double  aimRumbleMaxStrength   = 0.65;   // intensity at 0° error
-    private int     aimRumblePulseMs       = 180;    // buzz length (ms)
-    private int     aimRumbleCooldownMs    = 250;    // min gap between buzzes (ms)
+
+    // Pulse duration scales edge→center
+    private int     aimRumbleMinPulseMs    = 120;    // shorter at edge
+    private int     aimRumbleMaxPulseMs    = 200;    // longer near center
+
+    // Cooldown scales center→edge (shorter near center → faster pulses)
+    private int     aimRumbleMinCooldownMs = 120;    // fastest cadence near center
+    private int     aimRumbleMaxCooldownMs = 350;    // slowest cadence at edge
 
     // ---------------- Toggle Pulse Settings ----------------
     // PURPOSE: Double-pulse the controller on key state changes for clarity to the driver.
@@ -321,14 +329,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
     //  SECTION:       HAPTICS (RUMBLE) HELPERS
     //  PURPOSE:       Initialization, per-loop aim rumble update, and toggle double-pulse.
     //  CONFIG:        aimRumbleEnabled (master), aimRumbleDeg (± degrees),
-    //                 aimRumbleMinStrength/aimRumbleMaxStrength, aimRumblePulseMs, aimRumbleCooldownMs.
+    //                 StrengthRange[min..max], PulseRange[min..max], CooldownRange[min..max].
     // ====================================================================================================
     private void initAimRumble() {
         aimRumbleDriver1 = new RumbleNotifier(gamepad1);
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
         aimRumbleDriver1.setStrengthRange(aimRumbleMinStrength, aimRumbleMaxStrength);
-        aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
-        aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
+        aimRumbleDriver1.setPulseRange(aimRumbleMinPulseMs, aimRumbleMaxPulseMs);
+        aimRumbleDriver1.setCooldownRange(aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs);
     }
 
     private void updateAimRumbleWith(double yawErrorDeg, boolean tagVisible) {
@@ -337,14 +345,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Keep helper in sync with any runtime tweaks (cheap, safe)
         aimRumbleDriver1.setThresholdDeg(aimRumbleDeg);
         aimRumbleDriver1.setStrengthRange(aimRumbleMinStrength, aimRumbleMaxStrength);
-        aimRumbleDriver1.setPulseMs(aimRumblePulseMs);
-        aimRumbleDriver1.setCooldownMs(aimRumbleCooldownMs);
+        aimRumbleDriver1.setPulseRange(aimRumbleMinPulseMs, aimRumbleMaxPulseMs);
+        aimRumbleDriver1.setCooldownRange(aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs);
 
         // Use smoothed heading (deg) and current visibility.
         aimRumbleDriver1.update(yawErrorDeg, tagVisible);
 
         telemetry.addData("Rumble Window (±deg)", aimRumbleDeg);
-        telemetry.addData("Rumble Scale", String.format("min=%.2f max=%.2f", aimRumbleMinStrength, aimRumbleMaxStrength));
+        telemetry.addData("Rumble Scale", String.format("S[%.2f..%.2f] P[%d..%d] Cd[%d..%d]",
+                aimRumbleMinStrength, aimRumbleMaxStrength,
+                aimRumbleMinPulseMs, aimRumbleMaxPulseMs,
+                aimRumbleMinCooldownMs, aimRumbleMaxCooldownMs));
     }
 
     /** Plays a crisp double-pulse on the given gamepad for state toggles (Aim/ManualSpeed). */
@@ -357,7 +368,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     .build();
             pad.runRumbleEffect(effect);
         } catch (Throwable t) {
-            // Fallback: single pulse if effect not supported (very old SDK/controllers)
+            // Fallback: single pulse if effect not supported (older SDK/controllers)
             pad.rumble(togglePulseStrength, togglePulseStrength, togglePulseStepMs);
         }
     }

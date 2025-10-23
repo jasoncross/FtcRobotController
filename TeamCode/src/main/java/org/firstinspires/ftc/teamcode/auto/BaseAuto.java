@@ -1,65 +1,110 @@
 package org.firstinspires.ftc.teamcode.auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
+import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
-import org.firstinspires.ftc.teamcode.util.ObeliskSignal;
 
 /*
+ * ============================================================================
  * FILE: BaseAuto.java
- * LOCATION: teamcode/.../auto/
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE:
- * - Common autonomous scaffolding: initialize Drivebase, waitForStart, run a subclass sequence,
- *   cleanly stop, and display end-of-auto message (Driver Station will auto-load TeleOp).
+ *   Abstract base class for all DECODE season Autonomous OpModes.
+ *   Provides common setup/teardown for the drivetrain and (optionally) vision,
+ *   ensures mechanisms are made safe at the end, and exposes a simple template:
  *
- * TUNABLES:
- * - None here; tune inside Drivebase or individual Auto subclasses.
+ *       - Subclasses implement alliance() and runSequence().
+ *       - VisionAprilTag is started best-effort and stopped automatically.
+ *       - The Obelisk AprilTag signal (Tags 21/22/23) is observed in the
+ *         prestart loop and shown on the FIRST telemetry line.
  *
- * IMPORTANT FUNCTIONS:
- * - alliance(): each Auto returns RED/BLUE to share configs if needed.
- * - runSequence(): implement the actual path using move()/turn() and subsystems.
+ * NOTES:
+ *   - This preserves prior functionality: Drivebase init, runSequence() call,
+ *     and end-of-run stopAll(). No autonomous behavior was removed.
+ *   - Vision is optional; if init fails, Auto continues without it.
+ *   - Telemetry is kept lightweight in-loop to avoid frame drops.
+ *
+ * METHODS (for subclasses to implement/override):
+ *   - Alliance alliance(): which side are we running?
+ *   - void runSequence() throws InterruptedException: main autonomous steps.
+ *   - (Optional) void onPreStartLoop(): hook for additional prestart telemetry.
+ * ============================================================================
  */
 public abstract class BaseAuto extends LinearOpMode {
-    protected VisionAprilTag vision;
 
+    // ----------------------- Shared Subsystems -------------------------------
     protected Drivebase drive;
+    protected VisionAprilTag vision; // optional; may be null if camera absent
 
+    // ----------------------- Template Methods --------------------------------
+    /** Return the alliance (RED/BLUE) for this Auto variant. */
     protected abstract Alliance alliance();
+
+    /** Implement the autonomous path/sequence here. */
     protected abstract void runSequence() throws InterruptedException;
 
+    /** Optional hook for subclasses to add prestart telemetry/logic. */
+    protected void onPreStartLoop() { /* no-op by default */ }
+
+    // ----------------------- OpMode Lifecycle --------------------------------
     @Override
     public void runOpMode() throws InterruptedException {
+        // Drivetrain
         drive = new Drivebase(this);
 
-        // Optional vision for obelisk signal
+        // Vision (optional – keep Auto robust even if no camera/driver issue)
         try {
             vision = new VisionAprilTag();
             vision.init(hardwareMap, "Webcam 1");
-        } catch (Exception ignored) { vision = null; }
+        } catch (Exception ex) {
+            vision = null;
+        }
 
-        // Prestart loop: show obelisk on FIRST LINE and let it latch in memory
+        // --------------------- Pre-Start Loop --------------------------------
+        // Let the robot sit on the field and watch the obelisk before start.
         while (!isStarted() && !isStopRequested()) {
-            if (vision != null) vision.observeObelisk();
+            if (vision != null) {
+                // Latch obelisk order (Tags 21/22/23) into shared memory
+                vision.observeObelisk();
+            }
+
+            // FIRST LINE: show the currently latched obelisk order
             telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
             telemetry.addData("Auto", "Alliance: %s", alliance());
+
+            // Let subclass add extra prestart info without spamming new lines
+            onPreStartLoop();
+
             telemetry.update();
             sleep(20);
         }
 
-        waitForStart();
+        // Safety check
         if (isStopRequested()) {
-            if (vision != null) vision.stop();
+            stopVisionIfAny();
             return;
         }
 
+        // --------------------- Autonomous Sequence ---------------------------
         runSequence();
-        drive.stopAll();
 
-        if (vision != null) vision.stop();
+        // --------------------- Cleanup / Safety ------------------------------
+        drive.stopAll();       // make sure all motion/mechanisms are stopped
+        stopVisionIfAny();     // stop camera cleanly
 
         telemetry.addLine("Auto complete – DS will queue TeleOp.");
         telemetry.update();
         sleep(750);
     }
+
+    // ----------------------- Helpers ----------------------------------------
+    protected final void stopVisionIfAny() {
+        try {
+            if (vision != null) vision.stop();
+        } catch (Exception ignored) { /* ignore */ }
+    }
+}

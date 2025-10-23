@@ -62,7 +62,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
-import org.firstinspires.ftc.teamcode.util.ObeliskSignal;
+import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 
 import static java.lang.Math.*;
 

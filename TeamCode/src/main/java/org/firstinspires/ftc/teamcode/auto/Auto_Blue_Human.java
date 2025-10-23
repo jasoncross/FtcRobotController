@@ -1,22 +1,20 @@
-// ============================================================================
-// FILE:    Auto_Blue_Human.java
-// LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
-//
-// PURPOSE:
-//   Blue-side HUMAN start. Runs the shared autonomous sequence.
-//
-// NOTES:
-//   - Tunables centralized in config/SharedRobotTuning.java.
-//   - Preselects "TeleOp - Blue" at end of Auto.
-// ============================================================================
 package org.firstinspires.ftc.teamcode.auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.Alliance;
 
+/*
+ * START POSE (from field diagram):
+ *   • Blue Human: SOUTH firing triangle, WEST side, FACING NORTH.
+ *   • Goal is to the RIGHT/EAST → prefer CW scan first.
+ */
 @Autonomous(name="Auto: Blue Human", group="Auto", preselectTeleOp="TeleOp - Blue")
 public class Auto_Blue_Human extends BaseAuto {
     @Override protected Alliance alliance() { return Alliance.BLUE; }
+    @Override protected String startPoseDescription() {
+        return "Blue Human — South triangle (west side), facing NORTH";
+    }
+    @Override protected boolean initialScanCW() { return true; } // CW first (right)
 
     @Override
     protected void runSequence() throws InterruptedException {
@@ -24,6 +22,7 @@ public class Auto_Blue_Human extends BaseAuto {
         turnToGoalTag(1500);
         aimSpinUntilReady(2500);
         fireN(3);
+        // Human-side: return to start heading + drive upfield 24"
         turnBackTo(startHeading);
         driveForwardInches(24.0);
     }

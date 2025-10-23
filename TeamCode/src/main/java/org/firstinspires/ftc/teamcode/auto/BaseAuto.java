@@ -19,16 +19,17 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *
  *       - Subclasses implement alliance() and runSequence().
  *       - VisionAprilTag is started best-effort and stopped automatically.
- *       - The Obelisk AprilTag signal (Tags 21/22/23) is RESET at Auto start,
- *         observed during the prestart loop, and continuously polled in a
- *         lightweight background watcher thread while Auto runs.
- *         Once latched, it persists into TeleOp (we do NOT clear it there).
+ *       - Obelisk AprilTag signal (Tags 21/22/23) is RESET at Auto start,
+ *         observed in prestart, and continuously latched via Vision's own
+ *         background poller during Auto so late sightings are not missed.
+ *       - A lightweight HUD thread refreshes FIRST-LINE telemetry during Auto
+ *         so operators can see updates while the sequence is running.
  *
  * NOTES:
  *   - Preserves prior functionality: Drivebase init, runSequence() call,
  *     and end-of-run drive.stopAll(). No autonomous behavior removed.
  *   - Vision is optional; if init fails, Auto continues without it.
- *   - Telemetry is updated on the main thread only (watcher does NOT touch it).
+ *   - The HUD thread only writes telemetry; all motion logic remains unchanged.
  *
  * METHODS (for subclasses to implement/override):
  *   - Alliance alliance(): which side are we running?
@@ -42,9 +43,9 @@ public abstract class BaseAuto extends LinearOpMode {
     protected Drivebase drive;
     protected VisionAprilTag vision; // optional; may be null if camera absent
 
-    // ----------------------- Obelisk Watcher --------------------------------
-    private volatile boolean obeliskWatcherRunning = false;
-    private Thread obeliskWatcherThread = null;
+    // ----------------------- HUD (telemetry refresher) -----------------------
+    private volatile boolean hudRunning = false;
+    private Thread hudThread = null;
 
     // ----------------------- Template Methods --------------------------------
     /** Return the alliance (RED/BLUE) for this Auto variant. */
@@ -100,20 +101,19 @@ public abstract class BaseAuto extends LinearOpMode {
             return;
         }
 
-        // --------------------- Start background watcher ----------------------
-        startObeliskWatcher();
+        // --------------------- Enable vision auto-latch + HUD -----------------
+        if (vision != null) vision.setObeliskAutoLatchEnabled(true);
+        startHud();
 
         // --------------------- Autonomous Sequence ---------------------------
         try {
             runSequence();
         } finally {
-            // ensure watcher is stopped even if runSequence throws
-            stopObeliskWatcher();
+            // --------------------- Cleanup / Safety --------------------------
+            stopHud();
+            drive.stopAll(); // make sure all motion/mechanisms are stopped
+            stopVisionIfAny(); // stop camera cleanly
         }
-
-        // --------------------- Cleanup / Safety ------------------------------
-        drive.stopAll();       // make sure all motion/mechanisms are stopped
-        stopVisionIfAny();     // stop camera cleanly
 
         telemetry.addLine("Auto complete – DS will queue TeleOp.");
         telemetry.update();
@@ -123,43 +123,41 @@ public abstract class BaseAuto extends LinearOpMode {
     // ----------------------- Helpers ----------------------------------------
     protected final void stopVisionIfAny() {
         try {
-            if (vision != null) vision.stop();
+            if (vision != null) {
+                vision.setObeliskAutoLatchEnabled(false);
+                vision.stop();
+            }
         } catch (Exception ignored) { /* ignore */ }
     }
 
-    /** Starts a lightweight background watcher that polls obelisk tags. */
-    protected final void startObeliskWatcher() {
-        if (vision == null || obeliskWatcherRunning) return;
-        obeliskWatcherRunning = true;
-        obeliskWatcherThread = new Thread(() -> {
+    /** Starts a lightweight HUD that refreshes FIRST-LINE telemetry during Auto. */
+    protected final void startHud() {
+        if (hudRunning) return;
+        hudRunning = true;
+        hudThread = new Thread(() -> {
             try {
-                // IMPORTANT: don't use opModeIsActive() here; it's not reliable off the OpMode thread.
-                while (obeliskWatcherRunning && !isStopRequested()) {
+                while (hudRunning && !isStopRequested()) {
                     try {
-                        vision.observeObelisk(); // just latches to ObeliskSignal
-                    } catch (Exception ignored) { /* keep trying */ }
-                    try {
-                        Thread.sleep(75); // ~13 Hz light polling
-                    } catch (InterruptedException ie) {
-                        break;
-                    }
+                        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+                        telemetry.addData("Auto", "Alliance: %s", alliance());
+                        telemetry.update();
+                    } catch (Exception ignored) { /* best effort */ }
+                    try { Thread.sleep(200); } catch (InterruptedException ie) { break; }
                 }
             } finally {
-                obeliskWatcherRunning = false;
+                hudRunning = false;
             }
-        }, "ObeliskWatcher");
-        obeliskWatcherThread.setDaemon(true);
-        obeliskWatcherThread.start();
+        }, "AutoHUD");
+        hudThread.setDaemon(true);
+        hudThread.start();
     }
 
-    /** Stops the background obelisk watcher thread. */
-    protected final void stopObeliskWatcher() {
-        obeliskWatcherRunning = false;
-        if (obeliskWatcherThread != null) {
-            try {
-                obeliskWatcherThread.join(150);
-            } catch (InterruptedException ignored) { }
-            obeliskWatcherThread = null;
+    /** Stops the HUD thread. */
+    protected final void stopHud() {
+        hudRunning = false;
+        if (hudThread != null) {
+            try { hudThread.join(150); } catch (InterruptedException ignored) {}
+            hudThread = null;
         }
     }
 }

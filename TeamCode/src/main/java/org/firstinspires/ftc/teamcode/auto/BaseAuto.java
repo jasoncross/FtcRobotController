@@ -20,14 +20,15 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *       - Subclasses implement alliance() and runSequence().
  *       - VisionAprilTag is started best-effort and stopped automatically.
  *       - The Obelisk AprilTag signal (Tags 21/22/23) is RESET at Auto start,
- *         then observed in the prestart loop and shown on the FIRST telemetry line.
+ *         observed during the prestart loop, and continuously polled in a
+ *         lightweight background watcher thread while Auto runs.
  *         Once latched, it persists into TeleOp (we do NOT clear it there).
  *
  * NOTES:
  *   - Preserves prior functionality: Drivebase init, runSequence() call,
  *     and end-of-run drive.stopAll(). No autonomous behavior removed.
  *   - Vision is optional; if init fails, Auto continues without it.
- *   - Telemetry is kept lightweight in-loop to avoid frame drops.
+ *   - Telemetry is updated on the main thread only (watcher does NOT touch it).
  *
  * METHODS (for subclasses to implement/override):
  *   - Alliance alliance(): which side are we running?
@@ -40,6 +41,10 @@ public abstract class BaseAuto extends LinearOpMode {
     // ----------------------- Shared Subsystems -------------------------------
     protected Drivebase drive;
     protected VisionAprilTag vision; // optional; may be null if camera absent
+
+    // ----------------------- Obelisk Watcher --------------------------------
+    private volatile boolean obeliskWatcherRunning = false;
+    private Thread obeliskWatcherThread = null;
 
     // ----------------------- Template Methods --------------------------------
     /** Return the alliance (RED/BLUE) for this Auto variant. */
@@ -95,8 +100,16 @@ public abstract class BaseAuto extends LinearOpMode {
             return;
         }
 
+        // --------------------- Start background watcher ----------------------
+        startObeliskWatcher();
+
         // --------------------- Autonomous Sequence ---------------------------
-        runSequence();
+        try {
+            runSequence();
+        } finally {
+            // ensure watcher is stopped even if runSequence throws
+            stopObeliskWatcher();
+        }
 
         // --------------------- Cleanup / Safety ------------------------------
         drive.stopAll();       // make sure all motion/mechanisms are stopped
@@ -112,5 +125,40 @@ public abstract class BaseAuto extends LinearOpMode {
         try {
             if (vision != null) vision.stop();
         } catch (Exception ignored) { /* ignore */ }
+    }
+
+    /** Starts a lightweight background watcher that polls obelisk tags. */
+    protected final void startObeliskWatcher() {
+        if (vision == null || obeliskWatcherRunning) return;
+        obeliskWatcherRunning = true;
+        obeliskWatcherThread = new Thread(() -> {
+            try {
+                while (obeliskWatcherRunning && opModeIsActive() && !isStopRequested()) {
+                    try {
+                        vision.observeObelisk(); // just latches to ObeliskSignal
+                    } catch (Exception ignored) { /* keep trying */ }
+                    try {
+                        Thread.sleep(75); // ~13 Hz light polling
+                    } catch (InterruptedException ie) {
+                        break;
+                    }
+                }
+            } finally {
+                obeliskWatcherRunning = false;
+            }
+        }, "ObeliskWatcher");
+        obeliskWatcherThread.setDaemon(true);
+        obeliskWatcherThread.start();
+    }
+
+    /** Stops the background obelisk watcher thread. */
+    protected final void stopObeliskWatcher() {
+        obeliskWatcherRunning = false;
+        if (obeliskWatcherThread != null) {
+            try {
+                obeliskWatcherThread.join(150);
+            } catch (InterruptedException ignored) { }
+            obeliskWatcherThread = null;
+        }
     }
 }

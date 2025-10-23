@@ -25,6 +25,9 @@ import static org.firstinspires.ftc.teamcode.input.ControllerBindings.Trigger;
 // === HAPTICS (RUMBLE) ===
 import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
 
+// === AUTO LAUNCHER SPEED (RPM) ===
+import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
+
 /*
  * FILE: TeleOpAllianceBase.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
@@ -61,6 +64,8 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
  *   - See ControllerBindings.java header for authoritative binding list.
  *   - Gamepad rumble requires a controller with haptics (e.g., Xbox/PS). Some pads (e.g., Logitech F310) do not rumble.
  *   - Aim rumble policy: ONLY active when Aim-Assist is OFF (manual aiming).
+ *   - Auto RPM: when manualSpeedMode == false and RPM Test Mode is OFF, launcher RPM is computed from AprilTag distance
+ *               using LauncherAutoSpeedController (linear with extrapolation + hold-last if tag is lost).
  */
 
 public abstract class TeleOpAllianceBase extends OpMode {
@@ -129,6 +134,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private int    togglePulseStepMs       = 120;    // each step duration
     private int    togglePulseGapMs        = 80;     // gap between pulses (handled by effect)
 
+    // ---------------- Auto Launcher Speed (RPM) ----------------
+    // PURPOSE: Compute launcher target RPM from AprilTag distance when manualSpeedMode == false.
+    private LauncherAutoSpeedController autoCtrl;
+
+    // INITIAL TUNABLES (team defaults; adjust via code or FTC Dashboard later)
+    private double autoNearDistIn = 24.0;
+    private double autoNearRpm    = 1000.0;
+    private double autoFarDistIn  = 120.0;
+    private double autoFarRpm     = 4500.0;
+
+    // Optional smoothing 0..1 (0 = off). Try 0.10–0.30 for gentle smoothing.
+    private double autoSmoothingAlpha = 0.15;
+
     // Local clamp helper (keeps RPM in range)
     private static double clamp(double v, double lo, double hi) {
         return Math.max(lo, Math.min(hi, v));
@@ -166,8 +184,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 () -> { aimEnabled = true;  pulseDoubleToggle(gamepad1); },
                 () -> { aimEnabled = false; pulseDoubleToggle(gamepad1); })
             .bindToggle(Pad.G1, Btn.Y,
-                () -> { manualSpeedMode = true;  pulseDoubleToggle(gamepad1); },
-                () -> { manualSpeedMode = false; pulseDoubleToggle(gamepad1); })
+                // -> MANUAL ON
+                () -> {
+                    manualSpeedMode = true;
+                    // Seed auto controller with current launcher RPM for seamless return to auto.
+                    ensureAutoCtrl(); // make sure it's constructed before we access it
+                    autoCtrl.onManualOverride(launcher.getCurrentRpm());
+                    autoCtrl.setAutoEnabled(false);
+                    pulseDoubleToggle(gamepad1);
+                },
+                // -> AUTO ON
+                () -> {
+                    manualSpeedMode = false;
+                    ensureAutoCtrl();
+                    autoCtrl.setAutoEnabled(true);
+                    pulseDoubleToggle(gamepad1);
+                })
             .bindTriggerAxis(Pad.G1, Trigger.RT, (rt0to1) -> {
                 if (manualSpeedMode && !rpmTestEnabled) {
                     double target = rpmBottom + rt0to1 * (rpmTop - rpmBottom);
@@ -210,11 +242,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
             .bindPress(Pad.G2, Btn.LB, () -> feed.feedOnceBlocking())
             .bindPress(Pad.G2, Btn.RB, () -> intake.toggle())
             .bindToggle(Pad.G2, Btn.Y,
-                () -> { manualSpeedMode = true;  pulseDoubleToggle(gamepad1); },
-                () -> { manualSpeedMode = false; pulseDoubleToggle(gamepad1); });
+                () -> {
+                    manualSpeedMode = true;
+                    ensureAutoCtrl();
+                    autoCtrl.onManualOverride(launcher.getCurrentRpm());
+                    autoCtrl.setAutoEnabled(false);
+                    pulseDoubleToggle(gamepad1);
+                },
+                () -> {
+                    manualSpeedMode = false;
+                    ensureAutoCtrl();
+                    autoCtrl.setAutoEnabled(true);
+                    pulseDoubleToggle(gamepad1);
+                });
 
         // ---- Haptics Init ----
         initAimRumble();
+
+        // ---- Auto RPM Controller Init ----
+        ensureAutoCtrl(); // builds and configures with current defaults
 
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addLine("Bindings: See ControllerBindings.java for bound functions.");
@@ -228,7 +274,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ==============================================================
         controls.update(gamepad1, gamepad2);
 
-        // RPM Test Mode override (wins over RT mapping in the same loop)
+        // ==============================================================
+        // RPM TEST MODE OVERRIDE (wins over manual/auto in this loop)
+        // ==============================================================
         if (rpmTestEnabled) {
             launcher.setTargetRpm(rpmTestTarget);
         }
@@ -272,7 +320,23 @@ public abstract class TeleOpAllianceBase extends OpMode {
         drive.drive(driveY, strafeX, twist);
 
         // ==============================================================
-        // TELEMETRY OUTPUT (original + vision)
+        // AUTO RPM UPDATE (applies only when manualSpeedMode == false AND test mode is OFF)
+        // - Uses smoothed distance when available (inches).
+        // - Holds last RPM when tag not visible.
+        // ==============================================================
+        if (!manualSpeedMode && !rpmTestEnabled) {
+            ensureAutoCtrl();
+            Double distIn = null;
+            if (smRangeMeters != null) {
+                double d = smRangeMeters * M_TO_IN;
+                if (!Double.isNaN(d) && Double.isFinite(d)) distIn = d;
+            }
+            double targetRpm = autoCtrl.updateWithVision(distIn);
+            launcher.setTargetRpm(targetRpm);
+        }
+
+        // ==============================================================
+        // TELEMETRY OUTPUT (original + vision + auto RPM)
         // ==============================================================
         telemetry.addData("Alliance", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
@@ -291,14 +355,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("Seen Tag IDs", seenIds.isEmpty() ? "[]" : seenIds.toString());
 
         double headingDeg = (smHeadingDeg == null) ? Double.NaN : smHeadingDeg;
-        double distM = vision.getScaledRange(goalDet);
-        double distIn = Double.isNaN(distM) ? Double.NaN : distM * 39.3701;
+
+        // Prefer smoothed range for RPM stability; still show a direct sample for transparency
+        double distM_direct = vision.getScaledRange(goalDet);
+        double distIn_direct = Double.isNaN(distM_direct) ? Double.NaN : distM_direct * 39.3701;
+        double distIn_smoothed = (smRangeMeters == null) ? Double.NaN : smRangeMeters * 39.3701;
 
         boolean tagVisible = (goalDet != null);
 
         telemetry.addData("Goal Tag Visible", tagVisible);
         telemetry.addData("Goal Heading (deg)", Double.isNaN(headingDeg) ? "---" : String.format("%.1f", headingDeg));
-        telemetry.addData("Tag Distance (in)", Double.isNaN(distIn) ? "---" : String.format("%.1f", distIn));
+        telemetry.addData("Tag Distance (in)", Double.isNaN(distIn_direct) ? "---" : String.format("%.1f (direct)", distIn_direct));
+        telemetry.addData("Tag Distance (in, sm)", Double.isNaN(distIn_smoothed) ? "---" : String.format("%.1f (sm)", distIn_smoothed));
+
+        // Auto RPM telemetry
+        telemetry.addData("AutoRPM Enabled", (!manualSpeedMode && !rpmTestEnabled));
+        telemetry.addData("AutoRPM Tunables", "Near: %.0f in @ %.0f rpm | Far: %.0f in @ %.0f rpm",
+                autoNearDistIn, autoNearRpm, autoFarDistIn, autoFarRpm);
+        telemetry.addData("AutoRPM Smoothing", "%.2f", autoSmoothingAlpha);
+        telemetry.addData("AutoRPM Last", "%.0f", (autoCtrl != null ? autoCtrl.getLastAutoRpm() : 0.0));
 
         // ==============================================================
         // AIM RUMBLE UPDATE (HAPTICS)
@@ -370,6 +445,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } catch (Throwable t) {
             // Fallback: single pulse if effect not supported (older SDK/controllers)
             pad.rumble(togglePulseStrength, togglePulseStrength, togglePulseStepMs);
+        }
+    }
+
+    // ====================================================================================================
+    //  SECTION:       AUTO RPM CONTROLLER HELPERS
+    //  PURPOSE:       Construction + parameterization in one place.
+    // ====================================================================================================
+    private void ensureAutoCtrl() {
+        if (autoCtrl == null) {
+            autoCtrl = new LauncherAutoSpeedController();
+            autoCtrl.setParams(autoNearDistIn, autoNearRpm, autoFarDistIn, autoFarRpm);
+            autoCtrl.setSmoothingAlpha(autoSmoothingAlpha);
+            autoCtrl.setAutoEnabled(!manualSpeedMode);
         }
     }
 }

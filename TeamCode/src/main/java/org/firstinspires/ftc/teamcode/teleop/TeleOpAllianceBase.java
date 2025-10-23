@@ -110,7 +110,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private RumbleNotifier aimRumbleDriver1;
     private boolean aimRumbleEnabled       = true;   // master enable/disable
     private double  aimRumbleDeg           = 2.5;    // ±degrees window for "on target"
-    private double  aimRumbleMinStrength   = 0.25;   // intensity at the window edge
+    private double  aimRumbleMinStrength   = 0.15;   // intensity at the window edge
     private double  aimRumbleMaxStrength   = 0.65;   // intensity at 0° error
     private int     aimRumblePulseMs       = 180;    // buzz length (ms)
     private int     aimRumbleCooldownMs    = 250;    // min gap between buzzes (ms)

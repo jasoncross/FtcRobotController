@@ -17,6 +17,13 @@
 //   is first enabled with no visible tag, the launcher runs at InitialAutoDefaultSpeed
 //   until a tag is seen.
 //
+//   NEW (2025-10-23): End-of-match safety controls
+//   • Start button toggles a latched STOP state (StopAll). When STOPPED, all powered
+//     systems (drive, launcher, feed, intake) are forced off each loop and controls
+//     are ignored. Press Start again to RESUME.
+//   • Optional Auto-Stop timer (defaults disabled; 119s) starts at TeleOp INIT,
+//     renders a top-line countdown (only when enabled), and calls StopAll at 0.
+//
 // CONTROLS (Gamepad 1):
 //   Left stick ............. Forward/back + strafe
 //   Right stick X .......... Rotation (disabled while AutoAim is ON or in grace)
@@ -32,11 +39,13 @@
 //   D-pad Up ............... Enable RPM TEST MODE
 //   D-pad Left/Right ....... -/+ 50 RPM while TEST MODE enabled (applies immediately)
 //   D-pad Down ............. Disable RPM TEST MODE and STOP launcher
+//   Start (G1 or G2) ....... TOGGLE StopAll latch (STOP ↔ RESUME)
 //
 // TELEMETRY:
 //   Alliance, BrakeCap, Intake state, AutoSpeed, ManualLock, RT, RPM Target/Actual,
 //   AutoAim Enabled, Tag Visible, Tag Heading (deg), Tag Distance (in/raw+smoothed),
 //   AutoRPM In/Out, AutoRPM tunables/smoothing, AutoAim grace countdown.
+//   NEW: When autoStopTimerEnabled == true, a top-line ⏱ AutoStop countdown is shown.
 //
 // NOTES:
 //   - AutoAim enable requires a visible goal tag. If tag is lost, a GRACE TIMER runs
@@ -44,6 +53,8 @@
 //   - While AutoAim is ON (including grace), right-stick rotation is ignored.
 //   - Manual aim-window rumble runs ONLY when AutoAim is OFF.
 //   - Rumble helpers use gamepad.rumble(left,right,durationMs) for SDK compatibility.
+//   - StopAll latches powered systems OFF until Start is pressed again. A StopAll is
+//     also invoked on OpMode.stop() for safety.
 //
 // AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
 // LAST UPDATED:   2025-10-23
@@ -77,6 +88,8 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
 
 // === AUTO LAUNCHER SPEED (RPM) ===
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
+
+import java.util.Locale;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     protected abstract Alliance alliance();
@@ -165,6 +178,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private int    intakeAssistMs = 250;   // ms to run intake if it was OFF during a feed/eject
     private double ejectRpm       = 300.0; // temporary launcher RPM used during eject
     private int    ejectTimeMs    = 300;   // how long to hold eject RPM while feeding
+
+    // ---------------- NEW: StopAll / Latch & Auto-Stop Timer ----------------
+    /** When true, all outputs are forced to zero every loop until Start is pressed again. */
+    private boolean stopLatched = false;
+
+    /** Auto-Stop timer master enable (defaults false). When true, shows top-line countdown and calls StopAll at 0. */
+    protected boolean autoStopTimerEnabled = false;
+
+    /** Auto-Stop timer seconds from TeleOp INIT (defaults 119). */
+    protected int autoStopTimerTimeSec = 119;
+
+    /** Timestamp captured at TeleOp INIT; used as the timer start. */
+    private long teleopInitMillis = 0L;
+
+    /** Ensures the timer only trips StopAll once at expiry. */
+    private boolean autoStopTriggered = false;
+
+    /** Debounce for raw Start-button edge detection while STOPPED (works even when controls callbacks are bypassed). */
+    private boolean lastStartG1 = false, lastStartG2 = false;
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -311,6 +343,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
+        // NOTE: Start button handling is implemented via raw edge-detect in loop()
+        // to ensure it works even while STOPPED (we bypass most controls during STOP).
+
         // =========================================================================
         // ========================= END CONTROLLER BINDINGS ========================
         // =========================================================================
@@ -322,20 +357,58 @@ public abstract class TeleOpAllianceBase extends OpMode {
         ensureAutoCtrl();
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
+        // ---- Auto-Stop Timer: base timestamp at TeleOp INIT ----
+        teleopInitMillis = System.currentTimeMillis();
+        autoStopTriggered = false;
+        stopLatched = false; // start un-stopped
+
         // ---- FIRST LINE telemetry (init): obelisk memory ----
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
-
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addData("Startup Defaults", "AutoSpeed=%s  AutoAim=%s  Intake=%s",
                 DEFAULT_AUTOSPEED_ENABLED ? "ON" : "OFF",
                 DEFAULT_AUTOAIM_ENABLED   ? "ON" : "OFF",
                 DEFAULT_INTAKE_ENABLED    ? "ON" : "OFF");
+        if (autoStopTimerEnabled) {
+            telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
+        }
         telemetry.update();
     }
 
     @Override
     public void loop() {
-        // Update bindings
+        // -------- High-priority Start edge-detect (works even while STOPPED) --------
+        boolean start1 = gamepad1.start, start2 = gamepad2.start;
+        boolean startPressed = (!lastStartG1 && start1) || (!lastStartG2 && start2);
+        lastStartG1 = start1; lastStartG2 = start2;
+        if (startPressed) toggleStopLatch(); // toggles STOP ↔ RESUME (calls stopAll() when entering STOP)
+
+        // -------- Optional Auto-Stop timer (top-line telemetry only when enabled) --------
+        if (autoStopTimerEnabled) {
+            long now = System.currentTimeMillis();
+            long elapsedMs = Math.max(0, now - teleopInitMillis);
+            long remainingMs = Math.max(0, (long) autoStopTimerTimeSec * 1000L - elapsedMs);
+            int remSec = (int)Math.ceil(remainingMs / 1000.0);
+            int mm = remSec / 60, ss = remSec % 60;
+
+            telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: %02d:%02d %s",
+                    mm, ss, (autoStopTriggered || stopLatched) ? "(STOPPED)" : ""));
+
+            if (!autoStopTriggered && remainingMs == 0) {
+                autoStopTriggered = true;
+                stopLatched = true;
+                stopAll();
+                telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
+            }
+        }
+
+        // If STOP is latched, hold zero outputs and render minimal status, then return early.
+        if (stopLatched) {
+            onStoppedLoopHold();
+            return;
+        }
+
+        // -------- Normal controls (only run when NOT STOPPED) --------
         controls.update(gamepad1, gamepad2);
 
         // Honor manual lock in manual mode
@@ -431,14 +504,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
-
         // --- Observe obelisk tags (IDs 21..23) and persist optimal order ---
         if (vision != null) vision.observeObelisk();
 
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
 
-// Telemetry
+        // Telemetry
         telemetry.addData("Alliance", "%s", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "ON" : "OFF");
@@ -467,6 +539,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addData("AutoRPM Smoothing α", "%.2f", autoSmoothingAlpha);
         }
         telemetry.update();
+    }
+
+    @Override
+    public void stop() {
+        // Ensure everything is off when OpMode stops for any reason.
+        stopAll();
     }
 
     // =========================================================================
@@ -543,5 +621,61 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void sleepMs(int ms) {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+
+    // =========================================================================
+    // NEW: StopAll & Latch Mechanics
+    // =========================================================================
+
+    /** Immediately stops ALL moving mechanisms and outputs. Safe to call repeatedly. */
+    protected void stopAll() {
+        // DRIVE
+        try {
+            // Prefer explicit stop() if your Drivebase exposes it
+            drive.stop();
+        } catch (Throwable t) {
+            try { drive.drive(0, 0, 0); } catch (Throwable ignored) {}
+        }
+
+        // LAUNCHER
+        try {
+            launcher.stop();
+        } catch (Throwable t) {
+            try { launcher.setTargetRpm(0); } catch (Throwable ignored) {}
+        }
+
+        // FEED
+        try {
+            feed.stop();
+        } catch (Throwable t) {
+            try { feed.setPower(0); } catch (Throwable ignored) {}
+        }
+
+        // INTAKE
+        try {
+            intake.stop();
+        } catch (Throwable t) {
+            try { intake.set(false); } catch (Throwable ignored) {}
+        }
+    }
+
+    /** Toggle STOP latch. When entering STOP, calls stopAll() and shows telemetry cue; press Start again to resume. */
+    private void toggleStopLatch() {
+        stopLatched = !stopLatched;
+        if (stopLatched) {
+            stopAll();
+            // Optional haptic cue: single pulse to confirm STOP
+            pulseSingle(gamepad1);
+        } else {
+            // Optional haptic cue: single pulse to confirm RESUME
+            pulseSingle(gamepad1);
+        }
+    }
+
+    /** While STOP is latched, continuously enforce 0 outputs and render a concise status line. */
+    private void onStoppedLoopHold() {
+        stopAll(); // defensive: keep everything off each frame
+        telemetry.addLine("⛔ STOPPED — press START to RESUME");
+        telemetry.update();
     }
 }

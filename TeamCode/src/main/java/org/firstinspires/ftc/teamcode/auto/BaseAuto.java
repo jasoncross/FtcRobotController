@@ -133,7 +133,8 @@ public abstract class BaseAuto extends LinearOpMode {
         obeliskWatcherRunning = true;
         obeliskWatcherThread = new Thread(() -> {
             try {
-                while (obeliskWatcherRunning && opModeIsActive() && !isStopRequested()) {
+                // IMPORTANT: don't use opModeIsActive() here; it's not reliable off the OpMode thread.
+                while (obeliskWatcherRunning && !isStopRequested()) {
                     try {
                         vision.observeObelisk(); // just latches to ObeliskSignal
                     } catch (Exception ignored) { /* keep trying */ }

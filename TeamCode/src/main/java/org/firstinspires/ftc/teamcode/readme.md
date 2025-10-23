@@ -65,41 +65,40 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 ## Project Layout
 ```
 TeamCode/
-└── src/
-    └── main/
-        └── java/
-            └── org/
-                └── firstinspires/
-                    └── ftc/
-                        └── teamcode/
-                            Alliance.java
-                            ├── drive/
-                            │   └── Drivebase.java
-                            ├── utils/
-                            │   ├── ObeliskSignal.java                           
-                            │   └── RumbleNotifier.java
-                            ├── subsystems/
-                            │   ├── Launcher.java
-                            │   ├── Feed.java
-                            │   └── Intake.java
-                            ├── teleop/
-                            │   ├── TeleOpAllianceBase.java
-                            │   ├── TeleOp_Red.java
-                            │   └── TeleOp_Blue.java
-                            ├── auto/
-                            │   ├── BaseAuto.java
-                            │   ├── Auto_Red_Target.java
-                            │   ├── Auto_Red_Human.java
-                            │   ├── Auto_Blue_Target.java
-                            │   └── Auto_Blue_Human.java
-                            ├── vision/
-                            │   ├── TagAimController.java
-                            │   └── VisionAprilTag.java
-                            ├── control/
-                            │   └── LauncherAutoSpeedController.java
-                            └── input/
-                                └── ControllerBindings.java
+└── src/main/java/org/firstinspires/ftc/teamcode/
+    Alliance.java
+    ├── assist/
+    │   └── AutoAimSpeed.java                 ← NEW shared AutoAim + AutoSpeed helper
+    ├── auto/
+    │   ├── BaseAuto.java                     ← Reworked; Obelisk HUD + helpers
+    │   ├── Auto_Blue_Target.java
+    │   ├── Auto_Blue_Human.java
+    │   ├── Auto_Red_Target.java
+    │   └── Auto_Red_Human.java
+    ├── config/
+    │   ├── AutoRpmConfig.java                ← NEW: distance→RPM curve + smoothing
+    │   └── SharedRobotTuning.java            ← NEW: RPM tol, shot spacing, caps, assists
+    ├── control/
+    │   └── LauncherAutoSpeedController.java
+    ├── drive/
+    │   └── Drivebase.java                    ← IMU orientation: Label UP, USB RIGHT
+    ├── input/
+    │   └── ControllerBindings.java
+    ├── subsystems/
+    │   ├── Launcher.java
+    │   ├── Feed.java
+    │   └── Intake.java
+    ├── teleop/
+    │   ├── TeleOpAllianceBase.java
+    │   ├── TeleOp_Blue.java
+    │   └── TeleOp_Red.java
+    ├── utils/
+    │   └── ObeliskSignal.java
+    └── vision/
+        ├── VisionAprilTag.java
+        └── TagAimController.java
 ```
+
 
 ---
 
@@ -153,6 +152,34 @@ kP = 0.02
 kD = 0.003
 twistClamp = ±0.6
 deadband = 1.5°
+```
+---
+## Centralized Tunables (Edit These First)
+
+### A) AutoSpeed: distance → RPM map
+`config/AutoRpmConfig.java`  
+> These values **used to live** in `TeleOpAllianceBase.java` as `autoNearDistIn/autoNearRpm/autoFarDistIn/autoFarRpm/autoSmoothingAlpha`.
+
+```java
+public static double NEAR_DIST_IN = 24.0;
+public static double NEAR_RPM     = 1000.0;
+public static double FAR_DIST_IN  = 120.0;
+public static double FAR_RPM      = 4500.0;
+public static double SMOOTH_ALPHA = 0.15;
+```
+Applied via `AutoRpmConfig.apply(autoCtrl);` in both TeleOp and Auto.
+
+### B) Shared robot feel / timing
+`config/SharedRobotTuning.java`  
+> These **used to live** in `BaseAuto.java` and `TeleOpAllianceBase.java` (see comments inside).
+
+```java
+public static long   SHOT_BETWEEN_MS            = 3000;  // 3 s between shots
+public static double RPM_TOLERANCE              = 50.0;  // ±RPM gate for “at speed”
+public static double TURN_TWIST_CAP             = 0.35;  // aim/turn cap
+public static double DRIVE_MAX_POWER            = 0.50;  // fwd power for 24"
+public static int    INTAKE_ASSIST_MS           = 250;   // feed assist when intake was OFF
+public static double INITIAL_AUTO_DEFAULT_SPEED = 2500.0;// seed RPM before first tag lock
 ```
 
 ---

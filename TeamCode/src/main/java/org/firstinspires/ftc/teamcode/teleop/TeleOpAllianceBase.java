@@ -62,6 +62,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.teamcode.util.ObeliskSignal;
 
 import static java.lang.Math.*;
 
@@ -321,6 +322,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         ensureAutoCtrl();
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
+        // ---- FIRST LINE telemetry (init): obelisk memory ----
+        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
         telemetry.addData("Startup Defaults", "AutoSpeed=%s  AutoAim=%s  Intake=%s",
                 DEFAULT_AUTOSPEED_ENABLED ? "ON" : "OFF",
@@ -427,7 +431,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
-        // Telemetry
+
+        // --- Observe obelisk tags (IDs 21..23) and persist optimal order ---
+        if (vision != null) vision.observeObelisk();
+
+        // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
+        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+
+// Telemetry
         telemetry.addData("Alliance", "%s", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "ON" : "OFF");

@@ -75,7 +75,8 @@ TeamCode/
                             Alliance.java
                             ├── drive/
                             │   └── Drivebase.java
-                            ├── util/
+                            ├── utils/
+                            │   ├── ObeliskSignal.java                           
                             │   └── RumbleNotifier.java
                             ├── subsystems/
                             │   ├── Launcher.java
@@ -153,6 +154,34 @@ kD = 0.003
 twistClamp = ±0.6
 deadband = 1.5°
 ```
+
+---
+
+## Obelisk AprilTag Signal (DECODE 2025–26)
+
+### Overview
+The on-field **obelisk** displays one of three AprilTags that determine the **optimal ball order** for bonus points:
+
+| Tag ID | Pattern | Meaning |
+|:------:|:--------|:--------|
+| **21** | GPP | Green → Purple → Purple |
+| **22** | PGP | Purple → Green → Purple |
+| **23** | PPG | Purple → Purple → Green |
+
+### Behavior
+- The robot continuously scans for these tags via `VisionAprilTag.observeObelisk()`.  
+- When detected, the shared class `ObeliskSignal` latches the pattern (`GPP`, `PGP`, or `PPG`) in memory.  
+- This value persists between Auto and TeleOp modes so both can access the same detected order.  
+- **Telemetry:** The first line on the Driver Station always shows the current obelisk result,  
+  e.g. `Obelisk: PGP (10 s ago)`.
+
+### Implementation Details
+| File | Purpose |
+|------|----------|
+| [`vision/VisionAprilTag.java`](sandbox:/mnt/data/VisionAprilTag.java) | Detects AprilTags 21/22/23 and updates shared state via `observeObelisk()`. |
+| [`utils/ObeliskSignal.java`](sandbox:/mnt/data/ObeliskSignal.java) | In-memory latch that stores and displays the detected obelisk order. |
+| [`auto/BaseAuto.java`](sandbox:/mnt/data/BaseAuto.java) | Observes the obelisk during the **prestart** loop, allowing the robot to lock in the signal before the match begins. |
+| [`teleop/TeleOpAllianceBase.java`](sandbox:/mnt/data/TeleOpAllianceBase.java) | Calls `vision.observeObelisk()` every loop and displays the latched order on the **first telemetry line**. |
 
 ---
 

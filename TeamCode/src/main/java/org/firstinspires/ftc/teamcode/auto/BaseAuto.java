@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.auto;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
+import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.util.ObeliskSignal;
 
 /*
  * FILE: BaseAuto.java
@@ -20,6 +22,8 @@ import org.firstinspires.ftc.teamcode.drive.Drivebase;
  * - runSequence(): implement the actual path using move()/turn() and subsystems.
  */
 public abstract class BaseAuto extends LinearOpMode {
+    protected VisionAprilTag vision;
+
     protected Drivebase drive;
 
     protected abstract Alliance alliance();
@@ -29,17 +33,33 @@ public abstract class BaseAuto extends LinearOpMode {
     public void runOpMode() throws InterruptedException {
         drive = new Drivebase(this);
 
-        telemetry.addData("Auto", "Alliance: %s", alliance());
-        telemetry.update();
+        // Optional vision for obelisk signal
+        try {
+            vision = new VisionAprilTag();
+            vision.init(hardwareMap, "Webcam 1");
+        } catch (Exception ignored) { vision = null; }
+
+        // Prestart loop: show obelisk on FIRST LINE and let it latch in memory
+        while (!isStarted() && !isStopRequested()) {
+            if (vision != null) vision.observeObelisk();
+            telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+            telemetry.addData("Auto", "Alliance: %s", alliance());
+            telemetry.update();
+            sleep(20);
+        }
 
         waitForStart();
-        if (isStopRequested()) return;
+        if (isStopRequested()) {
+            if (vision != null) vision.stop();
+            return;
+        }
 
         runSequence();
         drive.stopAll();
+
+        if (vision != null) vision.stop();
 
         telemetry.addLine("Auto complete – DS will queue TeleOp.");
         telemetry.update();
         sleep(750);
     }
-}

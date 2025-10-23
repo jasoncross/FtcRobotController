@@ -42,6 +42,7 @@ public class Feed {
         return System.currentTimeMillis() - lastFire >= minCycleMs;
     }
 
+    /** Timed feed (blocking for ~fireTimeMs). */
     public void feedOnceBlocking() {
         if (!canFire()) return;
         lastFire = System.currentTimeMillis();

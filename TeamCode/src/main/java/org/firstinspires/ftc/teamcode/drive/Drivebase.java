@@ -51,6 +51,9 @@ import static java.lang.Math.*;
  * - drive  =  +left_stick_y
  * - strafe =  -left_stick_x   (invert so right on stick = +strafe)
  * - twist  =  -right_stick_x  (+CCW)
+ *
+ * NEW (2025-10-23):
+ * - Added stop() as an alias for stopAll() to integrate with TeleOp StopAll latch.
  */
 
 public class Drivebase {
@@ -266,6 +269,9 @@ public class Drivebase {
     public void setAllPower(double p) {
         fl.setPower(p); fr.setPower(p); bl.setPower(p); br.setPower(p);
     }
+
+    /** Stop all drive motors. (Alias retained for compatibility with TeleOp StopAll.) */
+    public void stop() { stopAll(); }
 
     /** Stop all drive motors. */
     public void stopAll() { setAllPower(0); }

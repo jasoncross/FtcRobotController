@@ -144,8 +144,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Intake Assist + Eject ----------------
     // (intakeAssistMs used to be local; now driven by SharedRobotTuning)
     private int    intakeAssistMs = SharedRobotTuning.INTAKE_ASSIST_MS;
-    private double ejectRpm       = 300.0; // temporary launcher RPM used during eject
-    private int    ejectTimeMs    = 300;   // how long to hold eject RPM while feeding
+    private double ejectRpm       = 600.0; // temporary launcher RPM used during eject
+    private int    ejectTimeMs    = 1000;   // how long to hold eject RPM while feeding
 
     // ---------------- NEW: StopAll / Latch & Auto-Stop Timer ----------------
     /** When true, all outputs are forced to zero every loop until Start is pressed again. */

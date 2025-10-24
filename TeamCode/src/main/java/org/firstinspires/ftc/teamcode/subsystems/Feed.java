@@ -29,7 +29,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
  */
 public class Feed {
     public double firePower = 0.9;
-    public int fireTimeMs   = 200;
+    public int fireTimeMs   = 600;
     public int minCycleMs   = 300;
 
     private final DcMotorEx motor;

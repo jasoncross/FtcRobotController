@@ -10,6 +10,7 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 import static java.lang.Math.*;
 
@@ -52,8 +53,9 @@ import static java.lang.Math.*;
  *       • Halt all motors—BaseAuto safety routines call these frequently.
  *
  * NOTES
- *   - IMU orientation assumes the control hub is mounted LOGO UP, USB RIGHT so
- *     heading() increases CCW (FTC standard orientation).
+ *   - IMU orientation defaults to LOGO UP, USB RIGHT (FTC standard). Adjust
+ *     `config/SharedRobotTuning` if the control hub is remounted so heading()
+ *     increases CCW as expected by TeleOp + Auto helpers.
  *   - Motor names must match Robot Controller configuration exactly:
  *     "FrontLeft", "FrontRight", "BackLeft", "BackRight".
  *   - After wiring or configuration changes, push the robot forward by hand—all
@@ -143,11 +145,11 @@ public class Drivebase {
         }
         baseRunModeAfterMove = base;
 
-        // ---- IMU orientation: LOGO UP, USB RIGHT ----
+        // ---- IMU orientation (tunable via SharedRobotTuning) ----
         imu.initialize(new IMU.Parameters(
                 new RevHubOrientationOnRobot(
-                        RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                        RevHubOrientationOnRobot.UsbFacingDirection.RIGHT
+                        SharedRobotTuning.LOGO_DIRECTION,
+                        SharedRobotTuning.USB_DIRECTION
                 )
         ));
         resetHeading();

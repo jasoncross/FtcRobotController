@@ -104,6 +104,11 @@ TeamCode/
 
 ## TeleOp Behaviors & Tunables
 
+For a complete, always-current list of adjustable parameters, see the
+[TeamCode Tunable Directory](./TunableDirectory.md). It captures
+where each value lives, which game modes it influences, and how overlapping
+TeleOp/Auto tunables override one another.
+
 ### AutoAim
 - **Enable:** Only when a goal AprilTag is visible.  
 - **Grace period:** If the tag is lost, AutoAim waits **`autoAimLossGraceMs = 4000` ms** before disabling.  
@@ -154,36 +159,6 @@ twistClamp = ±0.6
 deadband = 1.5°
 ```
 ---
-## Centralized Tunables (Edit These First)
-
-### A) AutoSpeed: distance → RPM map
-`config/AutoRpmConfig.java`  
-> These values **used to live** in `TeleOpAllianceBase.java` as `autoNearDistIn/autoNearRpm/autoFarDistIn/autoFarRpm/autoSmoothingAlpha`.
-
-```java
-public static double NEAR_DIST_IN = 24.0;
-public static double NEAR_RPM     = 1000.0;
-public static double FAR_DIST_IN  = 120.0;
-public static double FAR_RPM      = 4500.0;
-public static double SMOOTH_ALPHA = 0.15;
-```
-Applied via `AutoRpmConfig.apply(autoCtrl);` in both TeleOp and Auto.
-
-### B) Shared robot feel / timing
-`config/SharedRobotTuning.java`  
-> These **used to live** in `BaseAuto.java` and `TeleOpAllianceBase.java` (see comments inside).
-
-```java
-public static long   SHOT_BETWEEN_MS            = 3000;  // 3 s between shots
-public static double RPM_TOLERANCE              = 50.0;  // ±RPM gate for “at speed”
-public static double TURN_TWIST_CAP             = 0.35;  // aim/turn cap
-public static double DRIVE_MAX_POWER            = 0.50;  // fwd power for 24"
-public static int    INTAKE_ASSIST_MS           = 250;   // feed assist when intake was OFF
-public static double INITIAL_AUTO_DEFAULT_SPEED = 2500.0;// seed RPM before first tag lock
-```
-
----
-
 ## Obelisk AprilTag Signal (DECODE 2025–26)
 
 ### Overview
@@ -212,42 +187,12 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 
 ---
 
-## Tunable Reference (by Functional Area) - May be incomplete
+## Tunable Directory
 
-| Functional Area | Variable | Default | Purpose | File |
-|---|---|---|---|
-| **Drivebase** | `slowestSpeed` | 0.25 | Lowest speed cap when braking (trigger fully held) | TeleOpAllianceBase.java |
-| **Launcher / AutoSpeed** | `rpmTop` | 6000 | Maximum launcher speed (RPM) | TeleOpAllianceBase.java |
-| | `rpmBottom` | 0 | Minimum idle RPM in manual mode | TeleOpAllianceBase.java |
-| | `InitialAutoDefaultSpeed` | 2500 | Launcher RPM before first tag fix | TeleOpAllianceBase.java |
-| | `autoNearDistIn` | 24.0 | Near distance (in) for RPM mapping | TeleOpAllianceBase.java |
-| | `autoNearRpm` | 1000 | RPM at near distance | TeleOpAllianceBase.java |
-| | `autoFarDistIn` | 120.0 | Far distance (in) for RPM mapping | TeleOpAllianceBase.java |
-| | `autoFarRpm` | 4500 | RPM at far distance | TeleOpAllianceBase.java |
-| | `autoSmoothingAlpha` | 0.15 | AutoRPM smoothing factor (0–1) | TeleOpAllianceBase.java |
-| **AutoAim / Vision** | `autoAimLossGraceMs` | 4000 | Time allowed (ms) to regain tag before disabling AutoAim | TeleOpAllianceBase.java |
-| | `aimRumbleDeg` | 2.5 | Degrees from target center where aim rumble starts | TeleOpAllianceBase.java |
-| | `kP` | 0.02 | Proportional gain for aim correction | TagAimController.java |
-| | `kD` | 0.003 | Derivative gain for aim correction | TagAimController.java |
-| | `twistClamp` | ±0.6 | Twist limit while aiming | TagAimController.java |
-| | `deadband` | 1.5° | Ignore heading error below this | TagAimController.java |
-| **Feed / Intake / Eject** | `firePower` | 0.9 | Power level during feed cycle | Feed.java |
-| | `fireTimeMs` | 200 | Feed motor duration (ms) | Feed.java |
-| | `minCycleMs` | 300 | Cooldown between feed cycles | Feed.java |
-| | `powerOn` | 0.8 | Intake motor power | Intake.java |
-| | `DEFAULT_INTAKE_ENABLED` | false | Intake state at TeleOp start | TeleOpAllianceBase.java |
-| | `intakeAssistMs` | 250 | Time to run intake when assisting feed | TeleOpAllianceBase.java |
-| | `ejectRpm` | 300 | Launcher RPM used during eject | TeleOpAllianceBase.java |
-| | `ejectTimeMs` | 300 | Duration (ms) of eject phase | TeleOpAllianceBase.java |
-| **Haptics / Rumble** | `togglePulseStrength` | 0.8 | Intensity of toggle rumble | TeleOpAllianceBase.java |
-| | `togglePulseStepMs` | 120 | Duration of each rumble pulse | TeleOpAllianceBase.java |
-| | `togglePulseGapMs` | 80 | Gap between double-pulse steps | TeleOpAllianceBase.java |
-| | `aimRumbleMinStrength` | 0.10 | Min rumble strength for aim feedback | TeleOpAllianceBase.java |
-| | `aimRumbleMaxStrength` | 0.65 | Max rumble strength for aim feedback | TeleOpAllianceBase.java |
-| | `aimRumbleMinPulseMs` | 120 | Min pulse length (ms) for aim rumble | TeleOpAllianceBase.java |
-| | `aimRumbleMaxPulseMs` | 200 | Max pulse length (ms) for aim rumble | TeleOpAllianceBase.java |
-| | `aimRumbleMinCooldownMs` | 120 | Min cooldown (ms) between pulses | TeleOpAllianceBase.java |
-| | `aimRumbleMaxCooldownMs` | 350 | Max cooldown (ms) between pulses | TeleOpAllianceBase.java |
+The detailed directory of tunable values lives in
+[TeamCode/TunableDirectory.md](../../../../../../../TunableDirectory.md). Review that
+document for authoritative defaults, tuning guidance, and notes on which class
+or game mode owns each parameter before making adjustments.
 
 ---
 ## StopAll & Auto-Stop Timer (NEW)

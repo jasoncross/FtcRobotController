@@ -6,7 +6,7 @@ This document provides background context for the **FTC 2025–2026 DECODE™** 
 
 ## Overview
 
-In **FIRST Tech Challenge (FTC) 2025–2026 DECODE™ presented by RTX**, two **alliances**—each made up of **two teams**—compete to score points by collecting and manipulating lightweight foam balls called **ARTIFACTS**. These ARTIFACTS come in **two colors: purple and green**, and are *neutral* (not alliance-specific).
+In **FIRST Tech Challenge (FTC) 2025–2026 DECODE™ presented by RTX**, two **alliances**—each made up of **two teams**—compete to score points by collecting and manipulating lightweight plastic whiffle balls called **ARTIFACTS**. These ARTIFACTS come in **two colors: purple and green**, and are *neutral* (not alliance-specific).
 
 The DECODE theme emphasizes vision-based recognition, pattern decoding, and coordinated alliance play. Robots must use sensors, cameras, and programming to identify **MOTIFS** (patterns) and execute strategies that reflect the displayed sequence.
 
@@ -23,7 +23,7 @@ Each alliance’s field half includes:
 - **BASE** – Zone where robots must return before match end.  
 - **SECRET TUNNEL ZONE** – Area for overflow ARTIFACTS exiting the opposing ramp.
 
-The field is a **12 ft × 12 ft (144 in × 144 in)** arena with mirrored red and blue halves.
+The field is a **12 ft × 12 ft (144 in × 144 in)** arena with mirrored red and blue halves.  To simplify description of the field, we use coordinates of north, south, east and west with the goals considered to be in the north east and north west corners.
 
 ---
 
@@ -115,4 +115,4 @@ The DECODE challenge focuses on precision, vision processing, and coordinated al
 FTC DECODE emphasizes **intelligent vision processing**, **pattern matching**, and **autonomous adaptability**.  
 Teams must program robots that can *see*, *analyze*, and *act* quickly to classify ARTIFACTS, align to goals, and collaborate within strict match timing.
 
-This document ensures that Codex understands the *strategic intent* behind each robot subsystem—why IMU correction, flywheel velocity control, and vision logic are critical—and how they contribute to successful match outcomes.
+This document ensures that developers understand the *strategic intent* behind each robot subsystem—why IMU correction, flywheel velocity control, and vision logic are critical—and how they contribute to successful match outcomes.

@@ -72,6 +72,7 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | `drive/Drivebase.STRAFE_CORRECTION` | `drive/Drivebase.java` | Both | Multiplier correcting mecanum strafing undershoot. | Shared for TeleOp strafing and Auto pathing; tune based on field tests. | Between `1.05–1.25` depending on carpet. |
 | `drive/Drivebase.TURN_KP` / `TURN_KD` | `drive/Drivebase.java` | Both | PD gains for IMU-based turns. | TeleOp brake-twist and Auto turns share these; adjust to taste. | Raise `KP` to `0.016` for quicker snaps; add `KD` up to `0.005` to reduce overshoot. |
 | `drive/Drivebase.TURN_SETTLE_TIME` | `drive/Drivebase.java` | Both | Time inside tolerance before declaring a turn done. | Applies to any IMU turn helper; Auto benefits from extra stability, TeleOp from smoother braking. | `0.10 s` for faster autos; `0.20 s` if oscillating. |
+| `SharedRobotTuning.LOGO_DIRECTION` / `USB_DIRECTION` | `config/SharedRobotTuning.java` | Both | REV Hub IMU mounting orientation. | Drivebase pulls both values when initializing the IMU; update here whenever the hub is remounted so yaw math stays correct. | `LOGO UP` / `USB RIGHT` for the FTC standard; flip to match new mounting. |
 
 ## Autonomous routine pacing
 

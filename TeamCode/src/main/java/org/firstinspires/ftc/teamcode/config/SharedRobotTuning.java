@@ -33,12 +33,17 @@
  *   - INITIAL_AUTO_DEFAULT_SPEED
  *       • Seed RPM before the first AprilTag lock when AutoSpeed starts.
  *       • TeleOpAllianceBase copies this; align values so warm-up behavior matches.
+ *   - LOGO_DIRECTION / USB_DIRECTION
+ *       • Physical mounting orientation of the REV Control Hub IMU.
+ *       • Update both when the hub is remounted so +yaw remains CCW on the field.
  *
  * NOTES
  *   - This file intentionally contains constants only. Update them whenever
  *     cadence or aim behavior changes to keep every OpMode synchronized.
  */
 package org.firstinspires.ftc.teamcode.config;
+
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 
 public final class SharedRobotTuning {
     private SharedRobotTuning() {}
@@ -57,4 +62,11 @@ public final class SharedRobotTuning {
     // --- Assist behaviors shared across modes ---
     public static int    INTAKE_ASSIST_MS           = 250;    // Intake assist duration (ms); TeleOpAllianceBase copies this value
     public static double INITIAL_AUTO_DEFAULT_SPEED = 2500.0; // Seed RPM before first tag lock; match TeleOp override when changed
+
+    // --- REV Control Hub IMU physical mounting ---
+    public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
+            RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
+
+    public static RevHubOrientationOnRobot.UsbFacingDirection USB_DIRECTION =
+            RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
 }

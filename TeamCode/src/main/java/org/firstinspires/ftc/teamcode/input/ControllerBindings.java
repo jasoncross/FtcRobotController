@@ -6,50 +6,36 @@ import java.util.function.BooleanSupplier;
 import java.util.function.DoubleConsumer;
 
 /*
- * ============================================================================
  * FILE: ControllerBindings.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/
- * AUTHOR: Indianola Robotics (Octobots)
  *
- * PURPOSE:
- *   Centralize ALL controller mappings (Gamepad 1 & Gamepad 2) so assignments
- *   can be changed in ONE place without touching TeleOp code. Supports:
- *     - Press (edge-detected once per press)
- *     - Hold (runs every loop while down)
- *     - Toggle (flip state with press, with on/off callbacks)
- *     - Trigger Axis (LT/RT 0..1 each loop)
- *     - Optional M1/M2 rear paddles via pluggable readers
+ * PURPOSE
+ *   - Centralize Gamepad 1/2 bindings so TeleOpAllianceBase can describe driver
+ *     controls declaratively instead of scattering button logic across OpModes.
+ *   - Provide press, hold, toggle, and analog helpers with debouncing to prevent
+ *     multi-fire bugs.
  *
- * CURRENTLY-BOUND FUNCTIONS  (INTENTIONALLY LIMITED to what’s actually mapped)
- *   Intake Toggle .......... intake.toggle()                  (LB on G1/G2)
- *   Feed Once .............. feed.feedOnceBlocking()          (RB on G1/G2)
- *   Aim Assist Toggle ...... aimEnabled true/false            (R_STICK_BTN on G1 ONLY)
- *   Manual Speed Mode ...... manualSpeedMode true/false       (Y on G1/G2)
- *   Manual RPM (axis) ...... launcher.setTargetRpm(...)       (RT axis on G1 ONLY)
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Controller interface)
+ *   - TRIGGER_EDGE_THRESH
+ *       • Analog trigger value treated as a "pressed" button by bindTriggerPress.
+ *       • Lower toward 0.3 for lighter pulls; raise toward 0.6 when drivers bump
+ *         triggers accidentally. No other file overrides this threshold.
  *
- * NOTES:
- *   - Gamepad 2 mirrors Gamepad 1 EXCEPT joystick-related mappings:
- *       • NO right-stick-button aim toggle on G2
- *       • NO RT-axis RPM mapping on G2
- *   - See TeleOpAllianceBase “BINDINGS SETUP” for the live button->action table.
- *   - M1/M2 paddles:
- *       If your controller maps paddles to normal buttons (A/B/X/Y/LB/RB), just bind those.
- *       If your hardware exposes unique paddle signals, register them with:
- *         // Example: registerExtraButtonReader(Pad.G1, Btn.M1, () -> { ##read hardware##  });
+ * METHODS
+ *   - bindPress / bindHold / bindToggle
+ *       • Register button behaviors with automatic edge handling.
+ *   - bindTriggerAxis / bindTriggerPress
+ *       • Map triggers to analog consumers or thresholded button presses.
+ *   - registerExtraButtonReader
+ *       • Attach custom paddle readers (M1/M2) when controllers expose them.
+ *   - useDefaults
+ *       • Load the current DECODE driver profile (documented in TeleOpAllianceBase).
+ *   - update / clear
+ *       • Execute bindings each loop and reset the registry when swapping modes.
  *
- * METHODS:
- *   - bindPress(pad, btn, onPress)
- *   - bindHold(pad, btn, whileHeld)
- *   - bindToggle(pad, btn, onEnable, onDisable)
- *   - bindTriggerAxis(pad, trig, consumer0to1)
- *   - bindTriggerPress(pad, trig, onPress)  // thresholded like a digital button
- *   - registerExtraButtonReader(pad, Btn.M1|M2, BooleanSupplier)
- *   - useDefaults(Defaults d)  // optional convenience profile
- *
- * REVISION HISTORY:
- *   2025-10-22  Initial abstraction for Indianola Robotics; limited function list;
- *               LB-first ordering; RB feed; RS aim toggle; G2 mirrors minus joystick.
- * ============================================================================
+ * NOTES
+ *   - Gamepad 2 mirrors Gamepad 1 except for aim toggle + manual RPM axis; see
+ *     TeleOpAllianceBase “BINDINGS SETUP” block for the full cheat sheet.
  */
 public class ControllerBindings {
 
@@ -117,7 +103,7 @@ public class ControllerBindings {
     private final Map<String, DoubleConsumer> triggerAxes = new HashMap<>();
     private final Map<Key, BooleanSupplier> extraBtnReaders = new HashMap<>();
 
-    private static final double TRIGGER_EDGE_THRESH = 0.5;
+    private static final double TRIGGER_EDGE_THRESH = 0.5; // Analog threshold treated as a digital press
 
     /* =========================
      * PUBLIC BINDING API

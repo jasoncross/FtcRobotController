@@ -10,47 +10,57 @@ import com.qualcomm.robotcore.hardware.PIDFCoefficients;
  * FILE: Launcher.java
  * LOCATION: teamcode/.../subsystems/
  *
- * PURPOSE:
- * - Controls the two 6000 RPM goBILDA 5202 flywheel motors using CLOSED-LOOP velocity control.
- * - Converts target RPM to encoder ticks/second and commands that velocity directly to the hub.
- * - Uses built-in REV Hub PIDF loop to maintain consistent launch speed regardless of battery or load.
+ * PURPOSE
+ *   - Control the dual goBILDA 5202 flywheel motors using the REV Hub’s
+ *     closed-loop velocity PIDF so launch speed stays consistent across battery
+ *     levels.
+ *   - Convert requested RPM into ticks/second and command the hub directly so
+ *     both TeleOp and Auto share the same behavior.
  *
- * HARDWARE:
- * - Two motors: "FlywheelLeft" and "FlywheelRight"
- * - Motor type: goBILDA 5202 6000 RPM (bare motor, 28 ticks/rev encoder)
+ * HARDWARE
+ *   - Two motors: "FlywheelLeft" and "FlywheelRight" (goBILDA 5202 6000 RPM).
+ *   - Encoders: built-in 28 ticks/rev on each motor (adjust FLYWHEEL_TPR if gear
+ *     reduction is added).
  *
- * FUNCTIONAL SUMMARY:
- * - setTargetRpm(double rpm):   Commands a closed-loop velocity target in RPM.
- * - stop():                     Stops both flywheels immediately.
- * - getCurrentRpm():            Returns measured average RPM from encoders.
- * - isAtSpeed(double tolRpm):   Returns true when within specified RPM tolerance.
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Launcher speed & flywheel control)
+ *   - FLYWHEEL_TPR
+ *       • Encoder ticks per revolution at the measured shaft.
+ *       • Multiply 28 × gear ratio if external reduction is added so RPM math
+ *         remains accurate.
+ *   - RPM_MIN / RPM_MAX
+ *       • Software clamps applied to every RPM request.
+ *       • Keep RPM_MAX ≥ AutoRpmConfig FAR_RPM and TeleOpAllianceBase.rpmTop so
+ *         downstream commands do not saturate.
+ *   - PIDF (RUN_USING_ENCODER)
+ *       • Closed-loop gains applied at the hub. Start near TunableDirectory’s
+ *         P=10, I=3, D=0, F=12 and adjust for wheel mass or overshoot.
+ *   - atSpeedToleranceRPM
+ *       • Local fallback readiness window when callers omit a tolerance. Align
+ *         with SharedRobotTuning.RPM_TOLERANCE so Auto/TeleOp gating matches.
  *
- * TUNABLE PARAMETERS:
- * - FLYWHEEL_TPR:  Encoder ticks per revolution at the measured shaft.
- *                  For goBILDA 5202 @ 6000 RPM, use 28.0 (no gearbox).
- *                  If you later add gearing, multiply 28 × gear ratio.
+ * METHODS
+ *   - setTargetRpm(double rpm)
+ *       • Commands a closed-loop velocity target (RPM converted to ticks/sec).
+ *   - stop()
+ *       • Immediately stops both flywheels (open-loop).
+ *   - getCurrentRpm()
+ *       • Returns the measured average RPM from both encoders.
+ *   - isAtSpeed(double tolRpm)
+ *       • Reports readiness using either the provided tolerance or
+ *         atSpeedToleranceRPM.
  *
- * - RPM_MIN / RPM_MAX:  Software clamp limits for TeleOp control range.
- *
- * - PIDF:  Closed-loop PIDF coefficients used in RUN_USING_ENCODER mode.
- *   Typical starting point:
- *      P = 10.0   → raise if slow to reach speed; lower if oscillates
- *      I = 3.0    → adds steady-state correction; start small
- *      D = 0.0    → adds damping; increase slightly if overshooting
- *      F = 12.0   → baseline feedforward term (scales open-loop power)
- *
- * NOTES:
- * - Each hub port’s built-in controller handles velocity feedback internally.
- * - You can read current speed with getVelocity() and convert to RPM for telemetry.
- * - Typical target range: 0 – 6000 RPM.
- * - TeleOp should call setTargetRpm() continuously with desired RPM (usually from trigger).
+ * NOTES
+ *   - TeleOpAllianceBase and AutoAimSpeed continuously call setTargetRpm();
+ *     ensure any tuning is validated in both modes.
+ *   - The REV hub handles velocity feedback internally, so this class does not
+ *     implement its own PID loop.
  */
 
 public class Launcher {
     // === CONFIGURATION CONSTANTS ===
-    private static final double FLYWHEEL_TPR = 28.0;     // Encoder ticks per revolution
-    private static final double RPM_MIN      = 0.0;      // Minimum allowed RPM
-    private static final double RPM_MAX      = 6000.0;   // Maximum allowed RPM
+    private static final double FLYWHEEL_TPR = 28.0;     // Encoder ticks per revolution; adjust if gear ratio changes
+    private static final double RPM_MIN      = 0.0;      // Minimum allowed RPM requested by any caller
+    private static final double RPM_MAX      = 6000.0;   // Maximum allowed RPM; keep ≥ AutoRpmConfig FAR_RPM & TeleOp rpmTop
 
     // Default closed-loop PIDF values for REV velocity control.
     // Adjust only if behavior indicates overshoot, oscillation, or slow recovery.
@@ -66,8 +76,8 @@ public class Launcher {
     private final DcMotorEx right;
 
     // === STATE ===
-    public double targetRpm = 0;                // Last commanded RPM
-    public double atSpeedToleranceRPM = 100;    // Window for "ready to fire"
+    public double targetRpm = 0;                // Last commanded RPM request (TeleOp + Auto)
+    public double atSpeedToleranceRPM = 100;    // Local readiness window; align with SharedRobotTuning.RPM_TOLERANCE
 
     // === CONSTRUCTOR ===
     public Launcher(HardwareMap hw) {

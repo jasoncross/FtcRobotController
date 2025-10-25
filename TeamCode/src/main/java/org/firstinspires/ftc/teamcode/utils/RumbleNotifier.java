@@ -1,37 +1,35 @@
-// ============================================================================
-// FILE:           RumbleNotifier.java
-// LOCATION:       TeamCode/src/main/java/org/firstinspires/ftc/teamcode/util/
-//
-// PURPOSE:
-//   Utility for gamepad rumble/haptics with simple, tunable behavior that works
-//   across FTC SDK versions (no dependency on Gamepad.RumbleEffect.builder()).
-//
-//   Typical use cases:
-//     • Toggle feedback (you can still call gamepad.rumble(...) directly).
-//     • "Aim window" feedback: when heading error is within a threshold, emit a
-//       short pulse whose strength/duration scales as the error approaches 0°.
-//
-// API (kept intentionally small & backwards-compatible):
-//   RumbleNotifier(Gamepad gp);
-//   void setActive(boolean enable);          // master on/off
-//   boolean isActive();
-//   void setThresholdDeg(double deg);        // start rumbling when |err| <= deg
-//   void setMinMax(double minStr, double maxStr,
-//                  int minPulseMs, int maxPulseMs,
-//                  int minCooldownMs, int maxCooldownMs);
-//   void update(double headingErrorDeg);     // call periodically; safe to call fast
-//
-// NOTES:
-//   • Uses gp.rumble(left,right,durationMs) only — compatible with older SDKs.
-//   • Internal simple rate limiting via cooldown to avoid constant rumble.
-//   • If you never call update(...), this class is a harmless no-op after config.
-//   • All values are clamped defensively; nothing throws if misconfigured.
-//   • If you prefer continuous rumble instead of pulsed, call update() more
-//     frequently with a small cooldown.
-//
-// AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
-// LAST UPDATED:   2025-10-23
-// ============================================================================
+/*
+ * FILE: RumbleNotifier.java
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/utils/
+ *
+ * PURPOSE
+ *   - Provide SDK-compatible rumble helpers for toggle feedback and aim-window
+ *     cues without relying on newer Gamepad APIs.
+ *   - Pulse the controller with tunable strength, duration, and cooldown based
+ *     on heading error.
+ *
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Driver feedback)
+ *   - thresholdDeg
+ *       • Heading error window that triggers pulses. Tighten toward 1.5° for
+ *         earlier feedback, relax toward 3° if distracting.
+ *   - min/maxStrength, min/maxPulseMs, min/maxCooldownMs
+ *       • Bounds for rumble intensity, pulse length, and cooldown. TeleOpAllianceBase
+ *         overrides these on init (e.g., 0.05–0.80 strength, 80–160 ms pulses).
+ *
+ * METHODS
+ *   - setActive()/isActive()
+ *       • Master enable toggle.
+ *   - setThresholdDeg(), setMinMax(...)
+ *       • Configure behavior to match TeleOp preferences.
+ *   - update(errorDeg)
+ *       • Call every loop; emits pulses when within the threshold.
+ *
+ * NOTES
+ *   - Uses the simple gp.rumble(left,right,durationMs) call so it works across
+ *     SDK versions and both gamepads.
+ *   - All setters clamp values defensively to keep rumble sane even if a config
+ *     mistake slips through.
+ */
 package org.firstinspires.ftc.teamcode.util;
 
 import com.qualcomm.robotcore.hardware.Gamepad;

@@ -6,31 +6,45 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 
 /*
  * FILE: Feed.java
- * LOCATION: teamcode/.../subsystems/
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/
  *
- * PURPOSE:
- * - Controls the "FeedMotor" that holds a ball and advances briefly to feed one ball into flywheels.
- * - Default implementation is timed (simple and reliable).
+ * PURPOSE
+ *   - Drive the single feed motor that pushes one ARTIFACT into the launcher per
+ *     cycle for both TeleOp and Autonomous.
+ *   - Provide a timed, debounce-guarded routine so BaseAuto.fireN() and TeleOp
+ *     buttons share identical cadence logic.
  *
- * TUNABLES:
- * - firePower: motor power during feed (0.6–1.0 typical).
- * - fireTimeMs: duration of feed motion (150–300 ms typical).
- * - minCycleMs: debounce between consecutive feeds to prevent double-feeds.
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Shot cadence, feed, and eject)
+ *   - firePower
+ *       • Motor power applied during the feed pulse.
+ *       • Shared across modes; increase toward 1.0 when rings stick, lower toward
+ *         0.7 if jams occur.
+ *   - fireTimeMs
+ *       • Duration of the feed pulse in milliseconds (450–650 typical).
+ *       • Coordinate with SharedRobotTuning.SHOT_BETWEEN_MS so cadence leaves
+ *         enough recovery time.
+ *   - minCycleMs
+ *       • Minimum delay between feeds to prevent double-fires.
+ *       • Keep aligned with TeleOpAllianceBase button debounce expectations.
  *
- * IMPORTANT FUNCTIONS:
- * - feedOnceBlocking(): perform one feed cycle (advance briefly then stop).
- * - canFire(): true if debounce interval has passed.
- * - stop(): immediately stop the feed motor (used by TeleOp StopAll).
+ * METHODS
+ *   - canFire()
+ *       • Debounce check used before calling feedOnceBlocking().
+ *   - feedOnceBlocking()
+ *       • Timed feed routine shared by Auto/TeleOp.
+ *   - stop() / setPower()
+ *       • Safety helpers used by StopAll and diagnostics.
  *
- * NOTES:
- * - Motor is set to BRAKE to hold position/pressure when stopped.
- * - If you add encoder-based feed later, add advance/return ticks and RUN_TO_POSITION logic here.
- * - NEW (2025-10-23): Added stop() and setPower(double) for integration with StopAll.
+ * NOTES
+ *   - Motor uses BRAKE zero-power behavior so the pusher stays loaded against the
+ *     ring stack when idle.
+ *   - Future encoder-based feeds can extend this class by replacing the timed
+ *     sleep with RUN_TO_POSITION logic.
  */
 public class Feed {
-    public double firePower = 0.9;
-    public int fireTimeMs   = 600;
-    public int minCycleMs   = 300;
+    public double firePower = 0.9; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
+    public int fireTimeMs   = 600;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
+    public int minCycleMs   = 300;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
 
     private final DcMotorEx motor;
     private long lastFire = 0;

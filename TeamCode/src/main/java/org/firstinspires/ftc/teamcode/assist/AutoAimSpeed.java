@@ -1,19 +1,55 @@
-// ============================================================================
-// FILE:           AutoAimSpeed.java
-// LOCATION:       TeamCode/src/main/java/org/firstinspires/ftc/teamcode/assist/
-//
-// PURPOSE:
-//   Shared helper for BOTH TeleOp and Autonomous:
-//   - Uses TagAimController to compute aim (twist) toward the goal tag
-//   - Uses LauncherAutoSpeedController to compute launcher RPM from distance
-//   - Holds last known distance if tag is lost; seeds with InitialAutoDefaultSpeed
-//
-// HISTORY NOTES (TUNING LOCATIONS):
-//   • initialAutoDefaultSpeed previously tuned inside TeleOpAllianceBase.java
-//     (InitialAutoDefaultSpeed) — now centralized in SharedRobotTuning.
-//   • maxTwist / rpmTolerance used to be local to BaseAuto — now centralized.
-//
-// ============================================================================
+/*
+ * FILE: AutoAimSpeed.java
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/assist/
+ *
+ * PURPOSE
+ *   - Share one AprilTag-powered "Auto Aim + Auto Speed" loop between
+ *     TeleOpAllianceBase and every BaseAuto-derived routine so students tune a
+ *     single behavior for both match phases.
+ *   - Translate VisionAprilTag distance into Launcher RPM through
+ *     LauncherAutoSpeedController while guarding against noisy detections.
+ *   - Smoothly clamp twist corrections (fed into Drivebase) so the driver keeps
+ *     control while automation nudges the robot toward the goal.
+ *
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → AutoAim section)
+ *   - maxTwist (defaults to SharedRobotTuning.TURN_TWIST_CAP)
+ *       • Caps the steering command returned from update().
+ *       • SharedRobotTuning is the authoritative value; override this field only
+ *         when AutoAim should react faster than BaseAuto turns.
+ *   - rpmTolerance (defaults to SharedRobotTuning.RPM_TOLERANCE)
+ *       • Locks in the readiness window used by atSpeed().
+ *       • Coordinate with Launcher.atSpeedToleranceRPM so AutoAim and manual
+ *         fire buttons agree on "ready." SharedRobotTuning overrides
+ *         BaseAuto.rpmTol() as well.
+ *   - initialAutoDefaultSpeed (defaults to SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED)
+ *       • Seeds the launcher RPM before any tag is seen.
+ *       • TeleOpAllianceBase may override its own copy for driver preference;
+ *         mirror that value here if TeleOp diverges from the shared default.
+ *
+ * METHODS
+ *   - AutoAimSpeed(...)
+ *       • Constructor wiring vision, TagAimController, AutoSpeed curve helper,
+ *         and the Launcher subsystem.
+ *   - enable() / disable()
+ *       • Toggle the assist loop and synchronize LauncherAutoSpeedController
+ *         state with manual overrides.
+ *   - isEnabled()
+ *       • Convenience getter for OpModes managing toggle buttons.
+ *   - update(AprilTagDetection, headingDeg)
+ *       • Convert the latest detection into RPM + twist suggestions, falling
+ *         back to the seeded RPM when tags are lost.
+ *   - atSpeed(tolRpm)
+ *       • Confirms launcher readiness using either the caller-provided tolerance
+ *         or the shared rpmTolerance field.
+ *
+ * NOTES
+ *   - AutoRpmConfig.apply(...) overwrites LauncherAutoSpeedController tunables
+ *     during robot init; this class simply reads the live controller values.
+ *   - VisionAprilTag.setRangeScale(...) calibrations change the distance fed to
+ *     update(); re-run tape-measure checks after moving the camera or goal.
+ *   - TagAimController limits are slightly wider than maxTwist so this class is
+ *     the final clamp before we pass steering hints back to TeleOp/Auto.
+ */
 package org.firstinspires.ftc.teamcode.assist;
 
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
@@ -25,23 +61,24 @@ import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 
 public class AutoAimSpeed {
 
-    // ---------------- Tunables (centralized) ----------------
-    public double maxTwist = SharedRobotTuning.TURN_TWIST_CAP;             // cap for twist magnitude
-    public double rpmTolerance = SharedRobotTuning.RPM_TOLERANCE;          // ± tolerance for "at speed"
-    public double initialAutoDefaultSpeed = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
+    // ---------------- Tunables (copied from SharedRobotTuning unless overridden) ----------------
+    public double maxTwist = SharedRobotTuning.TURN_TWIST_CAP;             // Clamp for twist suggestions; SharedRobotTuning owns the authoritative value
+    public double rpmTolerance = SharedRobotTuning.RPM_TOLERANCE;          // Shared readiness window so Auto and TeleOp agree on launcher "ready"
+    public double initialAutoDefaultSpeed = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // Seed RPM prior to tag lock; match TeleOpAllianceBase override if changed
 
-    private static final double M_TO_IN = 39.37007874015748;
+    private static final double M_TO_IN = 39.37007874015748;               // Constant to convert AprilTag meters → inches
 
     // ---------------- Deps ----------------
-    private final VisionAprilTag vision;
-    private final TagAimController aim;
-    private final LauncherAutoSpeedController autoCtrl;
-    private final Launcher launcher;
+    private final VisionAprilTag vision;                 // Shared AprilTag detector (distance + bearing)
+    private final TagAimController aim;                  // PD twist controller for goal alignment
+    private final LauncherAutoSpeedController autoCtrl;  // Distance→RPM curve helper
+    private final Launcher launcher;                     // Physical flywheel subsystem
 
     // ---------------- State ----------------
-    private boolean enabled = false;
-    private boolean hadTagFix = false;
+    private boolean enabled = false;                     // Tracks whether assists are actively running
+    private boolean hadTagFix = false;                   // Remembers if we have seen a tag this enable cycle
 
+    // Constructor wires dependencies so both TeleOp and Auto share identical assists.
     public AutoAimSpeed(VisionAprilTag vision,
                         TagAimController aim,
                         LauncherAutoSpeedController autoCtrl,
@@ -52,17 +89,20 @@ public class AutoAimSpeed {
         this.launcher = launcher;
     }
 
+    // Enable the assist loop and let AutoSpeed control RPM again.
     public void enable()  {
         enabled = true;
         try { autoCtrl.setAutoEnabled(true); } catch (Throwable ignored) {}
     }
 
+    // Disable assist, handing control back to manual RPM while preserving spin.
     public void disable() {
         enabled = false;
         try { autoCtrl.onManualOverride(launcher.getCurrentRpm()); } catch (Throwable ignored) {}
         try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
     }
 
+    // Quick getter so OpModes can guard update() without extra state.
     public boolean isEnabled() { return enabled; }
 
     /** Update loop: set RPM from distance and return suggested twist. */

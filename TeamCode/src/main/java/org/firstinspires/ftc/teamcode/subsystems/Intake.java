@@ -7,28 +7,35 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 
 /*
  * FILE: Intake.java
- * LOCATION: teamcode/.../subsystems/
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/
  *
- * PURPOSE:
- * - Simple on/off intake control for motor "Intake".
+ * PURPOSE
+ *   - Wrap the intake motor with simple on/off controls shared by TeleOp,
+ *     Autonomous, and StopAll safety hooks.
+ *   - Track current state so toggle buttons and auto assists stay synchronized.
  *
- * TUNABLES:
- * - powerOn: intake running power (0.5–1.0 typical).
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Intake power & driver defaults)
+ *   - powerOn
+ *       • Motor power while the intake is active.
+ *       • Increase toward 0.9 when ARTIFACTS slip; reduce to ~0.6 if jams occur.
+ *         TeleOpAllianceBase can tweak DEFAULT_INTAKE_ENABLED but not this value.
  *
- * IMPORTANT FUNCTIONS:
- * - toggle(): flips intake state.
- * - set(boolean): explicitly sets intake on/off.
- * - isOn(): returns current state.
- * - stop(): immediately turns intake OFF (used by TeleOp StopAll).
+ * METHODS
+ *   - toggle() / set(boolean)
+ *       • Flip or directly command the intake state.
+ *   - isOn()
+ *       • Used by telemetry + gating logic.
+ *   - stop()
+ *       • Force the intake off (StopAll, autonomous failsafes).
  *
- * NOTES:
- * - NEW: Startup ON/OFF is now controlled by TeleOp via DEFAULT_INTAKE_ENABLED.
- * - NEW (2025-10-23): Added stop() for integration with StopAll.
+ * NOTES
+ *   - TeleOpAllianceBase.DEFAULT_INTAKE_ENABLED controls whether TeleOp starts
+ *     with the intake running—adjust there for driver preference.
  */
 public class Intake {
     private final DcMotorEx motor;
     private boolean on = false;
-    public double powerOn = 0.8;
+    public double powerOn = 0.8; // Shared intake power; referenced by TeleOp + Auto assists (see TunableDirectory)
 
     public Intake(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "Intake");
@@ -36,13 +43,16 @@ public class Intake {
         motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
     }
 
+    /** Toggle intake state (useful for button bindings). */
     public void toggle() { set(!on); }
 
+    /** Set intake to run or stop at the configured power. */
     public void set(boolean enable) {
         on = enable;
         motor.setPower(on ? powerOn : 0);
     }
 
+    /** @return true when intake motor is currently running. */
     public boolean isOn() { return on; }
 
     /** Immediately turns intake OFF (safe to call repeatedly). */

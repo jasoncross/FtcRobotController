@@ -17,42 +17,45 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  * FILE: VisionAprilTag.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/vision/
  *
- * PURPOSE:
- *   Cross-SDK AprilTag helper that:
- *     - Initializes VisionPortal + AprilTagProcessor (SDK-neutral).
- *     - Provides a compatibility getter for detections across SDK versions.
- *     - Returns the "best" detection for a specific Tag ID (closest range).
- *     - Adds a configurable RANGE SCALE to correct distance if pose is off
- *       by a constant factor (common with older SDKs or uncalibrated cams).
- *     - (NEW) Adds DECODE Obelisk tag latch (IDs 21/22/23) with optional
- *       background polling so Auto can capture late sightings during motion.
+ * PURPOSE
+ *   - Provide a cross-SDK AprilTag helper that initializes VisionPortal +
+ *     AprilTagProcessor, exposes compatibility getters, and returns the closest
+ *     detection for a requested tag.
+ *   - Maintain a configurable range scale to correct distance output and latch
+ *     DECODE Obelisk tags (IDs 21/22/23) during the init loop.
  *
- * NOTES:
- *   - We use 640x480 with MJPEG when available (built-in calibration + better FPS).
- *   - No AprilTagLibrary/addTag() calls so this compiles on older SDKs.
- *   - Bearing/pose are taken from AprilTagDetection.ftcPose.
- *
- * ALLIANCE TAG IDS (DECODE field):
+ * ALLIANCE TAG IDS (DECODE field)
  *   - BLUE GOAL: 20
  *   - RED  GOAL: 24
  *
- * OBELISK TAG IDS (DECODE field):
- *   - 21 → GPP, 22 → PGP, 23 → PPG
+ * OBELISK TAG IDS (DECODE field)
+ *   - 21 → GPP, 22 → PGP, 23 → PPG (latched via ObeliskSignal)
  *
- * TUNING:
- *   - Call setRangeScale(s) after a 1-point calibration:
- *       s = true_distance_meters / measured_distance_meters
- *     Then use getScaledRange(det) anywhere you display/use distance.
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Vision & range calibration)
+ *   - setRangeScale(scale)
+ *       • After a tape-measure calibration compute scale = true_distance_m /
+ *         measured_distance_m.
+ *       • TeleOpAllianceBase currently overrides to 0.03 for the shared instance;
+ *         update whenever camera height or lens changes.
  *
- * METHODS:
+ * METHODS
  *   - init(hw, "Webcam 1")
- *   - List<AprilTagDetection> getDetectionsCompat()
- *   - AprilTagDetection getDetectionFor(int tagId)
- *   - void   setRangeScale(double s)
- *   - double getScaledRange(AprilTagDetection det)
- *   - void   observeObelisk() / observeObelisk(List<AprilTagDetection>)
- *   - void   setObeliskAutoLatchEnabled(boolean enable)   // NEW
- *   - void   stop()
+ *       • Build VisionPortal + AprilTagProcessor with compatible defaults.
+ *   - getDetectionsCompat()
+ *       • Return detections using the best API available for the installed SDK.
+ *   - getDetectionFor(int tagId)
+ *       • Return the closest visible detection for the requested tag.
+ *   - setRangeScale(double s) / getScaledRange(det)
+ *       • Adjust and read calibrated distance values.
+ *   - observeObelisk(...) / setObeliskAutoLatchEnabled(boolean)
+ *       • Track Obelisk tags during the init loop or while moving in Auto.
+ *   - stop()
+ *       • Close the VisionPortal when TeleOp ends.
+ *
+ * NOTES
+ *   - We use 640x480 with MJPEG when available (built-in calibration + better FPS).
+ *   - No AprilTagLibrary.addTag() calls so this compiles on older SDKs.
+ *   - Bearing/pose values come from AprilTagDetection.ftcPose (meters + degrees).
  */
 public class VisionAprilTag {
 

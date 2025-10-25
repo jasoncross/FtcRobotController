@@ -1,6 +1,6 @@
-# FTC 2025–2026 DECODE Season Context for Codex
+# FTC 2025–2026 DECODE Season Context
 
-This document provides background context for the **FTC 2025–2026 DECODE™** season, allowing Codex (or any AI coding assistant) to understand *why* the robot code is designed the way it is. It summarizes the rules, match objectives, and strategy foundations for the Indianola Robotics robot software.
+This document provides background context for the **FTC 2025–2026 DECODE™** season, allowing developers to understand *why* the robot code is designed the way it is. It summarizes the rules, match objectives, and strategy foundations for the Indianola Robotics robot software.
 
 ---
 

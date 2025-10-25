@@ -57,8 +57,8 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
 | **Start** | **StopAll toggle** (same behavior as G1) |
 
-**Startup defaults:**  
-`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (editable in `TeleOpAllianceBase.java`).
+**Startup defaults:**
+`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (edit in `config/TeleOpDriverDefaults.java`).
 
 ---
 
@@ -76,8 +76,18 @@ TeamCode/
     │   ├── Auto_Red_Target.java
     │   └── Auto_Red_Human.java
     ├── config/
-    │   ├── AutoRpmConfig.java                ← NEW: distance→RPM curve + smoothing
-    │   └── SharedRobotTuning.java            ← NEW: RPM tol, shot spacing, caps, assists
+    │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
+    │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
+    │   ├── ControllerTuning.java             ← Trigger thresholds
+    │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
+    │   ├── FeedTuning.java                   ← Feed power, duration, cooldown
+    │   ├── IntakeTuning.java                 ← Intake motor power
+    │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
+    │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
+    │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
+    │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
+    │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
+    │   └── VisionTuning.java                 ← AprilTag range scale calibration
     ├── control/
     │   └── LauncherAutoSpeedController.java
     ├── drive/
@@ -107,7 +117,10 @@ TeamCode/
 For a complete, always-current list of adjustable parameters, see the
 [TeamCode Tunable Directory](./TunableDirectory.md). It captures
 where each value lives, which game modes it influences, and how overlapping
-TeleOp/Auto tunables override one another.
+TeleOp/Auto tunables override one another. TeleOp driver preferences (startup
+states, rumble envelopes, eject behavior, etc.) now live in
+`config/` files, so you can retune match workflow without touching the
+OpMode source.
 
 ### AutoAim
 - **Enable:** Only when a goal AprilTag is visible.  
@@ -134,7 +147,7 @@ TeleOp/Auto tunables override one another.
 ### Intake, Feed, and Eject
 - `DEFAULT_INTAKE_ENABLED` determines initial intake state.  
 - Feeding automatically enables intake for `intakeAssistMs = 250 ms` if it was off.  
-- **Eject (B/Circle):** runs launcher at `ejectRpm = 300 RPM` for `ejectTimeMs = 300 ms`, feeds once, then restores previous RPM.  
+- **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
 - **Double pulse:** feature enabled.  

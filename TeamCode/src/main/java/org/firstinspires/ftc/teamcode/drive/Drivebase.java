@@ -10,6 +10,7 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.teamcode.config.DriveTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 import static java.lang.Math.*;
@@ -67,19 +68,19 @@ import static java.lang.Math.*;
 public class Drivebase {
 
     // ======= TUNE THESE =======
-    public static final double WHEEL_DIAMETER_IN = 3.7795; // goBILDA 96mm wheel ≈ 3.7795"
-    public static final double TICKS_PER_REV     = 537.7;  // goBILDA 5202 312RPM output encoder
-    public static final double GEAR_RATIO        = 1.0;    // wheel revs per motor rev (set >1 if reduced)
+    public static final double WHEEL_DIAMETER_IN = DriveTuning.WHEEL_DIAMETER_IN; // goBILDA 96mm wheel ≈ 3.7795"
+    public static final double TICKS_PER_REV     = DriveTuning.TICKS_PER_REV;     // goBILDA 5202 312RPM output encoder
+    public static final double GEAR_RATIO        = DriveTuning.GEAR_RATIO;        // wheel revs per motor rev (set >1 if reduced)
     public static final double TICKS_PER_IN      = (TICKS_PER_REV * GEAR_RATIO) / (Math.PI * WHEEL_DIAMETER_IN);
 
     // Strafing compensation for lateral under-travel (tune on your field surface)
-    public static final double STRAFE_CORRECTION = 1.15;
+    public static final double STRAFE_CORRECTION = DriveTuning.STRAFE_CORRECTION;
 
     // IMU turn control gains + tolerance
-    public static final double TURN_KP = 0.012;
-    public static final double TURN_KD = 0.003;
-    public static final double TURN_TOLERANCE_DEG = 1.0;   // stop when within ±1°
-    public static final double TURN_SETTLE_TIME   = 0.15;  // remain within tolerance this many seconds
+    public static final double TURN_KP = DriveTuning.TURN_KP;
+    public static final double TURN_KD = DriveTuning.TURN_KD;
+    public static final double TURN_TOLERANCE_DEG = DriveTuning.TURN_TOLERANCE_DEG;   // stop when within ±tuned tolerance
+    public static final double TURN_SETTLE_TIME   = DriveTuning.TURN_SETTLE_TIME_SEC;  // remain within tolerance this many seconds
 
     // ======= INTERNAL =======
     private final LinearOpMode linear;   // Non-null only in Autonomous usage

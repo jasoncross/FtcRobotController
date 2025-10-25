@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.subsystems;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.config.FeedTuning;
 
 /*
  * FILE: Feed.java
@@ -42,9 +43,9 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
  *     sleep with RUN_TO_POSITION logic.
  */
 public class Feed {
-    public double firePower = 0.9; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
-    public int fireTimeMs   = 600;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
-    public int minCycleMs   = 300;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
+    public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
+    public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
+    public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
 
     private final DcMotorEx motor;
     private long lastFire = 0;

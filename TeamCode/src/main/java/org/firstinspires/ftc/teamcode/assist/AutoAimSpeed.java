@@ -12,16 +12,16 @@
  *     control while automation nudges the robot toward the goal.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → AutoAim section)
- *   - maxTwist (defaults to SharedRobotTuning.TURN_TWIST_CAP)
+ *   - maxTwist (defaults to AutoAimTuning.MAX_TWIST)
  *       • Caps the steering command returned from update().
- *       • SharedRobotTuning is the authoritative value; override this field only
- *         when AutoAim should react faster than BaseAuto turns.
- *   - rpmTolerance (defaults to SharedRobotTuning.RPM_TOLERANCE)
+ *       • AutoAimTuning mirrors the shared twist cap by default; override this
+ *         field when AutoAim should react faster than BaseAuto turns.
+ *   - rpmTolerance (defaults to AutoAimTuning.RPM_TOLERANCE)
  *       • Locks in the readiness window used by atSpeed().
  *       • Coordinate with Launcher.atSpeedToleranceRPM so AutoAim and manual
  *         fire buttons agree on "ready." SharedRobotTuning overrides
  *         BaseAuto.rpmTol() as well.
- *   - initialAutoDefaultSpeed (defaults to SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED)
+ *   - initialAutoDefaultSpeed (defaults to AutoAimTuning.INITIAL_AUTO_DEFAULT_SPEED)
  *       • Seeds the launcher RPM before any tag is seen.
  *       • TeleOpAllianceBase may override its own copy for driver preference;
  *         mirror that value here if TeleOp diverges from the shared default.
@@ -52,7 +52,7 @@
  */
 package org.firstinspires.ftc.teamcode.assist;
 
-import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
+import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
@@ -62,9 +62,9 @@ import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 public class AutoAimSpeed {
 
     // ---------------- Tunables (copied from SharedRobotTuning unless overridden) ----------------
-    public double maxTwist = SharedRobotTuning.TURN_TWIST_CAP;             // Clamp for twist suggestions; SharedRobotTuning owns the authoritative value
-    public double rpmTolerance = SharedRobotTuning.RPM_TOLERANCE;          // Shared readiness window so Auto and TeleOp agree on launcher "ready"
-    public double initialAutoDefaultSpeed = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // Seed RPM prior to tag lock; match TeleOpAllianceBase override if changed
+    public double maxTwist = AutoAimTuning.MAX_TWIST;             // Clamp for twist suggestions; AutoAimTuning defaults to shared value
+    public double rpmTolerance = AutoAimTuning.RPM_TOLERANCE;     // Shared readiness window so Auto and TeleOp agree on launcher "ready"
+    public double initialAutoDefaultSpeed = AutoAimTuning.INITIAL_AUTO_DEFAULT_SPEED; // Seed RPM prior to tag lock; match TeleOpAllianceBase override if changed
 
     private static final double M_TO_IN = 39.37007874015748;               // Constant to convert AprilTag meters → inches
 

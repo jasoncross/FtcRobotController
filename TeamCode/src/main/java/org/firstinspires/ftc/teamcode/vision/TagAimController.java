@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.vision;
 
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.teamcode.config.TagAimTuning;
 
 /*
  * FILE: TagAimController.java
@@ -30,11 +31,14 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
  *       • Telemetry helpers returning NaN when no tag is present.
  */
 public class TagAimController {
-    private double kP = 0.02;        // Proportional gain (twist per degree); align with TunableDirectory AutoAim table
-    private double kD = 0.003;       // Derivative gain to damp overshoot; increase slightly when oscillations appear
+    private double kP = TagAimTuning.KP;        // Proportional gain (twist per degree); align with TunableDirectory AutoAim table
+    private double kD = TagAimTuning.KD;        // Derivative gain to damp overshoot; increase slightly when oscillations appear
+    private double clampAbs = TagAimTuning.CLAMP_ABS;      // Twist clamp magnitude (±clampAbs)
+    private double deadbandDeg = TagAimTuning.DEADBAND_DEG; // Deadband to stop hunting near center
     private double lastErrorDeg = 0.0; // Stored from previous frame for D term
 
     public void setGains(double kP, double kD) { this.kP = kP; this.kD = kD; }
+    public void setClampAndDeadband(double clampAbs, double deadbandDeg) { this.clampAbs = clampAbs; this.deadbandDeg = deadbandDeg; }
 
     /** Returns twist power [-1..1] to align robot to the tag; 0 when det == null or within deadband. */
     public double turnPower(AprilTagDetection det) {
@@ -46,11 +50,12 @@ public class TagAimController {
         double power = (kP * errDeg) + (kD * deriv);
 
         // Clamp twist (sane max while still letting you translate at full speed)
-        if (power > 0.6) power = 0.6;
-        if (power < -0.6) power = -0.6;
+        double clamp = Math.abs(clampAbs);
+        if (power > clamp) power = clamp;
+        if (power < -clamp) power = -clamp;
 
         // Deadband to stop hunting
-        if (Math.abs(errDeg) < 1.5) power = 0.0;
+        if (Math.abs(errDeg) < Math.abs(deadbandDeg)) power = 0.0;
 
         return power;
     }

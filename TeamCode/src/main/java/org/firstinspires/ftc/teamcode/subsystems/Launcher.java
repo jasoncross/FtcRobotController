@@ -5,6 +5,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
+import org.firstinspires.ftc.teamcode.config.LauncherTuning;
 
 /*
  * FILE: Launcher.java
@@ -58,17 +59,17 @@ import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
 public class Launcher {
     // === CONFIGURATION CONSTANTS ===
-    private static final double FLYWHEEL_TPR = 28.0;     // Encoder ticks per revolution; adjust if gear ratio changes
-    private static final double RPM_MIN      = 0.0;      // Minimum allowed RPM requested by any caller
-    private static final double RPM_MAX      = 6000.0;   // Maximum allowed RPM; keep ≥ AutoRpmConfig FAR_RPM & TeleOp rpmTop
+    private static final double FLYWHEEL_TPR = LauncherTuning.FLYWHEEL_TPR; // Encoder ticks per revolution; adjust via config
+    private static final double RPM_MIN      = LauncherTuning.RPM_MIN;      // Minimum allowed RPM requested by any caller
+    private static final double RPM_MAX      = LauncherTuning.RPM_MAX;      // Maximum allowed RPM; keep ≥ AutoRpmConfig FAR_RPM & TeleOp rpmTop
 
     // Default closed-loop PIDF values for REV velocity control.
     // Adjust only if behavior indicates overshoot, oscillation, or slow recovery.
     private static final PIDFCoefficients PIDF = new PIDFCoefficients(
-            10.0,  // P gain
-            3.0,   // I gain
-            0.0,   // D gain
-            12.0   // F feedforward
+            LauncherTuning.PID_P,  // P gain
+            LauncherTuning.PID_I,  // I gain
+            LauncherTuning.PID_D,  // D gain
+            LauncherTuning.PID_F   // F feedforward
     );
 
     // === HARDWARE OBJECTS ===
@@ -77,7 +78,7 @@ public class Launcher {
 
     // === STATE ===
     public double targetRpm = 0;                // Last commanded RPM request (TeleOp + Auto)
-    public double atSpeedToleranceRPM = 100;    // Local readiness window; align with SharedRobotTuning.RPM_TOLERANCE
+    public double atSpeedToleranceRPM = LauncherTuning.AT_SPEED_TOLERANCE_RPM;    // Local readiness window; align with shared tuning
 
     // === CONSTRUCTOR ===
     public Launcher(HardwareMap hw) {

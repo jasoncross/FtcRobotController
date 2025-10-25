@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.hardware.Gamepad;
 import java.util.*;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleConsumer;
+import org.firstinspires.ftc.teamcode.config.ControllerTuning;
 
 /*
  * FILE: ControllerBindings.java
@@ -103,7 +104,7 @@ public class ControllerBindings {
     private final Map<String, DoubleConsumer> triggerAxes = new HashMap<>();
     private final Map<Key, BooleanSupplier> extraBtnReaders = new HashMap<>();
 
-    private static final double TRIGGER_EDGE_THRESH = 0.5; // Analog threshold treated as a digital press
+    private static final double TRIGGER_EDGE_THRESH = ControllerTuning.TRIGGER_EDGE_THRESH; // Analog threshold treated as a digital press
 
     /* =========================
      * PUBLIC BINDING API

@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.config.IntakeTuning;
 
 /*
  * FILE: Intake.java
@@ -35,7 +36,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 public class Intake {
     private final DcMotorEx motor;
     private boolean on = false;
-    public double powerOn = 0.8; // Shared intake power; referenced by TeleOp + Auto assists (see TunableDirectory)
+    public double powerOn = IntakeTuning.POWER_ON; // Shared intake power; referenced by TeleOp + Auto assists (see TunableDirectory)
 
     public Intake(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "Intake");

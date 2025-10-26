@@ -48,6 +48,13 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 public final class SharedRobotTuning {
     private SharedRobotTuning() {}
 
+    // --- REV Control Hub IMU physical mounting ---
+    public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
+            RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
+
+    public static RevHubOrientationOnRobot.UsbFacingDirection USB_DIRECTION =
+            RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
+
     // --- Shot timing ---
     public static long   SHOT_BETWEEN_MS            = 3000;   // BaseAuto.fireN() delay (ms); coordinate with Feed.minCycleMs
 
@@ -63,10 +70,4 @@ public final class SharedRobotTuning {
     public static int    INTAKE_ASSIST_MS           = 250;    // Intake assist duration (ms); TeleOpAllianceBase copies this value
     public static double INITIAL_AUTO_DEFAULT_SPEED = 2500.0; // Seed RPM before first tag lock; match TeleOp override when changed
 
-    // --- REV Control Hub IMU physical mounting ---
-    public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
-            RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
-
-    public static RevHubOrientationOnRobot.UsbFacingDirection USB_DIRECTION =
-            RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
 }

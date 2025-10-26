@@ -66,15 +66,15 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 ```
 TeamCode/
 └── src/main/java/org/firstinspires/ftc/teamcode/
-    Alliance.java
+    Alliance.java                        ← Alliance enum for selecting RED/BLUE behaviors
     ├── assist/
     │   └── AutoAimSpeed.java                 ← NEW shared AutoAim + AutoSpeed helper
     ├── auto/
     │   ├── BaseAuto.java                     ← Reworked; Obelisk HUD + helpers
-    │   ├── Auto_Blue_Target.java
-    │   ├── Auto_Blue_Human.java
-    │   ├── Auto_Red_Target.java
-    │   └── Auto_Red_Human.java
+    │   ├── Auto_Blue_Target.java             ← Blue depot auto (Tag 20 volley, hold position)
+    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 volley → drive upfield)
+    │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
+    │   └── Auto_Red_Human.java               ← Red human-side auto (Tag 24 volley → drive upfield)
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
     │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
@@ -89,24 +89,24 @@ TeamCode/
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
     │   └── VisionTuning.java                 ← AprilTag range scale calibration
     ├── control/
-    │   └── LauncherAutoSpeedController.java
+    │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
     ├── drive/
     │   └── Drivebase.java                    ← IMU orientation: Label UP, USB RIGHT
     ├── input/
-    │   └── ControllerBindings.java
+    │   └── ControllerBindings.java           ← Centralized gamepad mapping/edge-detect helpers
     ├── subsystems/
-    │   ├── Launcher.java
-    │   ├── Feed.java
-    │   └── Intake.java
+    │   ├── Launcher.java                 ← Dual-flywheel subsystem (PIDF + AutoSpeed hooks)
+    │   ├── Feed.java                     ← Feed motor timing + interlocks
+    │   └── Intake.java                   ← Intake motor helper + assist timings
     ├── teleop/
-    │   ├── TeleOpAllianceBase.java
-    │   ├── TeleOp_Blue.java
-    │   └── TeleOp_Red.java
+    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists)
+    │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
+    │   └── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
     ├── utils/
-    │   └── ObeliskSignal.java
+    │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
     └── vision/
-        ├── VisionAprilTag.java
-        └── TagAimController.java
+        ├── VisionAprilTag.java           ← VisionPortal wrapper exposing Tag distance/pose
+        └── TagAimController.java         ← PID twist controller for Tag-centered aiming
 ```
 
 

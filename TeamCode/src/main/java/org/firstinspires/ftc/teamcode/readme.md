@@ -68,9 +68,9 @@ TeamCode/
 └── src/main/java/org/firstinspires/ftc/teamcode/
     Alliance.java                        ← Alliance enum for selecting RED/BLUE behaviors
     ├── assist/
-    │   └── AutoAimSpeed.java                 ← NEW shared AutoAim + AutoSpeed helper
+    │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
-    │   ├── BaseAuto.java                     ← Reworked; Obelisk HUD + helpers
+    │   ├── BaseAuto.java                     ← Shared Auto mode logic
     │   ├── Auto_Blue_Target.java             ← Blue depot auto (Tag 20 volley, hold position)
     │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 volley → drive upfield)
     │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
@@ -91,7 +91,7 @@ TeamCode/
     ├── control/
     │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
     ├── drive/
-    │   └── Drivebase.java                    ← IMU orientation: Label UP, USB RIGHT
+    │   └── Drivebase.java                    ← Main driving logic; IMU orientation: Label UP, USB RIGHT
     ├── input/
     │   └── ControllerBindings.java           ← Centralized gamepad mapping/edge-detect helpers
     ├── subsystems/

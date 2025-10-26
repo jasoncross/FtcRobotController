@@ -252,6 +252,8 @@ Press **Start** again to **RESUME** normal control.
 ## Credits
 Indianola Robotics – FTC Team 2025  
 Mentor Support: *Jason Cross*  
+Some portions of this code and documentation were created or refined with the assistance of OpenAI's ChatGPT Codex under mentor supervision. All final design, testing, and implementation decisions were made by Indianola Robotics Team.
+
 Built on the official **FIRST Tech Challenge SDK**  
 
 ---

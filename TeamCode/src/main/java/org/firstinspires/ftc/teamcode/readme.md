@@ -245,10 +245,9 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑26** – Restored a single Revision History section at the footer and recorded today’s documentation alignment update.
-- **2025‑10‑25** – Eject function implemented; readme fully synchronized with code.
-- **2025‑10‑24** – AutoAim grace window (4 s) added with auto‑disable pulse.
-- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented.
+- **2025‑10‑26** – Added revision history to the readme.
+- **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.
+- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented; eject function implemented; etc.
 - **2025‑10‑22** – Initial DECODE TeleOp base with AutoSpeed & AutoAim integration.
 
 ---

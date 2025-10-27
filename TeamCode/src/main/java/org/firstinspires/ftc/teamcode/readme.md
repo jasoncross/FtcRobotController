@@ -122,6 +122,9 @@ states, rumble envelopes, eject behavior, etc.) now live in
 `config/` files, so you can retune match workflow without touching the
 OpMode source.
 
+For broader context on how the subsystems, StopAll latch, and rule constraints interconnect, review the
+[Codex Context & Development Background](./CodexContextBackground.md) companion document.
+
 ### AutoAim
 - **Enable:** Only when a goal AprilTag is visible.  
 - **Grace period:** If the tag is lost, AutoAim waits **`autoAimLossGraceMs = 4000` ms** before disabling.  
@@ -193,17 +196,17 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 ### Implementation Details
 | File | Purpose |
 |------|----------|
-| [`vision/VisionAprilTag.java`](sandbox:/mnt/data/VisionAprilTag.java) | Detects AprilTags 21/22/23 and updates shared state via `observeObelisk()`. |
-| [`utils/ObeliskSignal.java`](sandbox:/mnt/data/ObeliskSignal.java) | In-memory latch that stores and displays the detected obelisk order. |
-| [`auto/BaseAuto.java`](sandbox:/mnt/data/BaseAuto.java) | Observes the obelisk during the **prestart** loop, allowing the robot to lock in the signal before the match begins. |
-| [`teleop/TeleOpAllianceBase.java`](sandbox:/mnt/data/TeleOpAllianceBase.java) | Calls `vision.observeObelisk()` every loop and displays the latched order on the **first telemetry line**. |
+| [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java) | Detects AprilTags 21/22/23 and updates shared state via `observeObelisk()`. |
+| [`utils/ObeliskSignal.java`](./utils/ObeliskSignal.java) | In-memory latch that stores and displays the detected obelisk order. |
+| [`auto/BaseAuto.java`](./auto/BaseAuto.java) | Observes the obelisk during the **prestart** loop, allowing the robot to lock in the signal before the match begins. |
+| [`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java) | Calls `vision.observeObelisk()` every loop and displays the latched order on the **first telemetry line**. |
 
 ---
 
 ## Tunable Directory
 
 The detailed directory of tunable values lives in
-[TeamCode/TunableDirectory.md](../../../../../../../TunableDirectory.md). Review that
+[TeamCode Tunable Directory](./TunableDirectory.md). Review that
 document for authoritative defaults, tuning guidance, and notes on which class
 or game mode owns each parameter before making adjustments.
 
@@ -242,10 +245,11 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑22** – Initial DECODE TeleOp base with AutoSpeed & AutoAim integration.  
-- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented.  
-- **2025‑10‑24** – AutoAim grace window (4 s) added with auto‑disable pulse.  
-- **2025‑10‑25** – Eject function implemented; readme fully synchronized with code.  
+- **2025‑10‑26** – Restored a single Revision History section at the footer and recorded today’s documentation alignment update.
+- **2025‑10‑25** – Eject function implemented; readme fully synchronized with code.
+- **2025‑10‑24** – AutoAim grace window (4 s) added with auto‑disable pulse.
+- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented.
+- **2025‑10‑22** – Initial DECODE TeleOp base with AutoSpeed & AutoAim integration.
 
 ---
 

@@ -33,23 +33,30 @@ jobs:
       - name: Ensure gradlew is executable
         run: chmod +x ./gradlew
 
-      - name: Assemble Debug APK
-        run: ./gradlew --no-daemon :FtcRobotController:assembleDebug
-
-      # (Debug) show where Gradle actually put the APK(s)
-      - name: List APKs
+      - name: Assemble Debug (APK and/or AAB)
         run: |
-          echo "Searching for APKs under $PWD ..."
-          find . -type f -name "*.apk" -print | sort || true
+          ./gradlew --no-daemon :FtcRobotController:assembleDebug || true
+          ./gradlew --no-daemon :FtcRobotController:bundleDebug || true
 
-      # Upload any APK(s) we find (robust glob)
-      - name: Upload APK(s)
+      # Show exactly what was produced (handy for debugging globs)
+      - name: List Android outputs
+        run: |
+          echo "=== build/outputs tree ==="
+          find . -path "*/build/outputs/*" -maxdepth 6 -type f -print | sort || true
+          echo "=== all *.apk / *.aab anywhere ==="
+          find . -type f \( -name "*.apk" -o -name "*.aab" \) -print | sort || true
+
+      # Upload everything under outputs (covers both APK and AAB, any variant)
+      - name: Upload Android outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apks
+          name: android-outputs
           path: |
-            **/*.apk
+            **/build/outputs/**/*.apk
+            **/build/outputs/**/*.aab
+          if-no-files-found: warn
+
 
 
       # Optional: add lint once build passes

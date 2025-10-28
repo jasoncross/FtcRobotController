@@ -33,16 +33,24 @@ jobs:
       - name: Ensure gradlew is executable
         run: chmod +x ./gradlew
 
-      # If your module isn't FtcRobotController, change this to :app:assembleDebug, etc.
       - name: Assemble Debug APK
         run: ./gradlew --no-daemon :FtcRobotController:assembleDebug
 
-      - name: Upload APK
+      # (Debug) show where Gradle actually put the APK(s)
+      - name: List APKs
+        run: |
+          echo "Searching for APKs under $PWD ..."
+          find . -type f -name "*.apk" -print | sort || true
+
+      # Upload any APK(s) we find (robust glob)
+      - name: Upload APK(s)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
-          path: '**/build/outputs/apk/debug/*.apk'
+          name: debug-apks
+          path: |
+            **/*.apk
+
 
       # Optional: add lint once build passes
       # - name: Run Lint

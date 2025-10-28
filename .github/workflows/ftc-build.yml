@@ -33,20 +33,16 @@ jobs:
       - name: Ensure gradlew is executable
         run: chmod +x ./gradlew
 
-      - name: Assemble Debug (APK and/or AAB)
-        run: |
-          ./gradlew --no-daemon :FtcRobotController:assembleDebug || true
-          ./gradlew --no-daemon :FtcRobotController:bundleDebug || true
-
-      # Show exactly what was produced (handy for debugging globs)
+      - name: Assemble all Debug APKs
+        run: ./gradlew --no-daemon clean assembleDebug
+      
       - name: List Android outputs
         run: |
           echo "=== build/outputs tree ==="
           find . -path "*/build/outputs/*" -maxdepth 6 -type f -print | sort || true
           echo "=== all *.apk / *.aab anywhere ==="
           find . -type f \( -name "*.apk" -o -name "*.aab" \) -print | sort || true
-
-      # Upload everything under outputs (covers both APK and AAB, any variant)
+      
       - name: Upload Android outputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -56,6 +52,7 @@ jobs:
             **/build/outputs/**/*.apk
             **/build/outputs/**/*.aab
           if-no-files-found: warn
+
 
 
 

@@ -43,6 +43,8 @@ import org.firstinspires.ftc.teamcode.config.FeedTuning;
  *     sleep with RUN_TO_POSITION logic.
  */
 public class Feed {
+
+    // CHANGES (2025-10-30): Locked zero-power BRAKE + RUN_WITHOUT_ENCODER and guard before each power command.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -52,7 +54,7 @@ public class Feed {
 
     public Feed(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "FeedMotor");
-        motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        applySafetyConfig();
     }
 
     /** Returns true if enough time has passed since last feed to fire again. */
@@ -64,6 +66,7 @@ public class Feed {
     public void feedOnceBlocking() {
         if (!canFire()) return;
         lastFire = System.currentTimeMillis();
+        applySafetyConfig();
         motor.setPower(firePower);
         sleep(fireTimeMs);
         motor.setPower(0);
@@ -71,15 +74,24 @@ public class Feed {
 
     /** Immediately stops the feed motor. */
     public void stop() {
+        applySafetyConfig();
         motor.setPower(0);
     }
 
     /** Helper exposed for safety fallbacks and testing. */
     public void setPower(double p) {
+        applySafetyConfig();
         motor.setPower(p);
     }
 
     private void sleep(int ms) {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+
+    private void applySafetyConfig() {
+        motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        if (motor.getMode() != DcMotor.RunMode.RUN_WITHOUT_ENCODER) {
+            motor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
     }
 }

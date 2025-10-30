@@ -45,7 +45,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **X / Square** | **Toggle Manual RPM LOCK** *(only when AutoSpeed = OFF; holds current RPM)* |
 | **B / Circle** | **Eject** *(temporary RPM = `EjectRPM`, feeds once with Intake Assist, then restores prior RPM)* |
 | **D-pad Up** | **Enable RPM TEST MODE** |
-| **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled (applies immediately) |
+| **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled; when **AutoSpeed = OFF** **and Manual Lock = ON**, nudges manual RPM by `LauncherTuning.MANUAL_RPM_STEP` (default 50) |
 | **D-pad Down** | **Disable TEST MODE** and **STOP** launcher |
 | **Start** | **StopAll toggle** — latches an all-systems stop; press again to resume |
 
@@ -126,13 +126,13 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 [Codex Context & Development Background](./CodexContextBackground.md) companion document.
 
 ### AutoAim
-- **Enable:** Only when a goal AprilTag is visible.  
-- **Grace period:** If the tag is lost, AutoAim waits **`autoAimLossGraceMs = 4000` ms** before disabling.  
-  - If the tag reappears within that window → AutoAim continues automatically.  
-  - If not → AutoAim disables and provides a **single rumble pulse**.  
-- **Behavior:** While AutoAim (or grace) is active, **right stick rotation is ignored**.  
-  AutoAim continuously applies twist correction from `TagAimController` to hold target at 0°.  
-- **Left stick movement** still provides full translation.  
+- **Enable:** Only when a goal AprilTag is visible.
+- **Grace period:** If the tag is lost, AutoAim waits **`autoAimLossGraceMs = 4000` ms** before disabling.
+  - If the tag reappears within that window → AutoAim continues automatically.
+  - If not → AutoAim disables and provides a **single rumble pulse**.
+- **Behavior:** While AutoAim (or grace) is active, **right stick rotation is ignored**.
+  AutoAim continuously applies twist correction from `TagAimController` to hold target at 0°.
+- **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
 
 ### AutoSpeed
 - When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.  
@@ -143,13 +143,15 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
   - Holds last valid RPM when tag not visible after first fix.  
 
 ### Manual Launcher Mode
-- In manual (AutoSpeed = OFF), right trigger scales between `rpmBottom` and `rpmTop`.  
-- If `rpmBottom > 0`, the launcher idles at that RPM even when trigger = 0.  
-- Manual lock (X/Square) freezes current RPM until unlocked.  
+- In manual (AutoSpeed = OFF), right trigger scales between `rpmBottom` and `rpmTop`.
+- If `rpmBottom > 0`, the launcher idles at that RPM even when trigger = 0.
+- Manual lock (X/Square) freezes current RPM until unlocked.
+- D-pad left/right apply ±`LauncherTuning.MANUAL_RPM_STEP` adjustments for quick fine-tuning **only while Manual Lock is engaged** (keeps lock and AutoSpeed off).
 
 ### Intake, Feed, and Eject
-- `DEFAULT_INTAKE_ENABLED` determines initial intake state.  
-- Feeding automatically enables intake for `intakeAssistMs = 250 ms` if it was off.  
+- `DEFAULT_INTAKE_ENABLED` determines initial intake state.
+- Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
+- Feed motor holds position with BRAKE zero-power behavior so the pusher stays planted between cycles.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
@@ -161,7 +163,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 
 ## Vision (AprilTags)
 
-- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor.  
+- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor (Driver Station live view enabled via `VisionPortal` builder).
 - **Alliance goals:** Blue = Tag 20  |  Red = Tag 24  
 - **Distance units:** inches = meters × 39.37  
 - **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.  
@@ -245,6 +247,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
+- **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.
 - **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented; eject function implemented; etc.

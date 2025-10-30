@@ -18,13 +18,19 @@
  *   - INITIAL_AUTO_DEFAULT_SPEED
  *       • Seed RPM applied before the first tag fix when AutoAim enables. Mirrors
  *         SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED unless overridden.
+ *   - AUTO_AIM_SPEED_SCALE (NEW 2025-10-30)
+ *       • Fractional drive speed applied to TeleOp translation while AutoAim is
+ *         enabled. Lower to tighten alignment, raise toward 1.0 for faster
+ *         approaches.
  */
 package org.firstinspires.ftc.teamcode.config;
 
 public final class AutoAimTuning {
     private AutoAimTuning() {}
 
+    // CHANGES (2025-10-30): Added AUTO_AIM_SPEED_SCALE for AutoAim drive throttling.
     public static double MAX_TWIST = SharedRobotTuning.TURN_TWIST_CAP;
     public static double RPM_TOLERANCE = SharedRobotTuning.RPM_TOLERANCE;
     public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
+    public static double AUTO_AIM_SPEED_SCALE = 0.25; // Translation multiplier (0-1) while AutoAim is active
 }

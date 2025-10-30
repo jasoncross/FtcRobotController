@@ -88,6 +88,7 @@ import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 //  - AutoRPM curve in this file: autoNearDistIn/autoNearRpm/autoFarDistIn/autoFarRpm/autoSmoothingAlpha
 //  - Intake Assist & InitialAutoDefaultSpeed in this file
 // Now update them in these configs instead:
+import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;      // distance→RPM curve + smoothing
 import org.firstinspires.ftc.teamcode.config.LauncherTuning;
 import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults; // TeleOp-only workflow + manual ranges
@@ -98,6 +99,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag r
 import java.util.Locale;
 
 public abstract class TeleOpAllianceBase extends OpMode {
+    // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -117,6 +119,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Launcher Manual Range (used when AutoSpeed == false) ----------------
     private double rpmBottom    = TeleOpDriverDefaults.RPM_BOTTOM; // Manual RPM lower bound when AutoSpeed is off
     private double rpmTop       = TeleOpDriverDefaults.RPM_TOP;    // Manual RPM upper bound; keep ≤ Launcher.RPM_MAX
+    private double manualRpmStep = LauncherTuning.MANUAL_RPM_STEP; // Manual D-pad adjustment size when AutoSpeed is off & locked
 
     // ---------------- State ----------------
     private boolean autoSpeedEnabled = DEFAULT_AUTOSPEED_ENABLED; // Live state toggled by drivers
@@ -129,6 +132,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
     private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
+    private double autoAimSpeedScale = AutoAimTuning.AUTO_AIM_SPEED_SCALE; // Translation multiplier while AutoAim is active
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -303,6 +307,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
                 rpmTestTarget = clamp(rpmTestTarget - TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
                 launcher.setTargetRpm(rpmTestTarget);
+            } else if (!autoSpeedEnabled && manualRpmLocked) {
+                adjustManualRpm(-manualRpmStep);
             }
         });
         controls.bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> {
@@ -311,6 +317,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
                 rpmTestTarget = clamp(rpmTestTarget + TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
                 launcher.setTargetRpm(rpmTestTarget);
+            } else if (!autoSpeedEnabled && manualRpmLocked) {
+                adjustManualRpm(manualRpmStep);
             }
         });
         controls.bindPress(Pad.G1, Btn.DPAD_DOWN,  () -> { rpmTestEnabled = false; launcher.stop(); });
@@ -438,6 +446,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double driveY  = cap * gamepad1.left_stick_y;
         double strafeX = cap * -gamepad1.left_stick_x;
         double twist   = cap * -gamepad1.right_stick_x;
+        double appliedAimSpeedScale = 1.0;
 
         // Alliance target
         int targetId = (alliance() == Alliance.BLUE)
@@ -459,6 +468,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // AutoAim + grace handling
         long now = System.currentTimeMillis();
         if (autoAimEnabled) {
+            appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
+            driveY  *= appliedAimSpeedScale;
+            strafeX *= appliedAimSpeedScale;
             if (goalDet != null) {
                 aimLossStartMs = -1L;
                 twist = aim.turnPower(goalDet); // ignore right stick
@@ -531,6 +543,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("RPM Target/Actual", "%.0f / %.0f", launcher.targetRpm, launcher.getCurrentRpm());
 
         telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
+        if (autoAimEnabled) telemetry.addData("SpeedScale", String.format(Locale.US, "%.2f", appliedAimSpeedScale));
         telemetry.addData("Tag Visible", (goalDet != null) ? "YES" : "NO");
         telemetry.addData("AutoAim Grace (ms)", autoAimLossGraceMs);
         if (autoAimEnabled && aimLossStartMs >= 0 && goalDet == null) {
@@ -564,6 +577,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     private void ensureAutoCtrl() {
         if (autoCtrl == null) autoCtrl = new LauncherAutoSpeedController();
+    }
+
+    private void adjustManualRpm(double delta) {
+        double lo = Math.max(rpmBottom, LauncherTuning.RPM_MIN);
+        double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
+        double current = manualRpmLocked ? manualLockedRpm : launcher.targetRpm;
+        double next = clamp(current + delta, lo, hi);
+        if (manualRpmLocked) {
+            manualLockedRpm = next;
+        }
+        launcher.setTargetRpm(next);
     }
 
     private void initAimRumble() {

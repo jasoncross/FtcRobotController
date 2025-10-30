@@ -16,13 +16,18 @@
  *   - MIN_CYCLE_MS
  *       • Minimum delay between feeds, preventing rapid double-fires even if the
  *         driver mashes the button.
+ *   - INTAKE_ASSIST_MS (MOVED 2025-10-30)
+ *       • Duration TeleOp/Auto run the intake after a feed when it was previously
+ *         off. Centralized here alongside other feed cadence values.
  */
 package org.firstinspires.ftc.teamcode.config;
 
 public final class FeedTuning {
     private FeedTuning() {}
 
+    // CHANGES (2025-10-30): Added INTAKE_ASSIST_MS after moving ownership from SharedRobotTuning.
     public static double FIRE_POWER = 0.9;
     public static int FIRE_TIME_MS  = 600;
     public static int MIN_CYCLE_MS  = 300;
+    public static int INTAKE_ASSIST_MS = 250; // Intake assist duration (ms) after a feed when intake was off
 }

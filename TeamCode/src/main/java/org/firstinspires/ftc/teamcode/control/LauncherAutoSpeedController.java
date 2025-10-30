@@ -1,58 +1,63 @@
-// ============================================================================
-// FILE:           LauncherAutoSpeedController.java
-// LOCATION:       org/firstinspires/ftc/teamcode/control/
-// PURPOSE:        Compute automatic flywheel TARGET SPEED (in RPM) from robot
-//                 distance (inches) to the GOAL AprilTag using four tunables:
-//                   - nearDistanceIn (inches)
-//                   - nearSpeedRpm   (RPM)
-//                   - farDistanceIn  (inches)
-//                   - farSpeedRpm    (RPM)
-//                 Behavior:
-//                   - LINEAR mapping with EXTRAPOLATION beyond near/far bounds.
-//                   - Holds last auto-computed RPM when tag is not visible.
-//                   - Optional smoothing to reduce abrupt RPM changes.
-//                   - Clean handoff between manual and auto modes.
-// NOTES:
-//   • Units:
-//       - Distance: INCHES (convert from meters upstream if needed).
-//       - Speed:    RPM (matches Launcher closed-loop RPM control).
-//   • Extrapolation:
-//       - If d < nearDistanceIn or d > farDistanceIn, RPM is computed by
-//         extending the same line (no clamping). 12", 130" both work.
-//   • Initial Team Defaults (update via OpModes):
-//       - 24.0 in → 1000 RPM
-//       - 120.0 in → 4500 RPM
-//   • Curve Choice:
-//       - Start LINEAR. If testing shows systematic error, we can swap the
-//         mapping to piecewise/quadratic here without changing callers.
-// METHODS (PUBLIC):
-//   - setParams(nearDistIn, nearRpm, farDistIn, farRpm)
-//   - setSmoothingAlpha(alpha)          // 0.0 = no smoothing (default 0.15)
-//   - setAutoEnabled(enabled)
-//   - isAutoEnabled()
-//   - updateWithVision(distanceInchesOrNull)  // returns target RPM
-//   - onManualOverride(currentManualRpm)      // seeds last RPM & disables auto
-//   - hold()                                  // returns last auto RPM
-//   - getters for tunables and last RPM
-// AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
-// LAST UPDATED:   2025-10-22
-// ============================================================================
+/*
+ * FILE: LauncherAutoSpeedController.java
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/control/
+ *
+ * PURPOSE
+ *   - Convert AprilTag-measured distance (inches) into a launcher RPM target so
+ *     AutoAimSpeed, BaseAuto, and TeleOpAllianceBase share the same AutoSpeed
+ *     behavior.
+ *   - Smoothly transition between automatically computed RPM and manual driver
+ *     overrides by remembering the last auto value.
+ *   - Offer optional exponential smoothing for vision updates that flicker.
+ *
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Launcher speed & flywheel control)
+ *   - nearDistanceIn / nearSpeedRpm & farDistanceIn / farSpeedRpm
+ *       • Anchor points for the linear distance→RPM mapping.
+ *       • AutoRpmConfig.apply(...) overwrites these every init; edit that file for
+ *         authoritative values. These fields only matter when running isolated
+ *         tests without apply().
+ *   - smoothingAlpha
+ *       • 0–1 exponential smoothing factor (0 disables smoothing).
+ *       • AutoRpmConfig.apply(...) should set this to SMOOTH_ALPHA so TeleOp lab
+ *         testing matches match-day settings.
+ *
+ * METHODS
+ *   - setParams(...)
+ *       • Updates the anchor points; typically called only from AutoRpmConfig.
+ *   - setSmoothingAlpha(...)
+ *       • Sets the smoothing factor, clamped to [0,1].
+ *   - setAutoEnabled()/isAutoEnabled()
+ *       • Toggle and query whether automatic control is active.
+ *   - updateWithVision(...)
+ *       • Map distance to RPM, optionally smooth, and remember the last auto
+ *         value so AutoAimSpeed can query hold().
+ *   - onManualOverride(...)
+ *       • Sync lastAutoRpm with a manual RPM so toggling feels seamless.
+ *   - hold() + getters
+ *       • Expose state for telemetry dashboards.
+ *
+ * NOTES
+ *   - BaseAuto and AutoAimSpeed both call updateWithVision() every loop, so keep
+ *     math light to avoid frame drops.
+ *   - The mapping extrapolates beyond both anchors; ensure the near/far points
+ *     bracket your expected shooting distances to avoid extreme RPM requests.
+ */
 package org.firstinspires.ftc.teamcode.control;
 
 public class LauncherAutoSpeedController {
 
     // === TUNABLES (RPM + inches) ===
-    private double nearDistanceIn = 24.0;
-    private double nearSpeedRpm   = 1000.0;
-    private double farDistanceIn  = 120.0;
-    private double farSpeedRpm    = 4500.0;
+    private double nearDistanceIn = 24.0;  // Near anchor distance (in); AutoRpmConfig overwrites on init
+    private double nearSpeedRpm   = 1000.0; // RPM at near anchor; matches AutoRpmConfig.NEAR_RPM unless testing locally
+    private double farDistanceIn  = 120.0; // Far anchor distance (in); overwritten by AutoRpmConfig
+    private double farSpeedRpm    = 4500.0; // RPM at far anchor; still clamped by Launcher.RPM_MAX
 
     // === MODE / STATE ===
-    private boolean autoEnabled   = false;
-    private double  lastAutoRpm   = 0.0;
+    private boolean autoEnabled   = false; // Tracks if auto mode is currently feeding RPM updates
+    private double  lastAutoRpm   = 0.0;   // Last computed auto RPM (also used when tag data drops)
 
     // === SMOOTHING (0..1). 0 disables smoothing, 0.10–0.30 = gentle smoothing. ===
-    private double smoothingAlpha = 0.15;
+    private double smoothingAlpha = 0.15;  // Exponential smoothing factor; AutoRpmConfig resets this each apply()
 
     // -------------------------------------------------------------------------
     // CONFIGURATION

@@ -10,68 +10,77 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.teamcode.config.DriveTuning;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 import static java.lang.Math.*;
 
 /*
  * FILE: Drivebase.java
- * LOCATION: teamcode/.../drive/
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/drive/
  *
- * PURPOSE:
- * - Shared mecanum drive for TeleOp + Autonomous with encoder support.
- * - TeleOp baseline mode: RUN_USING_ENCODER (hub velocity loop enabled).
- * - Autonomous: encoder translation via RUN_TO_POSITION and IMU-based turning.
+ * PURPOSE
+ *   - Provide the shared mecanum drivetrain abstraction for BOTH TeleOp and
+ *     Autonomous, including encoder-based translations and IMU-controlled turns.
+ *   - Normalize driver stick inputs, apply strafing compensation, and expose the
+ *     heading needed by BaseAuto and AutoAim helpers.
  *
- * IMU ORIENTATION (VERY IMPORTANT):
- * - Your hub is mounted: LOGO/Label = UP, USB = RIGHT.
- *   This is configured below so heading() is correct (CCW positive).
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md → Drivetrain motion & positioning)
+ *   - WHEEL_DIAMETER_IN / TICKS_PER_REV / GEAR_RATIO
+ *       • Define the physical conversion between encoder ticks and inches.
+ *       • Update whenever wheels or cartridges change so move() remains accurate.
+ *   - STRAFE_CORRECTION
+ *       • Empirical multiplier (typically 1.05–1.25) compensating for mecanum
+ *         under-travel during lateral moves. Impacts both TeleOp strafing and
+ *         BaseAuto move() helpers.
+ *   - TURN_KP / TURN_KD
+ *       • PD gains for IMU-based turn(). Coordinate with SharedRobotTuning
+ *         LOCK_TOLERANCE_DEG and TURN_TWIST_CAP so Auto unwinds smoothly.
+ *   - TURN_TOLERANCE_DEG / TURN_SETTLE_TIME
+ *       • Define how tightly turn() locks onto the target heading and how long it
+ *         must remain there before declaring success. Keep aligned with
+ *         SharedRobotTuning.LOCK_TOLERANCE_DEG when autos depend on precise aim.
  *
- * MOTOR NAMES (Robot Controller configuration must match EXACTLY):
- * - "FrontLeft", "FrontRight", "BackLeft", "BackRight"
+ * METHODS
+ *   - drive(drive, strafe, twist)
+ *       • Robot-centric TeleOp drive with power normalization.
+ *   - move(distance, headingDeg, power)
+ *       • Encoder translation along a field direction (0°=forward, +90°=right).
+ *   - turn(degrees, power)
+ *       • IMU-driven rotation using the PD gains + settle timers above.
+ *   - heading()
+ *       • Returns IMU yaw in degrees (CCW positive) for use in field-centric math.
+ *   - stop()/stopAll()
+ *       • Halt all motors—BaseAuto safety routines call these frequently.
  *
- * ENCODER PHASE ASSUMPTION:
- * - Pushing the robot FORWARD by hand should make all four encoder positions INCREASE.
- *   (You fixed FR/BR cabling; if this ever changes, flip that motor's setDirection().)
- *
- * TUNABLES (WHAT & WHY):
- * - WHEEL_DIAMETER_IN: Real wheel diameter (inches). Affects distance accuracy of move().
- * - TICKS_PER_REV: Encoder ticks per wheel/output shaft revolution (e.g., 537.7 for 5202 312RPM).
- * - GEAR_RATIO: Use >1.0 if external reduction makes the wheel turn slower than the motor.
- * - STRAFE_CORRECTION: Strafing under-travels on mecanum; 1.10–1.25 typical on carpet.
- * - TURN_KP, TURN_KD: IMU PD gains. Raise KP for faster correction; add KD to reduce overshoot.
- * - TURN_TOLERANCE_DEG, TURN_SETTLE_TIME: Stop criteria for turn() (accuracy & stability).
- *
- * IMPORTANT METHODS:
- * - drive(drive, strafe, twist): Robot-centric TeleOp drive with normalization.
- * - move(distanceInches, degrees, speed): Encoder translation (no rotation). 0°=forward, +90°=right.
- * - turn(degrees, speed): IMU PD rotation (+CCW), with tolerance & settle time.
- * - heading(): Yaw in degrees (CCW positive).
- *
- * STICK SIGNS (recommended outside this class to match your original OpMode):
- * - drive  =  +left_stick_y
- * - strafe =  -left_stick_x   (invert so right on stick = +strafe)
- * - twist  =  -right_stick_x  (+CCW)
- *
- * NEW (2025-10-23):
- * - Added stop() as an alias for stopAll() to integrate with TeleOp StopAll latch.
+ * NOTES
+ *   - IMU orientation defaults to LOGO UP, USB RIGHT (FTC standard). Adjust
+ *     `config/SharedRobotTuning` if the control hub is remounted so heading()
+ *     increases CCW as expected by TeleOp + Auto helpers.
+ *   - Motor names must match Robot Controller configuration exactly:
+ *     "FrontLeft", "FrontRight", "BackLeft", "BackRight".
+ *   - After wiring or configuration changes, push the robot forward by hand—all
+ *     encoders should increase. If not, flip the affected motor direction.
+ *   - Driver stick mapping: drive = +leftY, strafe = -leftX, twist = -rightX to
+ *     preserve historical control feel described in DECODE_Season_Context.md.
  */
 
 public class Drivebase {
 
     // ======= TUNE THESE =======
-    public static final double WHEEL_DIAMETER_IN = 3.7795; // goBILDA 96mm wheel ≈ 3.7795"
-    public static final double TICKS_PER_REV     = 537.7;  // goBILDA 5202 312RPM output encoder
-    public static final double GEAR_RATIO        = 1.0;    // wheel revs per motor rev (set >1 if reduced)
+    public static final double WHEEL_DIAMETER_IN = DriveTuning.WHEEL_DIAMETER_IN; // goBILDA 96mm wheel ≈ 3.7795"
+    public static final double TICKS_PER_REV     = DriveTuning.TICKS_PER_REV;     // goBILDA 5202 312RPM output encoder
+    public static final double GEAR_RATIO        = DriveTuning.GEAR_RATIO;        // wheel revs per motor rev (set >1 if reduced)
     public static final double TICKS_PER_IN      = (TICKS_PER_REV * GEAR_RATIO) / (Math.PI * WHEEL_DIAMETER_IN);
 
     // Strafing compensation for lateral under-travel (tune on your field surface)
-    public static final double STRAFE_CORRECTION = 1.15;
+    public static final double STRAFE_CORRECTION = DriveTuning.STRAFE_CORRECTION;
 
     // IMU turn control gains + tolerance
-    public static final double TURN_KP = 0.012;
-    public static final double TURN_KD = 0.003;
-    public static final double TURN_TOLERANCE_DEG = 1.0;   // stop when within ±1°
-    public static final double TURN_SETTLE_TIME   = 0.15;  // remain within tolerance this many seconds
+    public static final double TURN_KP = DriveTuning.TURN_KP;
+    public static final double TURN_KD = DriveTuning.TURN_KD;
+    public static final double TURN_TOLERANCE_DEG = DriveTuning.TURN_TOLERANCE_DEG;   // stop when within ±tuned tolerance
+    public static final double TURN_SETTLE_TIME   = DriveTuning.TURN_SETTLE_TIME_SEC;  // remain within tolerance this many seconds
 
     // ======= INTERNAL =======
     private final LinearOpMode linear;   // Non-null only in Autonomous usage
@@ -137,11 +146,11 @@ public class Drivebase {
         }
         baseRunModeAfterMove = base;
 
-        // ---- IMU orientation: LOGO UP, USB RIGHT ----
+        // ---- IMU orientation (tunable via SharedRobotTuning) ----
         imu.initialize(new IMU.Parameters(
                 new RevHubOrientationOnRobot(
-                        RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                        RevHubOrientationOnRobot.UsbFacingDirection.RIGHT
+                        SharedRobotTuning.LOGO_DIRECTION,
+                        SharedRobotTuning.USB_DIRECTION
                 )
         ));
         resetHeading();
@@ -183,8 +192,9 @@ public class Drivebase {
 
         // Polar (robot-centric) with 0°=forward
         double rad = toRadians(degrees);
-        double x =  cos(rad); // +right
-        double y =  sin(rad); // +forward
+        double y =  cos(rad); // +forward   (0° = forward)
+        double x =  sin(rad); // +right     (+90° = right)
+
 
         // Compensate lateral losses
         double xAdj = x * STRAFE_CORRECTION;

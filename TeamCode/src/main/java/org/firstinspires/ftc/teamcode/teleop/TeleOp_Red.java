@@ -5,10 +5,21 @@ import org.firstinspires.ftc.teamcode.Alliance;
 
 /*
  * FILE: TeleOp_Red.java
- * PURPOSE:
- * - Red alliance TeleOp entry; inherits all behavior from TeleOpAllianceBase.
- * TUNABLES: none (inherits).
- * IMPORTANT: Shows up on DS as "TeleOp - Red".
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
+ *
+ * PURPOSE
+ *   - Register the RED alliance TeleOp entry while delegating behavior to
+ *     TeleOpAllianceBase.
+ *
+ * TUNABLE PARAMETERS
+ *   - None locally; refer to TeleOpAllianceBase and shared configs.
+ *
+ * METHODS
+ *   - alliance()
+ *       • Returns Alliance.RED so the base class mirrors goal tags and telemetry.
+ *
+ * NOTES
+ *   - Appears on the Driver Station menu as "TeleOp - Red".
  */
 @TeleOp(name="TeleOp - Red", group="TeleOp")
 public class TeleOp_Red extends TeleOpAllianceBase {

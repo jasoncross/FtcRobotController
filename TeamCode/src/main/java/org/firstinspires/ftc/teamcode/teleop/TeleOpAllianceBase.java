@@ -1,64 +1,58 @@
-// ============================================================================
-// FILE:           TeleOpAllianceBase.java
-// LOCATION:       TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
-//
-// PURPOSE:
-//   Shared TeleOp base for both Red and Blue alliances.
-//   Manages driver input, drivetrain, launcher, feed, intake, and AprilTag-based
-//   Aim-Assist. Also computes AUTO LAUNCHER RPM (“AutoSpeed”) from AprilTag
-//   distance using a tunable mapping.
-//
-//   Aim-Assist keeps the robot pointed at the alliance GOAL tag while preserving
-//   full translation control. Haptics give the driver tactile feedback on
-//   toggles and while manually aiming (“aim window” rumble).
-//
-//   AutoSpeed continuously computes launcher RPM from tag distance. If the tag
-//   isn’t visible, the launcher holds the most recent auto RPM. When AutoSpeed
-//   is first enabled with no visible tag, the launcher runs at InitialAutoDefaultSpeed
-//   until a tag is seen.
-//
-//   NEW (2025-10-23): End-of-match safety controls
-//   • Start button toggles a latched STOP state (StopAll). When STOPPED, all powered
-//     systems (drive, launcher, feed, intake) are forced off each loop and controls
-//     are ignored. Press Start again to RESUME.
-//   • Optional Auto-Stop timer (defaults disabled; 119s) starts at TeleOp INIT,
-//     renders a top-line countdown (only when enabled), and calls StopAll at 0.
-//
-// CONTROLS (Gamepad 1):
-//   Left stick ............. Forward/back + strafe
-//   Right stick X .......... Rotation (disabled while AutoAim is ON or in grace)
-//   Left trigger ........... Brake (reduces top speed toward slowestSpeed)
-//   Right trigger .......... Manual launch RPM (only when AutoSpeed == false, not locked, not test)
-//   LB ..................... Feed one ball — with Intake Assist if Intake is OFF
-//   RB ..................... Toggle intake ON/OFF
-//   Right Stick Btn ........ TOGGLE AutoAim  [double-pulse on ENABLE, single on DISABLE]
-//                            (ENABLE only when goal tag is visible; 4s grace on loss)
-//   Triangle / Y ........... TOGGLE AutoSpeed [double-pulse on ENABLE, single on DISABLE]
-//   Square / X ............. TOGGLE Manual RPM LOCK (only when AutoSpeed == false)
-//   Circle / B ............. EJECT (temporary RPM = EjectRPM; feeds once with Intake Assist; restores prior RPM)
-//   D-pad Up ............... Enable RPM TEST MODE
-//   D-pad Left/Right ....... -/+ 50 RPM while TEST MODE enabled (applies immediately)
-//   D-pad Down ............. Disable RPM TEST MODE and STOP launcher
-//   Start (G1 or G2) ....... TOGGLE StopAll latch (STOP ↔ RESUME)
-//
-// TELEMETRY:
-//   Alliance, BrakeCap, Intake state, AutoSpeed, ManualLock, RT, RPM Target/Actual,
-//   AutoAim Enabled, Tag Visible, Tag Heading (deg), Tag Distance (in/raw+smoothed),
-//   AutoRPM In/Out, AutoRPM tunables/smoothing, AutoAim grace countdown.
-//   NEW: When autoStopTimerEnabled == true, a top-line ⏱ AutoStop countdown is shown.
-//
-// NOTES:
-//   - AutoAim enable requires a visible goal tag. If tag is lost, a GRACE TIMER runs
-//     for autoAimLossGraceMs; tag seen again within grace = continue; else disable + pulse.
-//   - While AutoAim is ON (including grace), right-stick rotation is ignored.
-//   - Manual aim-window rumble runs ONLY when AutoAim is OFF.
-//   - Rumble helpers use gamepad.rumble(left,right,durationMs) for SDK compatibility.
-//   - StopAll latches powered systems OFF until Start is pressed again. A StopAll is
-//     also invoked on OpMode.stop() for safety.
-//
-// AUTHOR:         Indianola Robotics – 2025 Season (DECODE)
-// LAST UPDATED:   2025-10-23
-// ============================================================================
+/*
+ * FILE: TeleOpAllianceBase.java
+ * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/
+ *
+ * PURPOSE
+ *   - Serve as the shared TeleOp core for both alliances—handling driver input,
+ *     drivetrain control, launcher automation, AprilTag aim/auto-speed assists,
+ *     rumble feedback, and endgame safety.
+ *   - Provide one place for students to update driver workflow so TeleOp_Blue
+ *     and TeleOp_Red stay aligned.
+ *
+ * TUNABLE PARAMETERS (SEE TunableDirectory.md tables for ranges + overrides)
+ *   - DEFAULT_AUTOSPEED_ENABLED / DEFAULT_AUTOAIM_ENABLED / DEFAULT_INTAKE_ENABLED
+ *       • Driver defaults on init. TeleOp-only; Autonomous ignores these.
+ *   - slowestSpeed
+ *       • Minimum drive power when the brake trigger is held (Intake power &
+ *         driver defaults table).
+ *   - rpmBottom / rpmTop
+ *       • Manual RPM slider bounds when AutoSpeed is off. Ensure rpmTop ≤
+ *         Launcher.RPM_MAX.
+ *   - autoAimLossGraceMs
+ *       • Grace period before AutoAim disengages when tags drop.
+ *   - SMOOTH_A
+ *       • Telemetry smoothing constant for range/heading displays.
+ *   - aimRumble* + togglePulse*
+ *       • Haptic envelopes for aim window + toggle feedback (Driver feedback table).
+ *   - ejectRpm / ejectTimeMs
+ *       • TeleOp-only eject routine behavior.
+ *   - InitialAutoDefaultSpeed
+ *       • Local override of SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED. Update
+ *         assist/AutoAimSpeed.initialAutoDefaultSpeed when diverging.
+ *   - intakeAssistMs
+ *       • TeleOp-specific copy of SharedRobotTuning.INTAKE_ASSIST_MS for post-shot
+ *         intake run.
+ *   - autoStopTimerEnabled / autoStopTimerTimeSec
+ *       • Optional endgame safety timer configuration.
+ *
+ * METHODS
+ *   - init()
+ *       • Initialize subsystems, vision, rumble profiles, controller bindings,
+ *         and copies of shared tuning constants.
+ *   - loop()
+ *       • Run driver control logic each cycle—AutoAim/AutoSpeed, safety gating,
+ *         telemetry updates, and rumble feedback.
+ *   - stop()
+ *       • Ensure all subsystems and vision resources shut down cleanly.
+ *   - Helper sections (feedOnceWithIntakeAssist, handleRumble, applyDrive, etc.)
+ *       • Group related logic for student readability.
+ *
+ * NOTES
+ *   - TeleOp_Blue / TeleOp_Red only supply alliance(); any behavioral change
+ *     should live here so both inherit it.
+ *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
+ *     shared tunables—update those before tweaking the local copies below.
+ */
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -89,15 +83,27 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
 // === AUTO LAUNCHER SPEED (RPM) ===
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 
+// === CENTRALIZED TUNING (NEW) ===
+// Where these used to live:
+//  - AutoRPM curve in this file: autoNearDistIn/autoNearRpm/autoFarDistIn/autoFarRpm/autoSmoothingAlpha
+//  - Intake Assist & InitialAutoDefaultSpeed in this file
+// Now update them in these configs instead:
+import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;      // distance→RPM curve + smoothing
+import org.firstinspires.ftc.teamcode.config.LauncherTuning;
+import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults; // TeleOp-only workflow + manual ranges
+import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;    // TeleOp-only eject routine
+import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rumble envelopes
+import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag range calibration
+
 import java.util.Locale;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
-    private static final boolean DEFAULT_AUTOSPEED_ENABLED = false; // AutoSpeed OFF at start
-    private static final boolean DEFAULT_AUTOAIM_ENABLED   = false; // AutoAim OFF at start
-    private static final boolean DEFAULT_INTAKE_ENABLED    = false; // Intake OFF at start
+    private static final boolean DEFAULT_AUTOSPEED_ENABLED = TeleOpDriverDefaults.AUTO_SPEED_ENABLED; // TeleOp default; Auto ignores this flag
+    private static final boolean DEFAULT_AUTOAIM_ENABLED   = TeleOpDriverDefaults.AUTO_AIM_ENABLED;   // TeleOp default for aim assist
+    private static final boolean DEFAULT_INTAKE_ENABLED    = TeleOpDriverDefaults.INTAKE_ENABLED;     // Whether TeleOp begins with intake running
 
     // ---------------- Subsystems ----------------
     protected Drivebase drive;
@@ -106,97 +112,89 @@ public abstract class TeleOpAllianceBase extends OpMode {
     protected Intake intake;
 
     // ---------------- Drivetrain Tunables ----------------
-    private double slowestSpeed = 0.25;
+    private double slowestSpeed = TeleOpDriverDefaults.SLOWEST_SPEED; // Min drive power while brake trigger held
 
     // ---------------- Launcher Manual Range (used when AutoSpeed == false) ----------------
-    private double rpmBottom    = 0;      // If > 0, run at least this RPM in manual even with RT=0
-    private double rpmTop       = 6000;
+    private double rpmBottom    = TeleOpDriverDefaults.RPM_BOTTOM; // Manual RPM lower bound when AutoSpeed is off
+    private double rpmTop       = TeleOpDriverDefaults.RPM_TOP;    // Manual RPM upper bound; keep ≤ Launcher.RPM_MAX
 
     // ---------------- State ----------------
-    private boolean autoSpeedEnabled = DEFAULT_AUTOSPEED_ENABLED;
-    private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;
+    private boolean autoSpeedEnabled = DEFAULT_AUTOSPEED_ENABLED; // Live state toggled by drivers
+    private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
 
     // Manual RPM Lock (Square/X) — only when AutoSpeed == false
-    private boolean manualRpmLocked = false;
-    private double  manualLockedRpm = 0.0;
+    private boolean manualRpmLocked = false; // Manual RPM hold toggle (Square/X) when AutoSpeed disabled
+    private double  manualLockedRpm = 0.0;   // Stored RPM when manualRpmLocked is true
 
     // ---------------- Vision + Aim ----------------
-    private VisionAprilTag vision;
-    private TagAimController aim = new TagAimController();
+    private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
+    private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
-    private int  autoAimLossGraceMs = 4000; // 4s grace to reacquire tag before disabling
-    private long aimLossStartMs = -1L;      // <0 means not in loss/grace
+    private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
+    private long aimLossStartMs = -1L;      // Negative when not currently timing a loss window
 
     // ---------------- Pose/Range Smoothing (SCALED meters) ----------------
-    private Double smHeadingDeg = null;
-    private Double smRangeMeters = null;
-    private static final double SMOOTH_A = 0.25;
-    private static final double M_TO_IN = 39.37007874015748;
+    private Double smHeadingDeg = null;               // Telemetry-smoothed heading (deg)
+    private Double smRangeMeters = null;              // Telemetry-smoothed range (m)
+    private double smoothA = TeleOpDriverDefaults.TELEMETRY_SMOOTH_A; // Low-pass smoothing constant for telemetry displays
+    private static final double M_TO_IN = 39.37007874015748; // Conversion factor (meters→inches)
 
     // ---------------- Controller Bindings ----------------
-    private ControllerBindings controls;
+    private ControllerBindings controls;              // Centralized driver bindings helper
 
     // ---------------- RPM Test Mode ----------------
-    private boolean rpmTestEnabled = false;
-    private double  rpmTestTarget  = 0.0;
-    private static final double RPM_TEST_STEP = 50.0;
-    private static final double RPM_TEST_MIN  = 0.0;
-    private static final double RPM_TEST_MAX  = 6000.0;
+    private boolean rpmTestEnabled = false; // Manual RPM sweep test (D-pad adjustments)
+    private double  rpmTestTarget  = 0.0;   // Current manual test RPM when enabled
 
     // ---------------- Aim Rumble (Haptics) ----------------
-    private RumbleNotifier aimRumbleDriver1;
-    private boolean aimRumbleEnabled       = true;   // master enable/disable
-    private double  aimRumbleDeg           = 2.5;
-    private double  aimRumbleMinStrength   = 0.10;
-    private double  aimRumbleMaxStrength   = 0.65;
-    private int     aimRumbleMinPulseMs    = 120;
-    private int     aimRumbleMaxPulseMs    = 200;
-    private int     aimRumbleMinCooldownMs = 120;
-    private int     aimRumbleMaxCooldownMs = 350;
+    private RumbleNotifier aimRumbleDriver1;          // Shared notifier handling all rumble envelopes
+    private boolean aimRumbleEnabled       = TeleOpRumbleTuning.AIM_RUMBLE_ENABLED; // Master enable/disable for aim rumble cues
+    private double  aimRumbleDeg           = TeleOpRumbleTuning.AIM_THRESHOLD_DEG;   // Heading error (deg) that begins rumble
+    private double  aimRumbleMinStrength   = TeleOpRumbleTuning.AIM_STRENGTH_MIN;    // Lower bound rumble strength while in window
+    private double  aimRumbleMaxStrength   = TeleOpRumbleTuning.AIM_STRENGTH_MAX;    // Upper bound rumble strength while in window
+    private int     aimRumbleMinPulseMs    = TeleOpRumbleTuning.AIM_PULSE_MIN_MS;    // Minimum rumble pulse length (ms)
+    private int     aimRumbleMaxPulseMs    = TeleOpRumbleTuning.AIM_PULSE_MAX_MS;    // Maximum rumble pulse length (ms)
+    private int     aimRumbleMinCooldownMs = TeleOpRumbleTuning.AIM_COOLDOWN_MIN_MS; // Min cooldown between pulses (ms)
+    private int     aimRumbleMaxCooldownMs = TeleOpRumbleTuning.AIM_COOLDOWN_MAX_MS; // Max cooldown between pulses (ms)
 
     // ---------------- Toggle Pulse Settings ----------------
-    private double togglePulseStrength     = 0.8;
-    private int    togglePulseStepMs       = 120;
-    private int    togglePulseGapMs        = 80;
+    private double togglePulseStrength     = TeleOpRumbleTuning.TOGGLE_STRENGTH; // Haptic strength for toggle confirmation pulses
+    private int    togglePulseStepMs       = TeleOpRumbleTuning.TOGGLE_STEP_MS;  // Duration of each pulse step (ms)
+    private int    togglePulseGapMs        = TeleOpRumbleTuning.TOGGLE_GAP_MS;   // Gap between pulse steps (ms)
 
     // ---------------- Auto Launcher Speed (RPM) ----------------
-    private LauncherAutoSpeedController autoCtrl;
-
-    // INITIAL TUNABLES for Auto RPM
-    private double autoNearDistIn = 24.0;
-    private double autoNearRpm    = 1000.0;
-    private double autoFarDistIn  = 120.0;
-    private double autoFarRpm     = 4500.0;
-    private double autoSmoothingAlpha = 0.15;
+    private LauncherAutoSpeedController autoCtrl;     // Shared AutoSpeed helper fed by AutoRpmConfig
 
     // ---------------- AutoSpeed seeding behavior ----------------
-    private double InitialAutoDefaultSpeed = 2500.0;  // RPM used ONLY before first tag lock after enabling AutoSpeed
-    private boolean autoHadTagFix = false;            // becomes true after AutoSpeed sees a tag at least once
+    // (This used to be local: InitialAutoDefaultSpeed; now centralized)
+    private double InitialAutoDefaultSpeed = TeleOpDriverDefaults.INITIAL_AUTO_DEFAULT_SPEED; // Local override of seed RPM
+    private boolean autoHadTagFix = false; // Tracks whether AutoSpeed has seen at least one tag this enable cycle
 
     // ---------------- Intake Assist + Eject ----------------
-    private int    intakeAssistMs = 250;   // ms to run intake if it was OFF during a feed/eject
-    private double ejectRpm       = 300.0; // temporary launcher RPM used during eject
-    private int    ejectTimeMs    = 300;   // how long to hold eject RPM while feeding
+    // (intakeAssistMs used to be local; now driven by SharedRobotTuning)
+    private int    intakeAssistMs = TeleOpDriverDefaults.INTAKE_ASSIST_MS; // TeleOp copy of shared intake assist duration
+    private double ejectRpm       = TeleOpEjectTuning.RPM;   // Launcher RPM during eject routine (TeleOp only)
+    private int    ejectTimeMs    = TeleOpEjectTuning.TIME_MS;   // Duration of eject routine (ms)
 
     // ---------------- NEW: StopAll / Latch & Auto-Stop Timer ----------------
     /** When true, all outputs are forced to zero every loop until Start is pressed again. */
-    private boolean stopLatched = false;
+    private boolean stopLatched = false; // When true, StopAll has latched and outputs remain zeroed
 
     /** Auto-Stop timer master enable (defaults false). When true, shows top-line countdown and calls StopAll at 0. */
-    protected boolean autoStopTimerEnabled = false;
+    protected boolean autoStopTimerEnabled = TeleOpDriverDefaults.AUTO_STOP_TIMER_ENABLED; // Optional endgame auto-stop timer flag
 
     /** Auto-Stop timer seconds from TeleOp INIT (defaults 119). */
-    protected int autoStopTimerTimeSec = 119;
+    protected int autoStopTimerTimeSec = TeleOpDriverDefaults.AUTO_STOP_TIMER_TIME_SEC; // Default countdown seconds when timer enabled
 
     /** Timestamp captured at TeleOp INIT; used as the timer start. */
-    private long teleopInitMillis = 0L;
+    private long teleopInitMillis = 0L; // TeleOp init timestamp for timer calculations
 
     /** Ensures the timer only trips StopAll once at expiry. */
-    private boolean autoStopTriggered = false;
+    private boolean autoStopTriggered = false; // Ensures we only stop once when timer expires
 
     /** Debounce for raw Start-button edge detection while STOPPED (works even when controls callbacks are bypassed). */
-    private boolean lastStartG1 = false, lastStartG2 = false;
+    private boolean lastStartG1 = false, lastStartG2 = false; // Debounce Start-button edges for stop latch release
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -212,7 +210,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
-        vision.setRangeScale(0.03); // keep your calibration scale unless re-tuned
+        vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -252,6 +250,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G1, Btn.Y, () -> {
             autoSpeedEnabled = !autoSpeedEnabled;
             ensureAutoCtrl();
+            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED: used to be local tunables here
             autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
             if (autoSpeedEnabled) {
@@ -298,8 +297,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // RPM TEST MODE (D-Pad)
         controls.bindPress(Pad.G1, Btn.DPAD_UP,    () -> { rpmTestEnabled = true;  launcher.setTargetRpm(rpmTestTarget); });
-        controls.bindPress(Pad.G1, Btn.DPAD_LEFT,  () -> { if (rpmTestEnabled) { rpmTestTarget = clamp(rpmTestTarget - RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX); launcher.setTargetRpm(rpmTestTarget); }});
-        controls.bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> { if (rpmTestEnabled) { rpmTestTarget = clamp(rpmTestTarget + RPM_TEST_STEP, RPM_TEST_MIN, RPM_TEST_MAX); launcher.setTargetRpm(rpmTestTarget); }});
+        controls.bindPress(Pad.G1, Btn.DPAD_LEFT,  () -> {
+            if (rpmTestEnabled) {
+                double lo = Math.max(rpmBottom, LauncherTuning.RPM_MIN);
+                double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
+                rpmTestTarget = clamp(rpmTestTarget - TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
+                launcher.setTargetRpm(rpmTestTarget);
+            }
+        });
+        controls.bindPress(Pad.G1, Btn.DPAD_RIGHT, () -> {
+            if (rpmTestEnabled) {
+                double lo = Math.max(rpmBottom, LauncherTuning.RPM_MIN);
+                double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
+                rpmTestTarget = clamp(rpmTestTarget + TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
+                launcher.setTargetRpm(rpmTestTarget);
+            }
+        });
         controls.bindPress(Pad.G1, Btn.DPAD_DOWN,  () -> { rpmTestEnabled = false; launcher.stop(); });
 
         // Right Trigger (manual RPM) — only when AutoSpeed == false, not locked, not test
@@ -316,6 +329,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             autoSpeedEnabled = !autoSpeedEnabled;
             ensureAutoCtrl();
+            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED
             autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
             if (autoSpeedEnabled) {
@@ -343,9 +357,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         });
 
-        // NOTE: Start button handling is implemented via raw edge-detect in loop()
-        // to ensure it works even while STOPPED (we bypass most controls during STOP).
-
         // =========================================================================
         // ========================= END CONTROLLER BINDINGS ========================
         // =========================================================================
@@ -355,6 +366,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // ---- Auto RPM Controller Init ----
         ensureAutoCtrl();
+        AutoRpmConfig.apply(autoCtrl);      // CENTRALIZED
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
         // ---- Auto-Stop Timer: base timestamp at TeleOp INIT ----
@@ -438,9 +450,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (goalDet != null) {
             double hDeg  = goalDet.ftcPose.bearing;
             double rM_sc = vision.getScaledRange(goalDet);
-            smHeadingDeg = (smHeadingDeg == null) ? hDeg : (SMOOTH_A * hDeg + (1 - SMOOTH_A) * smHeadingDeg);
+            smHeadingDeg = (smHeadingDeg == null) ? hDeg : (smoothA * hDeg + (1 - smoothA) * smHeadingDeg);
             if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) {
-                smRangeMeters = (smRangeMeters == null) ? rM_sc : (SMOOTH_A * rM_sc + (1 - SMOOTH_A) * smRangeMeters);
+                smRangeMeters = (smRangeMeters == null) ? rM_sc : (smoothA * rM_sc + (1 - smoothA) * smRangeMeters);
             }
         }
 
@@ -477,8 +489,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         if (autoRpmActive) {
             ensureAutoCtrl();
-            autoCtrl.setParams(autoNearDistIn, autoNearRpm, autoFarDistIn, autoFarRpm);
-            autoCtrl.setSmoothingAlpha(autoSmoothingAlpha);
+            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED params + smoothing
 
             Double rangeM = null;
             if (smRangeMeters != null && Double.isFinite(smRangeMeters)) {
@@ -535,8 +546,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addData("AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format("%.1f", autoDistIn));
             telemetry.addData("AutoRPM Out", "%.0f", autoOutRpm);
             telemetry.addData("AutoRPM Tunables", "Near=%.0f→%.0f  Far=%.0f→%.0f",
-                    autoNearDistIn, autoNearRpm, autoFarDistIn, autoFarRpm);
-            telemetry.addData("AutoRPM Smoothing α", "%.2f", autoSmoothingAlpha);
+                    autoCtrl.getNearDistanceIn(), autoCtrl.getNearSpeedRpm(),
+                    autoCtrl.getFarDistanceIn(),  autoCtrl.getFarSpeedRpm());
+            telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
         }
         telemetry.update();
     }

@@ -57,53 +57,73 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
 | **Start** | **StopAll toggle** (same behavior as G1) |
 
-**Startup defaults:**  
-`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (editable in `TeleOpAllianceBase.java`).
+**Startup defaults:**
+`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (edit in `config/TeleOpDriverDefaults.java`).
 
 ---
 
 ## Project Layout
 ```
 TeamCode/
-└── src/
-    └── main/
-        └── java/
-            └── org/
-                └── firstinspires/
-                    └── ftc/
-                        └── teamcode/
-                            Alliance.java
-                            ├── drive/
-                            │   └── Drivebase.java
-                            ├── utils/
-                            │   ├── ObeliskSignal.java                           
-                            │   └── RumbleNotifier.java
-                            ├── subsystems/
-                            │   ├── Launcher.java
-                            │   ├── Feed.java
-                            │   └── Intake.java
-                            ├── teleop/
-                            │   ├── TeleOpAllianceBase.java
-                            │   ├── TeleOp_Red.java
-                            │   └── TeleOp_Blue.java
-                            ├── auto/
-                            │   ├── BaseAuto.java
-                            │   ├── Auto_Red_Target.java
-                            │   ├── Auto_Red_Human.java
-                            │   ├── Auto_Blue_Target.java
-                            │   └── Auto_Blue_Human.java
-                            ├── vision/
-                            │   ├── TagAimController.java
-                            │   └── VisionAprilTag.java
-                            ├── control/
-                            │   └── LauncherAutoSpeedController.java
-                            └── input/
-                                └── ControllerBindings.java
+└── src/main/java/org/firstinspires/ftc/teamcode/
+    Alliance.java                        ← Alliance enum for selecting RED/BLUE behaviors
+    ├── assist/
+    │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
+    ├── auto/
+    │   ├── BaseAuto.java                     ← Shared Auto mode logic
+    │   ├── Auto_Blue_Target.java             ← Blue depot auto (Tag 20 volley, hold position)
+    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 volley → drive upfield)
+    │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
+    │   └── Auto_Red_Human.java               ← Red human-side auto (Tag 24 volley → drive upfield)
+    ├── config/
+    │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
+    │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
+    │   ├── ControllerTuning.java             ← Trigger thresholds
+    │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
+    │   ├── FeedTuning.java                   ← Feed power, duration, cooldown
+    │   ├── IntakeTuning.java                 ← Intake motor power
+    │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
+    │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
+    │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
+    │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
+    │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
+    │   └── VisionTuning.java                 ← AprilTag range scale calibration
+    ├── control/
+    │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
+    ├── drive/
+    │   └── Drivebase.java                    ← Main driving logic; IMU orientation: Label UP, USB RIGHT
+    ├── input/
+    │   └── ControllerBindings.java           ← Centralized gamepad mapping/edge-detect helpers
+    ├── subsystems/
+    │   ├── Launcher.java                 ← Dual-flywheel subsystem (PIDF + AutoSpeed hooks)
+    │   ├── Feed.java                     ← Feed motor timing + interlocks
+    │   └── Intake.java                   ← Intake motor helper + assist timings
+    ├── teleop/
+    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists)
+    │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
+    │   └── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
+    ├── utils/
+    │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
+    └── vision/
+        ├── VisionAprilTag.java           ← VisionPortal wrapper exposing Tag distance/pose
+        └── TagAimController.java         ← PID twist controller for Tag-centered aiming
 ```
+
 
 ---
 
 ## TeleOp Behaviors & Tunables
+
+For a complete, always-current list of adjustable parameters, see the
+[TeamCode Tunable Directory](./TunableDirectory.md). It captures
+where each value lives, which game modes it influences, and how overlapping
+TeleOp/Auto tunables override one another. TeleOp driver preferences (startup
+states, rumble envelopes, eject behavior, etc.) now live in
+`config/` files, so you can retune match workflow without touching the
+OpMode source.
+
+For broader context on how the subsystems, StopAll latch, and rule constraints interconnect, review the
+[Codex Context & Development Background](./CodexContextBackground.md) companion document.
 
 ### AutoAim
 - **Enable:** Only when a goal AprilTag is visible.  
@@ -130,7 +150,7 @@ TeamCode/
 ### Intake, Feed, and Eject
 - `DEFAULT_INTAKE_ENABLED` determines initial intake state.  
 - Feeding automatically enables intake for `intakeAssistMs = 250 ms` if it was off.  
-- **Eject (B/Circle):** runs launcher at `ejectRpm = 300 RPM` for `ejectTimeMs = 300 ms`, feeds once, then restores previous RPM.  
+- **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
 - **Double pulse:** feature enabled.  
@@ -154,9 +174,7 @@ kD = 0.003
 twistClamp = ±0.6
 deadband = 1.5°
 ```
-
 ---
-
 ## Obelisk AprilTag Signal (DECODE 2025–26)
 
 ### Overview
@@ -178,49 +196,19 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 ### Implementation Details
 | File | Purpose |
 |------|----------|
-| [`vision/VisionAprilTag.java`](sandbox:/mnt/data/VisionAprilTag.java) | Detects AprilTags 21/22/23 and updates shared state via `observeObelisk()`. |
-| [`utils/ObeliskSignal.java`](sandbox:/mnt/data/ObeliskSignal.java) | In-memory latch that stores and displays the detected obelisk order. |
-| [`auto/BaseAuto.java`](sandbox:/mnt/data/BaseAuto.java) | Observes the obelisk during the **prestart** loop, allowing the robot to lock in the signal before the match begins. |
-| [`teleop/TeleOpAllianceBase.java`](sandbox:/mnt/data/TeleOpAllianceBase.java) | Calls `vision.observeObelisk()` every loop and displays the latched order on the **first telemetry line**. |
+| [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java) | Detects AprilTags 21/22/23 and updates shared state via `observeObelisk()`. |
+| [`utils/ObeliskSignal.java`](./utils/ObeliskSignal.java) | In-memory latch that stores and displays the detected obelisk order. |
+| [`auto/BaseAuto.java`](./auto/BaseAuto.java) | Observes the obelisk during the **prestart** loop, allowing the robot to lock in the signal before the match begins. |
+| [`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java) | Calls `vision.observeObelisk()` every loop and displays the latched order on the **first telemetry line**. |
 
 ---
 
-## Tunable Reference (by Functional Area) - May be incomplete
+## Tunable Directory
 
-| Functional Area | Variable | Default | Purpose | File |
-|---|---|---|---|
-| **Drivebase** | `slowestSpeed` | 0.25 | Lowest speed cap when braking (trigger fully held) | TeleOpAllianceBase.java |
-| **Launcher / AutoSpeed** | `rpmTop` | 6000 | Maximum launcher speed (RPM) | TeleOpAllianceBase.java |
-| | `rpmBottom` | 0 | Minimum idle RPM in manual mode | TeleOpAllianceBase.java |
-| | `InitialAutoDefaultSpeed` | 2500 | Launcher RPM before first tag fix | TeleOpAllianceBase.java |
-| | `autoNearDistIn` | 24.0 | Near distance (in) for RPM mapping | TeleOpAllianceBase.java |
-| | `autoNearRpm` | 1000 | RPM at near distance | TeleOpAllianceBase.java |
-| | `autoFarDistIn` | 120.0 | Far distance (in) for RPM mapping | TeleOpAllianceBase.java |
-| | `autoFarRpm` | 4500 | RPM at far distance | TeleOpAllianceBase.java |
-| | `autoSmoothingAlpha` | 0.15 | AutoRPM smoothing factor (0–1) | TeleOpAllianceBase.java |
-| **AutoAim / Vision** | `autoAimLossGraceMs` | 4000 | Time allowed (ms) to regain tag before disabling AutoAim | TeleOpAllianceBase.java |
-| | `aimRumbleDeg` | 2.5 | Degrees from target center where aim rumble starts | TeleOpAllianceBase.java |
-| | `kP` | 0.02 | Proportional gain for aim correction | TagAimController.java |
-| | `kD` | 0.003 | Derivative gain for aim correction | TagAimController.java |
-| | `twistClamp` | ±0.6 | Twist limit while aiming | TagAimController.java |
-| | `deadband` | 1.5° | Ignore heading error below this | TagAimController.java |
-| **Feed / Intake / Eject** | `firePower` | 0.9 | Power level during feed cycle | Feed.java |
-| | `fireTimeMs` | 200 | Feed motor duration (ms) | Feed.java |
-| | `minCycleMs` | 300 | Cooldown between feed cycles | Feed.java |
-| | `powerOn` | 0.8 | Intake motor power | Intake.java |
-| | `DEFAULT_INTAKE_ENABLED` | false | Intake state at TeleOp start | TeleOpAllianceBase.java |
-| | `intakeAssistMs` | 250 | Time to run intake when assisting feed | TeleOpAllianceBase.java |
-| | `ejectRpm` | 300 | Launcher RPM used during eject | TeleOpAllianceBase.java |
-| | `ejectTimeMs` | 300 | Duration (ms) of eject phase | TeleOpAllianceBase.java |
-| **Haptics / Rumble** | `togglePulseStrength` | 0.8 | Intensity of toggle rumble | TeleOpAllianceBase.java |
-| | `togglePulseStepMs` | 120 | Duration of each rumble pulse | TeleOpAllianceBase.java |
-| | `togglePulseGapMs` | 80 | Gap between double-pulse steps | TeleOpAllianceBase.java |
-| | `aimRumbleMinStrength` | 0.10 | Min rumble strength for aim feedback | TeleOpAllianceBase.java |
-| | `aimRumbleMaxStrength` | 0.65 | Max rumble strength for aim feedback | TeleOpAllianceBase.java |
-| | `aimRumbleMinPulseMs` | 120 | Min pulse length (ms) for aim rumble | TeleOpAllianceBase.java |
-| | `aimRumbleMaxPulseMs` | 200 | Max pulse length (ms) for aim rumble | TeleOpAllianceBase.java |
-| | `aimRumbleMinCooldownMs` | 120 | Min cooldown (ms) between pulses | TeleOpAllianceBase.java |
-| | `aimRumbleMaxCooldownMs` | 350 | Max cooldown (ms) between pulses | TeleOpAllianceBase.java |
+The detailed directory of tunable values lives in
+[TeamCode Tunable Directory](./TunableDirectory.md). Review that
+document for authoritative defaults, tuning guidance, and notes on which class
+or game mode owns each parameter before making adjustments.
 
 ---
 ## StopAll & Auto-Stop Timer (NEW)
@@ -257,16 +245,18 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑22** – Initial DECODE TeleOp base with AutoSpeed & AutoAim integration.  
-- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented.  
-- **2025‑10‑24** – AutoAim grace window (4 s) added with auto‑disable pulse.  
-- **2025‑10‑25** – Eject function implemented; readme fully synchronized with code.  
+- **2025‑10‑26** – Added revision history to the readme.
+- **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.
+- **2025‑10‑23** – Controller rumble feedback added; Intake assist logic implemented; eject function implemented; etc.
+- **2025‑10‑22** – Initial DECODE TeleOp base with AutoSpeed & AutoAim integration.
 
 ---
 
 ## Credits
 Indianola Robotics – FTC Team 2025  
 Mentor Support: *Jason Cross*  
+Some portions of this code and documentation were created or refined with the assistance of OpenAI's ChatGPT Codex under mentor supervision. All final design, testing, and implementation decisions were made by Indianola Robotics Team.
+
 Built on the official **FIRST Tech Challenge SDK**  
 
 ---

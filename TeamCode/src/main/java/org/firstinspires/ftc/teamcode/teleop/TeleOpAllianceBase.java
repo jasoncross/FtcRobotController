@@ -52,7 +52,10 @@
  *     should live here so both inherit it.
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
- */
+ *
+ * CHANGES (2025-11-03): Surface 720p vision telemetry bundle (config/perf/detect
+ *                       lines) and camera control warnings throttled to ~10 Hz.
+*/
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -133,6 +136,20 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
     private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
     private double autoAimSpeedScale = AutoAimTuning.AUTO_AIM_SPEED_SCALE; // Translation multiplier while AutoAim is active
+    private long lastVisionTelemetryMs = 0L;      // Throttle (~10 Hz) for vision status lines
+    private String visionConfigLine = String.format(Locale.US,
+            "Res=%dx%d  FPS_Target=%d  Decim=%.1f  Exp=%d  Gain=%d  WB_Lock=%s",
+            VisionTuning.VISION_RES_WIDTH,
+            VisionTuning.VISION_RES_HEIGHT,
+            VisionTuning.VISION_TARGET_FPS,
+            VisionTuning.APRILTAG_DECIMATION,
+            VisionTuning.EXPOSURE_MS,
+            VisionTuning.GAIN,
+            VisionTuning.WHITE_BALANCE_LOCK_ENABLED ? "true" : "false");
+    private String visionPerfLine = "VisionFPS=---  FrameLatencyMs=---";
+    private String visionDetectLine = "TagId=--  DecisionMargin=---  DistanceIn=---  YawDeg=---";
+    private String visionStreamLine = "Stream=OFF  Controls=PENDING";
+    private boolean visionWarningShown = false;
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -215,6 +232,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
         vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
+        lastVisionTelemetryMs = 0L;
+        visionWarningShown = false;
+        visionPerfLine = "VisionFPS=---  FrameLatencyMs=---";
+        visionDetectLine = "TagId=--  DecisionMargin=---  DistanceIn=---  YawDeg=---";
+        visionStreamLine = "Stream=OFF  Controls=PENDING";
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -552,6 +574,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled(goalDet);
+        updateVisionTelemetry(goalDet, rawIn);
         telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
         telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
 
@@ -562,6 +585,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     autoCtrl.getNearDistanceIn(), autoCtrl.getNearSpeedRpm(),
                     autoCtrl.getFarDistanceIn(),  autoCtrl.getFarSpeedRpm());
             telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
+        }
+        telemetry.addData("VisionCfg", visionConfigLine);
+        telemetry.addData("VisionPerf", visionPerfLine);
+        telemetry.addData("VisionDetect", visionDetectLine);
+        telemetry.addData("VisionStream", visionStreamLine);
+        if (!visionWarningShown && vision != null) {
+            String warn = vision.consumeControlWarning();
+            if (warn != null) {
+                telemetry.addLine(warn);
+                visionWarningShown = true;
+            }
         }
         telemetry.update();
     }
@@ -575,6 +609,42 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     // HELPERS
     // =========================================================================
+    private void updateVisionTelemetry(AprilTagDetection goalDet, Double rawDistanceIn) {
+        if (vision == null) return;
+        long now = System.currentTimeMillis();
+        if ((now - lastVisionTelemetryMs) < 100) return; // ~10 Hz updates
+        lastVisionTelemetryMs = now;
+
+        visionConfigLine = String.format(Locale.US,
+                "Res=%dx%d  FPS_Target=%d  Decim=%.1f  Exp=%d  Gain=%d  WB_Lock=%s",
+                VisionTuning.VISION_RES_WIDTH,
+                VisionTuning.VISION_RES_HEIGHT,
+                VisionTuning.VISION_TARGET_FPS,
+                VisionTuning.APRILTAG_DECIMATION,
+                VisionTuning.EXPOSURE_MS,
+                VisionTuning.GAIN,
+                VisionTuning.WHITE_BALANCE_LOCK_ENABLED ? "true" : "false");
+
+        Double fps = vision.getLastKnownFps();
+        Double latency = vision.getLastFrameLatencyMs();
+        String fpsStr = (fps == null) ? "---" : String.format(Locale.US, "%.1f", fps);
+        String latencyStr = (latency == null) ? "---" : String.format(Locale.US, "%.0f", latency);
+        visionPerfLine = String.format(Locale.US, "VisionFPS=%s  FrameLatencyMs=%s", fpsStr, latencyStr);
+
+        String idStr = (goalDet != null) ? Integer.toString(goalDet.id) : "--";
+        String marginStr = (goalDet != null && !Double.isNaN(goalDet.decisionMargin))
+                ? String.format(Locale.US, "%.2f", goalDet.decisionMargin) : "---";
+        String distStr = (rawDistanceIn != null) ? String.format(Locale.US, "%.1f", rawDistanceIn) : "---";
+        String yawStr = (goalDet != null) ? String.format(Locale.US, "%.1f", goalDet.ftcPose.bearing) : "---";
+        visionDetectLine = String.format(Locale.US,
+                "TagId=%s  DecisionMargin=%s  DistanceIn=%s  YawDeg=%s",
+                idStr, marginStr, distStr, yawStr);
+
+        String streamStr = vision.isStreamActive() ? "Stream=ENABLED" : "Stream=OFF";
+        String ctrlStr = vision.wereControlsApplied() ? "Controls=APPLIED" : "Controls=PENDING";
+        visionStreamLine = streamStr + "  " + ctrlStr;
+    }
+
     private void ensureAutoCtrl() {
         if (autoCtrl == null) autoCtrl = new LauncherAutoSpeedController();
     }

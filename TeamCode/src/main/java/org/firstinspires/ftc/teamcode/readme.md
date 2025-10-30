@@ -164,10 +164,16 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 ## Vision (AprilTags)
 
 - **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor (Driver Station live view enabled via `VisionPortal` builder).
-- **Alliance goals:** Blue = Tag 20  |  Red = Tag 24  
-- **Distance units:** inches = meters × 39.37  
-- **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.  
-- **Recommended Resolution:** 640×480 MJPEG for smooth frame rate.
+- **Alliance goals:** Blue = Tag 20  |  Red = Tag 24
+- **Distance units:** inches = meters × 39.37
+- **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
+- **Streaming Profile:** Tuned for **1280×720 @ 20 FPS** with AprilTag decimation = `2.0`, manual **exposure = 15 ms**, **gain = 110**, and white balance lock (all configurable in `config/VisionTuning.java`).
+- **Telemetry bundle (≈10 Hz):**
+  - `Res=<WxH>  FPS_Target=<n>  Decim=<x.x>  Exp=<ms>  Gain=<n>  WB_Lock=<true/false>`
+  - `VisionFPS=<measured>  FrameLatencyMs=<latest>`
+  - `TagId=<id>  DecisionMargin=<margin>  DistanceIn=<inches>  YawDeg=<deg>`
+  - `Stream=ENABLED|OFF  Controls=APPLIED|PENDING`
+- **Driver feedback:** Telemetry raises a one-time warning if the webcam does not accept manual exposure/gain/white-balance commands.
 
 **Aim Controller Defaults**
 ```
@@ -247,6 +253,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
+- **2025‑11‑03** – Bumped Logitech C270 vision to 1280×720@20 FPS with manual exposure/gain + white balance lock tunables, added VisionPortal performance telemetry bundle (FPS/latency/tag stats/stream status), and surfaced one-time warnings when camera controls are unsupported.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

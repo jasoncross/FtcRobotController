@@ -40,7 +40,8 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  *
  * METHODS
  *   - init(hw, "Webcam 1")
- *       • Build VisionPortal + AprilTagProcessor with compatible defaults.
+ *       • Build VisionPortal + AprilTagProcessor with compatible defaults and
+ *         enable the Driver Station live view stream.
  *   - getDetectionsCompat()
  *       • Return detections using the best API available for the installed SDK.
  *   - getDetectionFor(int tagId)
@@ -58,6 +59,8 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  *   - Bearing/pose values come from AprilTagDetection.ftcPose (meters + degrees).
  */
 public class VisionAprilTag {
+
+    // CHANGES (2025-10-30): Enabled Driver Station live stream via VisionPortal builder and resume call.
 
     // === CONSTANTS ===
     public static final int TAG_BLUE_GOAL = 20; // Blue alliance GOAL tag
@@ -99,12 +102,15 @@ public class VisionAprilTag {
         VisionPortal.Builder builder = new VisionPortal.Builder()
                 .addProcessor(tagProcessor)
                 .setCamera(hw.get(WebcamName.class, webcamName))
-                .setCameraResolution(new Size(640, 480));   // Built-in calibration res
+                .setCameraResolution(new Size(640, 480))   // Built-in calibration res
+                .enableLiveView(true);                     // Stream to Driver Station DS preview
 
         // Prefer MJPEG for higher FPS (older SDKs may not support; ignore if so)
         try { builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG); } catch (Exception ignored) {}
 
         portal = builder.build();
+
+        try { portal.resumeStreaming(); } catch (Throwable ignored) {}
     }
 
     // =============================================================
@@ -236,6 +242,9 @@ public class VisionAprilTag {
         // ensure background poller is shut down
         setObeliskAutoLatchEnabled(false);
 
-        if (portal != null) portal.close();
+        if (portal != null) {
+            try { portal.stopStreaming(); } catch (Throwable ignored) {}
+            portal.close();
+        }
     }
 }

@@ -22,12 +22,16 @@
  *   - AT_SPEED_TOLERANCE_RPM
  *       • Launcher-local readiness window used when callers do not specify one.
  *         Align with SharedRobotTuning.RPM_TOLERANCE so gating is consistent.
+ *   - MANUAL_RPM_STEP (NEW 2025-10-30)
+ *       • D-pad increment used when TeleOp manual mode nudges RPM (AutoSpeed off with Manual Lock engaged).
+ *         Match RPM test adjustments if you want identical feel between modes.
  */
 package org.firstinspires.ftc.teamcode.config;
 
 public final class LauncherTuning {
     private LauncherTuning() {}
 
+    // CHANGES (2025-10-30): Added MANUAL_RPM_STEP for TeleOp manual D-pad nudges.
     // Encoder and gearing constants
     public static double FLYWHEEL_TPR = 28.0;   // Ticks per revolution at the wheel shaft
 
@@ -43,4 +47,5 @@ public final class LauncherTuning {
 
     // Default readiness tolerance when callers omit their own
     public static double AT_SPEED_TOLERANCE_RPM = 100.0;
+    public static double MANUAL_RPM_STEP = 50.0; // RPM step per D-pad press (AutoSpeed off & manual lock ON)
 }

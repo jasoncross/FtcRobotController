@@ -27,9 +27,6 @@
  *   - DRIVE_MAX_POWER
  *       • Maximum drive power used by BaseAuto motion helpers.
  *       • TeleOp drive scaling is separate; adjust there for driver feel.
- *   - INTAKE_ASSIST_MS
- *       • Duration TeleOp and Auto run the intake after a feed when it was off.
- *       • TeleOpAllianceBase can override its copy; update both when diverging.
  *   - INITIAL_AUTO_DEFAULT_SPEED
  *       • Seed RPM before the first AprilTag lock when AutoSpeed starts.
  *       • TeleOpAllianceBase copies this; align values so warm-up behavior matches.
@@ -48,6 +45,7 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 public final class SharedRobotTuning {
     private SharedRobotTuning() {}
 
+    // CHANGES (2025-10-30): Moved INTAKE_ASSIST_MS to FeedTuning; kept deprecated alias for compatibility.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -67,7 +65,8 @@ public final class SharedRobotTuning {
     public static double DRIVE_MAX_POWER            = 0.50;   // Max auto drive power; adjust here for global movement speed
 
     // --- Assist behaviors shared across modes ---
-    public static int    INTAKE_ASSIST_MS           = 250;    // Intake assist duration (ms); TeleOpAllianceBase copies this value
+    @Deprecated
+    public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS; // 2025-10-30: moved to FeedTuning
     public static double INITIAL_AUTO_DEFAULT_SPEED = 2500.0; // Seed RPM before first tag lock; match TeleOp override when changed
 
 }

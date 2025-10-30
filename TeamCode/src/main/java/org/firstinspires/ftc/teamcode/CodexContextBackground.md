@@ -73,6 +73,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Highlights:**
   - Tuned via [`config/FeedTuning`](./config/FeedTuning.java) to keep Auto and TeleOp cadence identical.
   - Provides StopAll-aware `halt()` to satisfy safety requirements.
+  - Locks BRAKE zero-power behavior and RUN_WITHOUT_ENCODER mode before every command so the pusher holds position between cycles.
 - **Iterative Notes:** Update history captures the gating of feed actions on `Launcher.isAtSpeed()` to prevent jams.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
@@ -91,7 +92,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 ### 🎯 Vision & Aim ([`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java), [`vision/TagAimController.java`](./vision/TagAimController.java), [`assist/AutoAimSpeed.java`](./assist/AutoAimSpeed.java))
 - **Role:** Provide AprilTag detections, convert pose to inches, and feed aim/twist corrections.
 - **Highlights:**
-  - `VisionAprilTag` wraps the FTC `VisionPortal`, applies alliance filtering, and latches Obelisk patterns through [`utils/ObeliskSignal`](./utils/ObeliskSignal.java).
+  - `VisionAprilTag` wraps the FTC `VisionPortal`, enables the Driver Station live stream, applies alliance filtering, and latches Obelisk patterns through [`utils/ObeliskSignal`](./utils/ObeliskSignal.java).
   - `TagAimController` implements PD steering with tunables surfaced in [`config/TagAimTuning`](./config/TagAimTuning.java).
   - `AutoAimSpeed` unifies AprilTag distance-to-RPM mapping and aim assistance for both TeleOp and Autonomous while honoring [`config/AutoAimTuning`](./config/AutoAimTuning.java).
 
@@ -100,6 +101,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Highlights:**
   - Handles AutoAim/AutoSpeed toggles, rumble notifications, StopAll latch, and auto-stop timer logic.
   - Initializes shared subsystems and config classes, ensuring `config/*` overrides propagate at runtime.
+  - Scales translation while AutoAim is active and exposes manual RPM D-pad nudges whenever AutoSpeed is disabled **and manual lock is engaged**.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
 
 ### 🤖 Autonomous Framework ([`auto/BaseAuto.java`](./auto/BaseAuto.java), [`auto/Auto_*`](./auto))

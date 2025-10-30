@@ -27,8 +27,8 @@
  *   - AUTO_STOP_TIMER_ENABLED / AUTO_STOP_TIMER_TIME_SEC
  *       • Optional end-of-match safety timer configuration.
  *   - INTAKE_ASSIST_MS
- *       • TeleOp copy of SharedRobotTuning.INTAKE_ASSIST_MS; adjust here when
- *         diverging from the shared value.
+ *       • TeleOp copy of FeedTuning.INTAKE_ASSIST_MS; adjust here when diverging
+ *         from the shared value.
  *   - INITIAL_AUTO_DEFAULT_SPEED
  *       • Local override of SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED for
  *         TeleOp-only experiments.
@@ -38,6 +38,7 @@ package org.firstinspires.ftc.teamcode.config;
 public final class TeleOpDriverDefaults {
     private TeleOpDriverDefaults() {}
 
+    // CHANGES (2025-10-30): Point intake assist mirror at FeedTuning after tunable move.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = false;
     public static boolean AUTO_AIM_ENABLED   = false;
@@ -58,7 +59,7 @@ public final class TeleOpDriverDefaults {
     public static double RPM_TEST_STEP = 50.0;
 
     // Intake assist + auto-speed seed (TeleOp overrides of shared values)
-    public static int    INTAKE_ASSIST_MS           = SharedRobotTuning.INTAKE_ASSIST_MS;
+    public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS;
     public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
 
     // Auto-stop timer preferences

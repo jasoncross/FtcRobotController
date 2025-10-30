@@ -13,6 +13,7 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
+import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 /*
@@ -73,6 +74,8 @@ import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
  *     they are starting in without extra hardware.
  */
 public abstract class BaseAuto extends LinearOpMode {
+
+    // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -236,8 +239,9 @@ public abstract class BaseAuto extends LinearOpMode {
             if (!wasOn) intake.set(true);
             feed.feedOnceBlocking();
             if (!wasOn) {
-                int assist; try { assist = SharedRobotTuning.INTAKE_ASSIST_MS; } catch (Throwable t) { assist = 250; }
-                sleep(assist); intake.set(false);
+                int assist = FeedTuning.INTAKE_ASSIST_MS;
+                sleep(assist);
+                intake.set(false);
             }
 
             sleep((int)betweenShotsMs());

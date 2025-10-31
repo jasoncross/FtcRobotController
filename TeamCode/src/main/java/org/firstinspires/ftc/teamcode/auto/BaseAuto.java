@@ -76,6 +76,7 @@ import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 public abstract class BaseAuto extends LinearOpMode {
 
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
+    // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -121,7 +122,12 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
         intake   = new Intake(hardwareMap);     // Floor intake
-        intake.set(false);
+
+        // Guarantee INIT remains motionless until START.
+        drive.safeInit();
+        launcher.safeInit();
+        feed.safeInit();
+        intake.safeInit();
 
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {} // Sync AutoSpeed curve
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
@@ -136,6 +142,7 @@ public abstract class BaseAuto extends LinearOpMode {
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
+        feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         if (vision != null) vision.setObeliskAutoLatchEnabled(true); // Capture motifs during movement
 
         try { runSequence(); }

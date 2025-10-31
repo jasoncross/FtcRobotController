@@ -93,6 +93,8 @@ public class Drivebase {
     private DcMotor.RunMode baseRunModeAfterMove = DcMotor.RunMode.RUN_USING_ENCODER;
 
     // ---------- Constructor for AUTONOMOUS (blocking helpers allowed) ----------
+    // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
+
     public Drivebase(LinearOpMode op) {
         this.linear = op;
         this.telemetry = op.telemetry;
@@ -105,6 +107,7 @@ public class Drivebase {
         br   = hw.get(DcMotorEx.class, "BackRight");
 
         commonInit(/*teleOp=*/false);
+        safeInit();
     }
 
     // ---------- Constructor for TELEOP ----------
@@ -119,6 +122,14 @@ public class Drivebase {
         br   = hw.get(DcMotorEx.class, "BackRight");
 
         commonInit(/*teleOp=*/true);
+        safeInit();
+    }
+
+    /** Ensure all drive motors are zeroed during INIT (no unintended motion). */
+    public void safeInit() {
+        for (DcMotorEx m : new DcMotorEx[]{fl, fr, bl, br}) {
+            m.setPower(0.0);
+        }
     }
 
     /**

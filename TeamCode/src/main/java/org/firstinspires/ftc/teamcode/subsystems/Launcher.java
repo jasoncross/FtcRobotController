@@ -81,6 +81,8 @@ public class Launcher {
     public double atSpeedToleranceRPM = LauncherTuning.AT_SPEED_TOLERANCE_RPM;    // Local readiness window; align with shared tuning
 
     // === CONSTRUCTOR ===
+    // CHANGES (2025-10-31): Added safeInit to hold zero RPM during INIT.
+
     public Launcher(HardwareMap hw) {
         // Retrieve motors from configuration
         left  = hw.get(DcMotorEx.class, "FlywheelLeft");
@@ -99,6 +101,15 @@ public class Launcher {
         right.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         left.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, PIDF);
         right.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, PIDF);
+
+        safeInit();
+    }
+
+    /** Ensure flywheels remain stopped during INIT. */
+    public void safeInit() {
+        targetRpm = 0;
+        left.setPower(0);
+        right.setPower(0);
     }
 
     // === PUBLIC API ===

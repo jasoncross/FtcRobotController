@@ -52,7 +52,15 @@
  *     should live here so both inherit it.
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
- */
+ *
+ * CHANGES (2025-10-31): Added runtime vision profile + live-view switching on
+ *                       Gamepad 2 D-pad, refreshed telemetry with concise
+ *                       profile/perf lines, and kept camera control warnings
+ *                       throttled for driver readability.
+ * CHANGES (2025-10-31): Disabled feed idle hold while StopAll is latched so the
+ *                       motor stays at 0 power, restoring the hold when Start
+ *                       resumes TeleOp control.
+*/
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -100,6 +108,7 @@ import java.util.Locale;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
+    // CHANGES (2025-10-31): Added safeInit gating and defaulted AutoSpeed + intake to ON after START.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -133,6 +142,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
     private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
     private double autoAimSpeedScale = AutoAimTuning.AUTO_AIM_SPEED_SCALE; // Translation multiplier while AutoAim is active
+    private long lastVisionTelemetryMs = 0L;      // Throttle (~10 Hz) for vision status lines
+    private String visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
+    private String visionPerfLine = "Perf: FPS=--- LatMs=---";
+    private boolean visionWarningShown = false;
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -191,8 +204,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     /** Auto-Stop timer seconds from TeleOp INIT (defaults 119). */
     protected int autoStopTimerTimeSec = TeleOpDriverDefaults.AUTO_STOP_TIMER_TIME_SEC; // Default countdown seconds when timer enabled
 
-    /** Timestamp captured at TeleOp INIT; used as the timer start. */
-    private long teleopInitMillis = 0L; // TeleOp init timestamp for timer calculations
+    /** Timestamp captured when TeleOp STARTS; used as the timer start. */
+    private long teleopInitMillis = 0L; // TeleOp start timestamp for timer calculations
 
     /** Ensures the timer only trips StopAll once at expiry. */
     private boolean autoStopTriggered = false; // Ensures we only stop once when timer expires
@@ -209,12 +222,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
         launcher = new Launcher(hardwareMap);
         feed     = new Feed(hardwareMap);
         intake   = new Intake(hardwareMap);
-        intake.set(DEFAULT_INTAKE_ENABLED);
+        drive.safeInit();
+        launcher.safeInit();
+        feed.safeInit();
+        intake.safeInit();
 
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
         vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
+        lastVisionTelemetryMs = 0L;
+        visionWarningShown = false;
+        visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
+        visionPerfLine = "Perf: FPS=--- LatMs=---";
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -252,32 +272,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // AutoSpeed toggle (seed RPM if tag; else use InitialAutoDefaultSpeed)
         controls.bindPress(Pad.G1, Btn.Y, () -> {
-            autoSpeedEnabled = !autoSpeedEnabled;
-            ensureAutoCtrl();
-            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED: used to be local tunables here
-            autoCtrl.setAutoEnabled(autoSpeedEnabled);
-
-            if (autoSpeedEnabled) {
-                autoHadTagFix = false;
-                int targetId = (alliance() == Alliance.BLUE)
-                        ? VisionAprilTag.TAG_BLUE_GOAL
-                        : VisionAprilTag.TAG_RED_GOAL;
-                AprilTagDetection detNow = vision.getDetectionFor(targetId);
-                Double seedIn = getGoalDistanceInchesScaled(detNow);
-
-                double seededRpm;
-                if (seedIn != null) {
-                    seededRpm = autoCtrl.updateWithVision(seedIn);
-                    autoHadTagFix = true;
-                } else {
-                    seededRpm = InitialAutoDefaultSpeed;
-                }
-                launcher.setTargetRpm(seededRpm);
-
-                manualRpmLocked = false;
+            boolean enable = !autoSpeedEnabled;
+            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
+            if (enable) {
                 pulseDouble(gamepad1);
             } else {
-                autoCtrl.onManualOverride(launcher.getCurrentRpm());
                 pulseSingle(gamepad1);
             }
         });
@@ -335,35 +334,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
         controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
-            autoSpeedEnabled = !autoSpeedEnabled;
-            ensureAutoCtrl();
-            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED
-            autoCtrl.setAutoEnabled(autoSpeedEnabled);
-
-            if (autoSpeedEnabled) {
-                autoHadTagFix = false;
-                int targetId = (alliance() == Alliance.BLUE)
-                        ? VisionAprilTag.TAG_BLUE_GOAL
-                        : VisionAprilTag.TAG_RED_GOAL;
-                AprilTagDetection detNow = vision.getDetectionFor(targetId);
-                Double seedIn = getGoalDistanceInchesScaled(detNow);
-
-                double seededRpm;
-                if (seedIn != null) {
-                    seededRpm = autoCtrl.updateWithVision(seedIn);
-                    autoHadTagFix = true;
-                } else {
-                    seededRpm = InitialAutoDefaultSpeed;
-                }
-                launcher.setTargetRpm(seededRpm);
-
-                manualRpmLocked = false;
+            boolean enable = !autoSpeedEnabled;
+            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
+            if (enable) {
                 pulseDouble(gamepad1);
             } else {
-                autoCtrl.onManualOverride(launcher.getCurrentRpm());
                 pulseSingle(gamepad1);
             }
         });
+        controls.bindPress(Pad.G2, Btn.DPAD_LEFT,  () -> selectVisionProfile(VisionTuning.Mode.P480));
+        controls.bindPress(Pad.G2, Btn.DPAD_RIGHT, () -> selectVisionProfile(VisionTuning.Mode.P720));
+        controls.bindPress(Pad.G2, Btn.DPAD_UP,    () -> setVisionLiveView(true));
+        controls.bindPress(Pad.G2, Btn.DPAD_DOWN,  () -> setVisionLiveView(false));
 
         // =========================================================================
         // ========================= END CONTROLLER BINDINGS ========================
@@ -377,11 +359,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         AutoRpmConfig.apply(autoCtrl);      // CENTRALIZED
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
-        // ---- Auto-Stop Timer: base timestamp at TeleOp INIT ----
-        teleopInitMillis = System.currentTimeMillis();
-        autoStopTriggered = false;
-        stopLatched = false; // start un-stopped
-
         // ---- FIRST LINE telemetry (init): obelisk memory ----
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
@@ -393,6 +370,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
         }
         telemetry.update();
+    }
+
+    @Override
+    public void start() {
+        feed.setIdleHoldActive(true);
+        intake.set(DEFAULT_INTAKE_ENABLED);
+
+        autoAimEnabled = DEFAULT_AUTOAIM_ENABLED;
+        aimLossStartMs = -1;
+        manualRpmLocked = false;
+        rpmTestEnabled = false;
+        autoStopTriggered = false;
+        stopLatched = false;
+        lastStartG1 = false;
+        lastStartG2 = false;
+
+        applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
+
+        teleopInitMillis = System.currentTimeMillis();
     }
 
     @Override
@@ -417,6 +413,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (!autoStopTriggered && remainingMs == 0) {
                 autoStopTriggered = true;
                 stopLatched = true;
+                feed.setIdleHoldActive(false); // keep feed fully stopped while StopAll is latched
                 stopAll();
                 telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
@@ -552,6 +549,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled(goalDet);
+        updateVisionTelemetry(goalDet, rawIn);
         telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
         telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
 
@@ -562,6 +560,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     autoCtrl.getNearDistanceIn(), autoCtrl.getNearSpeedRpm(),
                     autoCtrl.getFarDistanceIn(),  autoCtrl.getFarSpeedRpm());
             telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
+        }
+        telemetry.addLine(visionStatusLine);
+        telemetry.addLine(visionPerfLine);
+        if (!visionWarningShown && vision != null) {
+            String warn = vision.consumeControlWarning();
+            if (warn != null) {
+                telemetry.addLine(warn);
+                visionWarningShown = true;
+            }
         }
         telemetry.update();
     }
@@ -575,6 +582,67 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     // HELPERS
     // =========================================================================
+    private void updateVisionTelemetry(AprilTagDetection goalDet, Double rawDistanceIn) {
+        if (vision == null) return;
+        long now = System.currentTimeMillis();
+        if ((now - lastVisionTelemetryMs) < 100) return; // ~10 Hz updates
+        lastVisionTelemetryMs = now;
+
+        VisionTuning.Profile profile = vision.getActiveProfile();
+        if (profile == null) profile = VisionTuning.DEFAULT_PROFILE;
+
+        String profileName = (profile != null && profile.name != null) ? profile.name : "--";
+        String liveViewStr = vision.isLiveViewEnabled() ? "ON" : "OFF";
+        visionStatusLine = String.format(Locale.US,
+                "Vision: Profile=%s LiveView=%s Res=%dx%d@%d Decim=%.1f ProcN=%d MinM=%.0f",
+                profileName,
+                liveViewStr,
+                profile.width,
+                profile.height,
+                profile.fps,
+                profile.decimation,
+                profile.processEveryN,
+                profile.minDecisionMargin);
+
+        Double fps = vision.getLastKnownFps();
+        Double latency = vision.getLastFrameLatencyMs();
+        String fpsStr = (fps == null) ? "---" : String.format(Locale.US, "%.1f", fps);
+        String latencyStr = (latency == null) ? "---" : String.format(Locale.US, "%.0f", latency);
+        visionPerfLine = String.format(Locale.US, "Perf: FPS=%s LatMs=%s", fpsStr, latencyStr);
+    }
+
+    private void applyAutoSpeedEnablement(boolean enable, boolean stopOnDisable) {
+        ensureAutoCtrl();
+        AutoRpmConfig.apply(autoCtrl);
+
+        autoSpeedEnabled = enable;
+        autoCtrl.setAutoEnabled(enable);
+
+        if (enable) {
+            autoHadTagFix = false;
+            int targetId = (alliance() == Alliance.BLUE)
+                    ? VisionAprilTag.TAG_BLUE_GOAL
+                    : VisionAprilTag.TAG_RED_GOAL;
+            AprilTagDetection detNow = (vision != null) ? vision.getDetectionFor(targetId) : null;
+            Double seedIn = getGoalDistanceInchesScaled(detNow);
+
+            double seededRpm;
+            if (seedIn != null) {
+                seededRpm = autoCtrl.updateWithVision(seedIn);
+                autoHadTagFix = true;
+            } else {
+                seededRpm = InitialAutoDefaultSpeed;
+            }
+            launcher.setTargetRpm(seededRpm);
+            manualRpmLocked = false;
+        } else {
+            autoCtrl.onManualOverride(launcher.getCurrentRpm());
+            if (stopOnDisable) {
+                launcher.stop();
+            }
+        }
+    }
+
     private void ensureAutoCtrl() {
         if (autoCtrl == null) autoCtrl = new LauncherAutoSpeedController();
     }
@@ -588,6 +656,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
             manualLockedRpm = next;
         }
         launcher.setTargetRpm(next);
+    }
+
+    private void selectVisionProfile(VisionTuning.Mode mode) {
+        if (vision == null || mode == null) return;
+        try {
+            vision.applyProfile(mode);
+        } catch (IllegalStateException ise) {
+            telemetry.addLine("Vision profile error: " + ise.getMessage());
+        }
+        visionWarningShown = false;
+        lastVisionTelemetryMs = 0L;
+        pulseSingle(gamepad2);
+    }
+
+    private void setVisionLiveView(boolean enable) {
+        if (vision == null) return;
+        vision.toggleLiveView(enable);
+        visionWarningShown = false;
+        lastVisionTelemetryMs = 0L;
+        pulseSingle(gamepad2);
     }
 
     private void initAimRumble() {
@@ -699,10 +787,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void toggleStopLatch() {
         stopLatched = !stopLatched;
         if (stopLatched) {
+            feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
             stopAll();
             // Optional haptic cue: single pulse to confirm STOP
             pulseSingle(gamepad1);
         } else {
+            feed.setIdleHoldActive(true); // restore idle hold once TeleOp control resumes
             // Optional haptic cue: single pulse to confirm RESUME
             pulseSingle(gamepad1);
         }

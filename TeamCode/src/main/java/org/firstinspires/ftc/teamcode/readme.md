@@ -55,10 +55,14 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
+| **D-pad Left** | **Select vision P480 profile** (640×480@30 performance stream) |
+| **D-pad Right** | **Select vision P720 profile** (1280×720@20 sighting stream) |
+| **D-pad Up** | **Enable Vision live view** (Driver Station preview on) |
+| **D-pad Down** | **Disable Vision live view** (performance mode, preview off) |
 | **Start** | **StopAll toggle** (same behavior as G1) |
 
 **Startup defaults:**
-`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (edit in `config/TeleOpDriverDefaults.java`).
+`AutoSpeed = ON`, `AutoAim = OFF`, `Intake = ON` (edit in `config/TeleOpDriverDefaults.java`).
 
 ---
 
@@ -87,7 +91,7 @@ TeamCode/
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
-    │   └── VisionTuning.java                 ← AprilTag range scale calibration
+    │   └── VisionTuning.java                 ← AprilTag range scale + camera profile/intrinsics tunables
     ├── control/
     │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
     ├── drive/
@@ -149,9 +153,9 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - D-pad left/right apply ±`LauncherTuning.MANUAL_RPM_STEP` adjustments for quick fine-tuning **only while Manual Lock is engaged** (keeps lock and AutoSpeed off).
 
 ### Intake, Feed, and Eject
-- `DEFAULT_INTAKE_ENABLED` determines initial intake state.
+- `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply.
 - Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
-- Feed motor holds position with BRAKE zero-power behavior so the pusher stays planted between cycles.
+- Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
@@ -163,11 +167,19 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 
 ## Vision (AprilTags)
 
-- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor (Driver Station live view enabled via `VisionPortal` builder).
-- **Alliance goals:** Blue = Tag 20  |  Red = Tag 24  
-- **Distance units:** inches = meters × 39.37  
-- **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.  
-- **Recommended Resolution:** 640×480 MJPEG for smooth frame rate.
+- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor.
+- **Alliance goals:** Blue = Tag 20  |  Red = Tag 24
+- **Distance units:** inches = meters × 39.37
+- **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
+- **Vision profiles** (`config/VisionTuning.java → P480_* / P720_*` constants via `VisionTuning.forMode(...)`):
+  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `25`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
+  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `38`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
+- **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
+- **Streaming toggle:** Gamepad 2 D-pad up/down calls `vision.toggleLiveView(...)` (prefers MJPEG preview when enabled).
+- **Telemetry bundle (≈10 Hz):**
+  - `Vision: Profile=<P480|P720> LiveView=<ON|OFF> Res=<WxH>@<FPS> Decim=<x.x> ProcN=<n> MinM=<m>`
+  - `Perf: FPS=<measured> LatMs=<latest>`
+- **Driver feedback:** Telemetry raises a one-time warning if the webcam does not accept manual exposure/gain/white-balance commands.
 
 **Aim Controller Defaults**
 ```
@@ -216,9 +228,10 @@ or game mode owns each parameter before making adjustments.
 ## StopAll & Auto-Stop Timer (NEW)
 
 ### What is StopAll?
-`StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.  
-While STOPPED, TeleOp ignores control outputs and keeps mechanisms at zero power.  
-Press **Start** again to **RESUME** normal control.
+`StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.
+While STOPPED, TeleOp ignores control outputs, keeps mechanisms at zero power, and temporarily disables the feed motor's idle
+hold so the motor rests at 0.
+Press **Start** again to **RESUME** normal control, which restores the idle hold automatically.
 
 - Engaged manually any time by pressing **Start** (G1 or G2).  
 - Also executed automatically by the **Auto-Stop timer** when enabled and the countdown reaches zero.  
@@ -247,6 +260,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, and ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

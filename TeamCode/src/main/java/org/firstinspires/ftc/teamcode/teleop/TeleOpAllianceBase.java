@@ -52,7 +52,12 @@
  *     should live here so both inherit it.
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
- */
+ *
+ * CHANGES (2025-10-31): Added runtime vision profile + live-view switching on
+ *                       Gamepad 2 D-pad, refreshed telemetry with concise
+ *                       profile/perf lines, and kept camera control warnings
+ *                       throttled for driver readability.
+*/
 package org.firstinspires.ftc.teamcode.teleop;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -133,6 +138,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
     private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
     private double autoAimSpeedScale = AutoAimTuning.AUTO_AIM_SPEED_SCALE; // Translation multiplier while AutoAim is active
+    private long lastVisionTelemetryMs = 0L;      // Throttle (~10 Hz) for vision status lines
+    private String visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
+    private String visionPerfLine = "Perf: FPS=--- LatMs=---";
+    private boolean visionWarningShown = false;
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -215,6 +224,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
         vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
+        lastVisionTelemetryMs = 0L;
+        visionWarningShown = false;
+        visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
+        visionPerfLine = "Perf: FPS=--- LatMs=---";
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -364,6 +377,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 pulseSingle(gamepad1);
             }
         });
+        controls.bindPress(Pad.G2, Btn.DPAD_LEFT,  () -> selectVisionProfile(VisionTuning.Mode.P480));
+        controls.bindPress(Pad.G2, Btn.DPAD_RIGHT, () -> selectVisionProfile(VisionTuning.Mode.P720));
+        controls.bindPress(Pad.G2, Btn.DPAD_UP,    () -> setVisionLiveView(true));
+        controls.bindPress(Pad.G2, Btn.DPAD_DOWN,  () -> setVisionLiveView(false));
 
         // =========================================================================
         // ========================= END CONTROLLER BINDINGS ========================
@@ -552,6 +569,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled(goalDet);
+        updateVisionTelemetry(goalDet, rawIn);
         telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
         telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
 
@@ -562,6 +580,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     autoCtrl.getNearDistanceIn(), autoCtrl.getNearSpeedRpm(),
                     autoCtrl.getFarDistanceIn(),  autoCtrl.getFarSpeedRpm());
             telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
+        }
+        telemetry.addLine(visionStatusLine);
+        telemetry.addLine(visionPerfLine);
+        if (!visionWarningShown && vision != null) {
+            String warn = vision.consumeControlWarning();
+            if (warn != null) {
+                telemetry.addLine(warn);
+                visionWarningShown = true;
+            }
         }
         telemetry.update();
     }
@@ -575,6 +602,35 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     // HELPERS
     // =========================================================================
+    private void updateVisionTelemetry(AprilTagDetection goalDet, Double rawDistanceIn) {
+        if (vision == null) return;
+        long now = System.currentTimeMillis();
+        if ((now - lastVisionTelemetryMs) < 100) return; // ~10 Hz updates
+        lastVisionTelemetryMs = now;
+
+        VisionTuning.Profile profile = vision.getActiveProfile();
+        if (profile == null) profile = VisionTuning.DEFAULT_PROFILE;
+
+        String profileName = (profile != null && profile.name != null) ? profile.name : "--";
+        String liveViewStr = vision.isLiveViewEnabled() ? "ON" : "OFF";
+        visionStatusLine = String.format(Locale.US,
+                "Vision: Profile=%s LiveView=%s Res=%dx%d@%d Decim=%.1f ProcN=%d MinM=%.0f",
+                profileName,
+                liveViewStr,
+                profile.width,
+                profile.height,
+                profile.fps,
+                profile.decimation,
+                profile.processEveryN,
+                profile.minDecisionMargin);
+
+        Double fps = vision.getLastKnownFps();
+        Double latency = vision.getLastFrameLatencyMs();
+        String fpsStr = (fps == null) ? "---" : String.format(Locale.US, "%.1f", fps);
+        String latencyStr = (latency == null) ? "---" : String.format(Locale.US, "%.0f", latency);
+        visionPerfLine = String.format(Locale.US, "Perf: FPS=%s LatMs=%s", fpsStr, latencyStr);
+    }
+
     private void ensureAutoCtrl() {
         if (autoCtrl == null) autoCtrl = new LauncherAutoSpeedController();
     }
@@ -588,6 +644,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
             manualLockedRpm = next;
         }
         launcher.setTargetRpm(next);
+    }
+
+    private void selectVisionProfile(VisionTuning.Mode mode) {
+        if (vision == null || mode == null) return;
+        try {
+            vision.applyProfile(mode);
+        } catch (IllegalStateException ise) {
+            telemetry.addLine("Vision profile error: " + ise.getMessage());
+        }
+        visionWarningShown = false;
+        lastVisionTelemetryMs = 0L;
+        pulseSingle(gamepad2);
+    }
+
+    private void setVisionLiveView(boolean enable) {
+        if (vision == null) return;
+        vision.toggleLiveView(enable);
+        visionWarningShown = false;
+        lastVisionTelemetryMs = 0L;
+        pulseSingle(gamepad2);
     }
 
     private void initAimRumble() {

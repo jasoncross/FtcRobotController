@@ -12,6 +12,8 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -28,8 +30,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - Provide a cross-SDK AprilTag helper that initializes VisionPortal +
  *     AprilTagProcessor, exposes compatibility getters, and returns the closest
  *     detection for a requested tag.
- *   - Maintain a configurable range scale to correct distance output and latch
- *     DECODE Obelisk tags (IDs 21/22/23) during the init loop.
+ *   - Maintain a configurable range scale to correct distance output, latch
+ *     DECODE Obelisk tags (IDs 21/22/23), and now swap Logitech C270 streaming
+ *     profiles + live-view states at runtime so TeleOp/Auto share tuned vision
+ *     defaults.
  *
  * ALLIANCE TAG IDS (DECODE field)
  *   - BLUE GOAL: 20
@@ -47,30 +51,27 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *
  * METHODS
  *   - init(hw, "Webcam 1")
- *       • Build VisionPortal + AprilTagProcessor with compatible defaults and
- *         enable the Driver Station live view stream.
+ *       • Cache hardware handles and apply the default streaming profile.
+ *   - applyProfile(profile)
+ *       • Rebuild the VisionPortal + AprilTagProcessor for the requested
+ *         resolution, gating, and calibration without blocking the OpMode loop.
+ *   - toggleLiveView(enable)
+ *       • Enable or disable the Driver Station preview (MJPEG preferred).
  *   - getDetectionsCompat()
- *       • Return detections using the best API available for the installed SDK.
- *   - getDetectionFor(int tagId)
- *       • Return the closest visible detection for the requested tag.
- *   - setRangeScale(double s) / getScaledRange(det)
- *       • Adjust and read calibrated distance values.
- *   - observeObelisk(...) / setObeliskAutoLatchEnabled(boolean)
- *       • Track Obelisk tags during the init loop or while moving in Auto.
- *   - stop()
- *       • Close the VisionPortal when TeleOp ends.
+ *       • Return detections using the best API available, filtered by profile
+ *         gate + minimum decision margin.
+ *   - Remaining helpers mirror the prior implementation.
  *
  * NOTES
- *   - CHANGES (2025-11-03): Apply tunable 1280x720@20 FPS camera settings with
- *     manual exposure/gain, optional white balance lock, and expose runtime
- *     performance telemetry (FPS, latency, stream status) for TeleOp display.
- *   - We use 640x480 with MJPEG when available (built-in calibration + better FPS).
- *   - No AprilTagLibrary.addTag() calls so this compiles on older SDKs.
+ *   - CHANGES (2025-10-31): Added runtime vision profiles (P480/P720) with
+ *     tuned decimation, frame skipping, margin gating, camera controls,
+ *     calibration, and streaming toggles so TeleOp + Auto stay in sync.
  *   - Bearing/pose values come from AprilTagDetection.ftcPose (meters + degrees).
  */
 public class VisionAprilTag {
 
-    // CHANGES (2025-10-30): Enabled Driver Station live stream via VisionPortal builder and resume call.
+    // CHANGES (2025-10-31): VisionPortal builder starts with live view disabled;
+    // runtime toggles (via TeleOp) manage the Driver Station preview state.
 
     // === CONSTANTS ===
     public static final int TAG_BLUE_GOAL = 20; // Blue alliance GOAL tag
@@ -84,6 +85,18 @@ public class VisionAprilTag {
     // === INTERNAL OBJECTS ===
     private VisionPortal portal;
     private AprilTagProcessor tagProcessor;
+    private HardwareMap hardwareMap;
+    private String webcamName;
+
+    private VisionTuning.Profile activeProfile = VisionTuning.DEFAULT_PROFILE;
+    private VisionTuning.Mode activeMode = VisionTuning.Mode.P480;
+    private VisionTuning.Profile pendingControlsProfile = null;
+    private boolean liveViewRequested = VisionTuning.DEFAULT_LIVE_VIEW_ENABLED;
+    private boolean liveViewApplied = VisionTuning.DEFAULT_LIVE_VIEW_ENABLED;
+    private int processEveryN = VisionTuning.DEFAULT_PROFILE.processEveryN;
+    private double minDecisionMargin = VisionTuning.DEFAULT_PROFILE.minDecisionMargin;
+    private int frameGateCounter = 0;
+    private List<AprilTagDetection> lastFilteredDetections = Collections.emptyList();
 
     // === RANGE SCALING ===
     // Multiply raw ftcPose.range (meters) by this factor to correct distance.
@@ -112,39 +125,378 @@ public class VisionAprilTag {
     //     - Uses webcam defined in Robot Configuration.
     // =============================================================
     public void init(HardwareMap hw, String webcamName) {
-        // Build AprilTag processor with widely supported options
-        tagProcessor = new AprilTagProcessor.Builder()
-                .setDrawAxes(true)            // Draw XYZ axes on detected tags
-                .setDrawCubeProjection(true)  // Draw cube overlay on each tag
-                .setDrawTagID(true)           // Display Tag ID on stream
-                .build();
-        try { tagProcessor.setDecimation(VisionTuning.APRILTAG_DECIMATION); } catch (Throwable ignored) {}
+        this.hardwareMap = hw;
+        this.webcamName = webcamName;
+        VisionTuning.Mode defaultMode = inferMode(VisionTuning.DEFAULT_PROFILE);
+        applyProfile(defaultMode);
+        toggleLiveView(VisionTuning.DEFAULT_LIVE_VIEW_ENABLED);
+    }
 
-        // Build VisionPortal
+    public synchronized void applyProfile(VisionTuning.Mode mode) {
+        VisionTuning.Mode resolved = (mode != null) ? mode : VisionTuning.Mode.P480;
+        VisionTuning.Profile next = VisionTuning.forMode(resolved);
+        applyProfileInternal(next, resolved);
+    }
+
+    public synchronized void applyProfile(VisionTuning.Profile profile) {
+        VisionTuning.Profile requested = (profile != null) ? profile : VisionTuning.DEFAULT_PROFILE;
+        VisionTuning.Mode inferred = inferMode(requested);
+        VisionTuning.Profile normalized = VisionTuning.forMode(inferred);
+        applyProfileInternal(normalized, inferred);
+    }
+
+    private void applyProfileInternal(VisionTuning.Profile next, VisionTuning.Mode mode) {
+        if (hardwareMap == null || webcamName == null) {
+            throw new IllegalStateException("init must be called before applyProfile");
+        }
+
+        boolean wasObeliskPolling = obeliskAutoLatch;
+        if (wasObeliskPolling) setObeliskAutoLatchEnabled(false);
+
+        disposePortal();
+
+        activeMode = (mode != null) ? mode : VisionTuning.Mode.P480;
+        activeProfile = next;
+        processEveryN = Math.max(1, next.processEveryN);
+        minDecisionMargin = Math.max(0.0, next.minDecisionMargin);
+        frameGateCounter = 0;
+        lastFilteredDetections = Collections.emptyList();
+        liveViewApplied = false; // builder starts with live view disabled
+        controlWarningOnce = null;
+        pendingControlsProfile = next;
+
+        AprilTagProcessor.Builder tagBuilder = new AprilTagProcessor.Builder()
+                .setDrawAxes(true)
+                .setDrawCubeProjection(true)
+                .setDrawTagID(true);
+
+        try { tagBuilder.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11); } catch (Throwable ignored) {}
+        trySetDecimation(tagBuilder, next.decimation);
+        applyLensIntrinsics(tagBuilder, next);
+
+        tagProcessor = tagBuilder.build();
+
         VisionPortal.Builder builder = new VisionPortal.Builder()
                 .addProcessor(tagProcessor)
-                .setCamera(hw.get(WebcamName.class, webcamName))
-                .setCameraResolution(new Size(
-                        VisionTuning.VISION_RES_WIDTH,
-                        VisionTuning.VISION_RES_HEIGHT))
-                .enableLiveView(true);                     // Stream to Driver Station DS preview
+                .setCamera(hardwareMap.get(WebcamName.class, webcamName))
+                .setCameraResolution(new Size(next.width, next.height))
+                .enableLiveView(false);
 
-        // Prefer YUY2 for 720p stability; fall back to MJPEG if unavailable.
         boolean streamFormatSet = false;
         try {
-            builder.setStreamFormat(VisionPortal.StreamFormat.YUY2);
+            builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG);
             streamFormatSet = true;
-        } catch (Throwable ignored) { /* fall back below */ }
+        } catch (Throwable ignored) { /* fall through */ }
         if (!streamFormatSet) {
-            try { builder.setStreamFormat(VisionPortal.StreamFormat.MJPEG); } catch (Throwable ignored) {}
+            try { builder.setStreamFormat(VisionPortal.StreamFormat.YUY2); } catch (Throwable ignored) {}
         }
 
         portal = builder.build();
 
-        applyTargetFpsLimit();
-        scheduleCameraControlApply();
+        applyTargetFpsLimit(next);
+        scheduleCameraControlApply(next);
 
         try { portal.resumeStreaming(); } catch (Throwable ignored) {}
+
+        applyLiveViewState();
+
+        if (wasObeliskPolling) setObeliskAutoLatchEnabled(true);
+    }
+
+    public synchronized void toggleLiveView(boolean enable) {
+        liveViewRequested = enable;
+        applyLiveViewState();
+    }
+
+    private void applyLiveViewState() {
+        if (portal == null) return;
+        boolean applied = false;
+        try {
+            Method m = portal.getClass().getMethod("setLiveViewEnabled", boolean.class);
+            m.invoke(portal, liveViewRequested);
+            applied = true;
+        } catch (Throwable ignored) {
+            try {
+                Method m = portal.getClass().getMethod("enableLiveView", boolean.class);
+                m.invoke(portal, liveViewRequested);
+                applied = true;
+            } catch (Throwable ignored2) {
+                if (liveViewRequested) {
+                    try { portal.resumeStreaming(); applied = true; } catch (Throwable ignored3) {}
+                }
+            }
+        }
+        if (applied) {
+            liveViewApplied = liveViewRequested;
+        }
+    }
+
+    private void scheduleCameraControlApply(VisionTuning.Profile profile) {
+        if (portal == null) return;
+        pendingControlsProfile = profile;
+        if (controlsThreadStarted) return;
+        controlsApplied = false;
+        controlsThreadStarted = true;
+        controlsThread = new Thread(() -> {
+            boolean appliedNow = false;
+            try {
+                long start = System.currentTimeMillis();
+                boolean streaming = false;
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        VisionPortal.CameraState state = null;
+                        try { state = portal.getCameraState(); } catch (Throwable ignored) {}
+                        if (state == VisionPortal.CameraState.STREAMING) { streaming = true; break; }
+                        if ((System.currentTimeMillis() - start) > 2500) break;
+                        Thread.sleep(40);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                if (streaming) {
+                    applyCameraControls(pendingControlsProfile);
+                    appliedNow = true;
+                }
+            } finally {
+                controlsApplied = appliedNow;
+                controlsThreadStarted = false;
+                controlsThread = null;
+                pendingControlsProfile = null;
+            }
+        }, "VA-CamCtrl");
+        controlsThread.setDaemon(true);
+        controlsThread.start();
+    }
+
+    private void applyCameraControls(VisionTuning.Profile profile) {
+        if (portal == null || profile == null) return;
+        StringBuilder warn = new StringBuilder();
+        if (!applyExposure(profile)) warn.append(" Exposure");
+        if (!applyGain(profile)) warn.append(" Gain");
+        if (!applyWhiteBalance(profile)) warn.append(" WhiteBalance");
+        if (warn.length() > 0 && controlWarningOnce == null) {
+            controlWarningOnce = String.format(Locale.US,
+                    "Vision control unsupported: %s", warn.toString().trim());
+        }
+    }
+
+    private void disposePortal() {
+        if (controlsThread != null) {
+            try { controlsThread.interrupt(); } catch (Throwable ignored) {}
+            controlsThread = null;
+        }
+        controlsThreadStarted = false;
+        controlsApplied = false;
+        pendingControlsProfile = null;
+
+        if (portal != null) {
+            try { portal.stopStreaming(); } catch (Throwable ignored) {}
+            try { portal.close(); } catch (Throwable ignored) {}
+        }
+        portal = null;
+        tagProcessor = null;
+        liveViewApplied = false;
+        lastFilteredDetections = Collections.emptyList();
+        frameGateCounter = 0;
+    }
+
+    private void applyLensIntrinsics(AprilTagProcessor.Builder builder, VisionTuning.Profile profile) {
+        if (builder == null || profile == null) return;
+
+        if (profile.hasIntrinsics()) {
+            trySetLensIntrinsics(builder, profile.fx, profile.fy, profile.cx, profile.cy);
+        }
+
+        if (profile.hasDistortion()) {
+            trySetDistortion(builder, profile.k1, profile.k2, profile.p1, profile.p2, profile.k3);
+        }
+    }
+
+    private boolean trySetLensIntrinsics(AprilTagProcessor.Builder builder,
+                                         double fx, double fy, double cx, double cy) {
+        if (!isFinitePositive(fx) || !isFinitePositive(fy) || !isFinitePositive(cx) || !isFinitePositive(cy)) {
+            return false;
+        }
+        try {
+            builder.setLensIntrinsics(fx, fy, cx, cy);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean isFinitePositive(double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value) && Math.abs(value) > 1e-6;
+    }
+
+    private void trySetDistortion(AprilTagProcessor.Builder builder,
+                                  double k1, double k2, double p1, double p2, double k3) {
+        if (!hasMeaningfulCoefficients(k1, k2, p1, p2, k3)) {
+            return;
+        }
+        trySetDistortionCoefficients(builder, k1, k2, p1, p2, k3);
+    }
+
+    private boolean hasMeaningfulCoefficients(double... coeffs) {
+        for (double c : coeffs) {
+            if (Math.abs(c) > 1e-9) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void trySetDecimation(AprilTagProcessor.Builder builder, float decimation) {
+        if (builder == null) return;
+        try {
+            Method m = builder.getClass().getMethod("setDecimation", float.class);
+            m.invoke(builder, decimation);
+        } catch (Throwable ignored) {
+            try {
+                Method m = builder.getClass().getMethod("setDecimation", double.class);
+                m.invoke(builder, (double) decimation);
+            } catch (Throwable ignored2) {
+                // leave builder default when SDK does not expose decimation setter
+            }
+        }
+    }
+
+    private void trySetDistortionCoefficients(AprilTagProcessor.Builder builder,
+                                              double k1, double k2, double p1, double p2, double k3) {
+        if (builder == null) return;
+        try {
+            Method m = builder.getClass().getMethod(
+                    "setDistortionCoefficients",
+                    double.class, double.class, double.class, double.class, double.class);
+            m.invoke(builder, k1, k2, p1, p2, k3);
+        } catch (Throwable ignored) {
+            try {
+                Method m = builder.getClass().getMethod(
+                        "setDistortionCoefficients",
+                        float.class, float.class, float.class, float.class, float.class);
+                m.invoke(builder,
+                        (float) k1,
+                        (float) k2,
+                        (float) p1,
+                        (float) p2,
+                        (float) k3);
+            } catch (Throwable ignored2) {
+                // Older SDKs may not expose distortion setters
+            }
+        }
+    }
+
+    private boolean applyExposure(VisionTuning.Profile profile) {
+        try {
+            ExposureControl exposureControl = portal.getCameraControl(ExposureControl.class);
+            if (exposureControl == null) return false;
+            try {
+                if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                    exposureControl.setMode(ExposureControl.Mode.Manual);
+                }
+            } catch (Throwable ignored) {}
+            exposureControl.setExposure(profile.exposureMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean applyGain(VisionTuning.Profile profile) {
+        try {
+            GainControl gainControl = portal.getCameraControl(GainControl.class);
+            if (gainControl == null) return false;
+            gainControl.setGain(profile.gain);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private boolean applyWhiteBalance(VisionTuning.Profile profile) {
+        try {
+            Class<?> wbClass = Class.forName("org.firstinspires.ftc.robotcore.external.hardware.camera.controls.WhiteBalanceControl");
+            Object wbControl = portal.getCameraControl((Class) wbClass);
+            if (wbControl == null) return false;
+
+            boolean desiredLock = profile.whiteBalanceLock;
+            boolean handled = invokeWhiteBalanceLockCompat(wbClass, wbControl, desiredLock);
+            if (!handled) handled = invokeWhiteBalanceModeCompat(wbClass, wbControl, desiredLock);
+            return handled;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean invokeWhiteBalanceLockCompat(Class<?> wbClass, Object control, boolean desiredLock) {
+        try {
+            for (Method m : wbClass.getMethods()) {
+                if (!m.getName().equals("setWhiteBalanceLocked")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 1) continue;
+                if (params[0] == boolean.class || params[0] == Boolean.class) {
+                    m.invoke(control, desiredLock);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private boolean invokeWhiteBalanceModeCompat(Class<?> wbClass, Object control, boolean desiredLock) {
+        try {
+            for (Method m : wbClass.getMethods()) {
+                if (!m.getName().equals("setMode")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 1) continue;
+                Class<?> modeClass = params[0];
+                if (!modeClass.isEnum()) continue;
+                Object[] constants = modeClass.getEnumConstants();
+                Object manual = null, auto = null;
+                for (Object constant : constants) {
+                    String name = constant.toString().toUpperCase(Locale.US);
+                    if (manual == null && (name.contains("MANUAL") || name.contains("LOCK"))) manual = constant;
+                    if (auto == null && name.contains("AUTO")) auto = constant;
+                }
+                if (desiredLock && manual != null) {
+                    m.invoke(control, manual);
+                    return true;
+                }
+                if (!desiredLock && auto != null) {
+                    m.invoke(control, auto);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private void applyTargetFpsLimit(VisionTuning.Profile profile) {
+        if (portal == null || tagProcessor == null || profile == null) return;
+        double fps = profile.fps;
+        if (fps <= 0) return;
+        try {
+            for (Method m : portal.getClass().getMethods()) {
+                if (!m.getName().equals("setProcessorFpsLimit")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 2) continue;
+                if (!params[0].isInstance(tagProcessor) && !params[0].isAssignableFrom(tagProcessor.getClass())) continue;
+                if (params[1] == double.class || params[1] == Double.TYPE) {
+                    m.invoke(portal, tagProcessor, fps);
+                    return;
+                } else if (params[1] == float.class || params[1] == Float.TYPE) {
+                    m.invoke(portal, tagProcessor, (float) fps);
+                    return;
+                } else if (params[1] == int.class || params[1] == Integer.TYPE) {
+                    m.invoke(portal, tagProcessor, (int)Math.round(fps));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+            // leave unlimited if SDK does not support FPS limits
+        }
     }
 
     private void scheduleCameraControlApply() {
@@ -315,6 +667,31 @@ public class VisionAprilTag {
 
         samplePerformanceMetrics();
 
+        if (processEveryN > 1) {
+            frameGateCounter = (frameGateCounter + 1) % processEveryN;
+            if (frameGateCounter != 0) {
+                return lastFilteredDetections;
+            }
+        }
+
+        List<AprilTagDetection> raw = fetchDetectionsRaw();
+        List<AprilTagDetection> filtered = new ArrayList<>();
+        if (raw != null) {
+            for (AprilTagDetection det : raw) {
+                if (det == null) continue;
+                double margin = det.decisionMargin;
+                if (Double.isNaN(margin) || margin < minDecisionMargin) continue;
+                filtered.add(det);
+            }
+        }
+
+        lastFilteredDetections = Collections.unmodifiableList(filtered);
+        return lastFilteredDetections;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<AprilTagDetection> fetchDetectionsRaw() {
+        if (tagProcessor == null) return java.util.Collections.emptyList();
         try {
             // Newer SDKs
             return tagProcessor.getDetections();
@@ -408,6 +785,18 @@ public class VisionAprilTag {
         return msg;
     }
 
+    public VisionTuning.Profile getActiveProfile() {
+        return activeProfile;
+    }
+
+    public VisionTuning.Mode getActiveMode() {
+        return activeMode;
+    }
+
+    public boolean isLiveViewEnabled() {
+        return liveViewApplied;
+    }
+
     private Double invokeDoubleNoArgs(Object target, String... methodNames) {
         for (String name : methodNames) {
             try {
@@ -441,6 +830,23 @@ public class VisionAprilTag {
         } catch (Throwable ignored) {
             // ignore missing metadata
         }
+    }
+
+    private VisionTuning.Mode inferMode(VisionTuning.Profile profile) {
+        if (profile == null) {
+            return VisionTuning.Mode.P480;
+        }
+        String name = profile.name;
+        if (VisionTuning.P720_NAME.equals(name)) {
+            return VisionTuning.Mode.P720;
+        }
+        if (VisionTuning.P480_NAME.equals(name)) {
+            return VisionTuning.Mode.P480;
+        }
+        if (profile.width == VisionTuning.P720_WIDTH && profile.height == VisionTuning.P720_HEIGHT) {
+            return VisionTuning.Mode.P720;
+        }
+        return VisionTuning.Mode.P480;
     }
 
     private Double extractLatencyFromMetadata(Object metadata) {
@@ -545,17 +951,6 @@ public class VisionAprilTag {
     public void stop() {
         // ensure background poller is shut down
         setObeliskAutoLatchEnabled(false);
-
-        if (controlsThread != null) {
-            try { controlsThread.interrupt(); } catch (Throwable ignored) {}
-            controlsThread = null;
-        }
-        controlsThreadStarted = false;
-        controlsApplied = false;
-
-        if (portal != null) {
-            try { portal.stopStreaming(); } catch (Throwable ignored) {}
-            portal.close();
-        }
+        disposePortal();
     }
 }

@@ -55,6 +55,10 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
+| **D-pad Left** | **Select vision P480 profile** (640×480@30 performance stream) |
+| **D-pad Right** | **Select vision P720 profile** (1280×720@20 sighting stream) |
+| **D-pad Up** | **Enable Vision live view** (Driver Station preview on) |
+| **D-pad Down** | **Disable Vision live view** (performance mode, preview off) |
 | **Start** | **StopAll toggle** (same behavior as G1) |
 
 **Startup defaults:**
@@ -87,7 +91,7 @@ TeamCode/
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
-    │   └── VisionTuning.java                 ← AprilTag range scale calibration
+    │   └── VisionTuning.java                 ← AprilTag range scale + camera profile/intrinsics tunables
     ├── control/
     │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
     ├── drive/
@@ -163,16 +167,18 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 
 ## Vision (AprilTags)
 
-- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor (Driver Station live view enabled via `VisionPortal` builder).
+- **Camera:** “Webcam 1” via VisionPortal and AprilTagProcessor.
 - **Alliance goals:** Blue = Tag 20  |  Red = Tag 24
 - **Distance units:** inches = meters × 39.37
 - **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
-- **Streaming Profile:** Tuned for **1280×720 @ 20 FPS** with AprilTag decimation = `2.0`, manual **exposure = 15 ms**, **gain = 110**, and white balance lock (all configurable in `config/VisionTuning.java`).
+- **Vision profiles** (`config/VisionTuning.java → P480_* / P720_*` constants via `VisionTuning.forMode(...)`):
+  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `25`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
+  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `38`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
+- **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
+- **Streaming toggle:** Gamepad 2 D-pad up/down calls `vision.toggleLiveView(...)` (prefers MJPEG preview when enabled).
 - **Telemetry bundle (≈10 Hz):**
-  - `Res=<WxH>  FPS_Target=<n>  Decim=<x.x>  Exp=<ms>  Gain=<n>  WB_Lock=<true/false>`
-  - `VisionFPS=<measured>  FrameLatencyMs=<latest>`
-  - `TagId=<id>  DecisionMargin=<margin>  DistanceIn=<inches>  YawDeg=<deg>`
-  - `Stream=ENABLED|OFF  Controls=APPLIED|PENDING`
+  - `Vision: Profile=<P480|P720> LiveView=<ON|OFF> Res=<WxH>@<FPS> Decim=<x.x> ProcN=<n> MinM=<m>`
+  - `Perf: FPS=<measured> LatMs=<latest>`
 - **Driver feedback:** Telemetry raises a one-time warning if the webcam does not accept manual exposure/gain/white-balance commands.
 
 **Aim Controller Defaults**
@@ -253,7 +259,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑11‑03** – Bumped Logitech C270 vision to 1280×720@20 FPS with manual exposure/gain + white balance lock tunables, added VisionPortal performance telemetry bundle (FPS/latency/tag stats/stream status), and surfaced one-time warnings when camera controls are unsupported.
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, and refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

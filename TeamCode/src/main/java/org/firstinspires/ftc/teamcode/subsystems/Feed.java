@@ -45,9 +45,11 @@ import org.firstinspires.ftc.teamcode.config.FeedTuning;
 public class Feed {
 
     // CHANGES (2025-10-30): Locked zero-power BRAKE + RUN_WITHOUT_ENCODER and guard before each power command.
+    // CHANGES (2025-10-31): Added idle counter-rotation via FeedTuning.IDLE_HOLD_POWER when not firing.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
+    public double idleHoldPower = FeedTuning.IDLE_HOLD_POWER; // Counter-rotation while idle (0 = BRAKE only)
 
     private final DcMotorEx motor;
     private long lastFire = 0;
@@ -55,6 +57,7 @@ public class Feed {
     public Feed(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "FeedMotor");
         applySafetyConfig();
+        applyIdleHoldPower();
     }
 
     /** Returns true if enough time has passed since last feed to fire again. */
@@ -69,13 +72,13 @@ public class Feed {
         applySafetyConfig();
         motor.setPower(firePower);
         sleep(fireTimeMs);
-        motor.setPower(0);
+        applyIdleHoldPower();
     }
 
     /** Immediately stops the feed motor. */
     public void stop() {
         applySafetyConfig();
-        motor.setPower(0);
+        applyIdleHoldPower();
     }
 
     /** Helper exposed for safety fallbacks and testing. */
@@ -92,6 +95,15 @@ public class Feed {
         motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         if (motor.getMode() != DcMotor.RunMode.RUN_WITHOUT_ENCODER) {
             motor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+    }
+
+    private void applyIdleHoldPower() {
+        double power = idleHoldPower;
+        if (Math.abs(power) < 1e-6) {
+            motor.setPower(0.0);
+        } else {
+            motor.setPower(power);
         }
     }
 }

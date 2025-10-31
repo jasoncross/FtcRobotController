@@ -20,6 +20,9 @@
  *       • 0–1 exponential smoothing factor (0 disables smoothing).
  *       • AutoRpmConfig.apply(...) should set this to SMOOTH_ALPHA so TeleOp lab
  *         testing matches match-day settings.
+ *   - defaultRpm (ADDED 2025-10-31)
+ *       • RPM commanded when AutoSpeed is enabled but no AprilTag distance is
+ *         available yet. AutoRpmConfig sets this via DEFAULT_NO_TAG_RPM.
  *
  * METHODS
  *   - setParams(...)
@@ -47,14 +50,18 @@ package org.firstinspires.ftc.teamcode.control;
 public class LauncherAutoSpeedController {
 
     // === TUNABLES (RPM + inches) ===
-    private double nearDistanceIn = 24.0;  // Near anchor distance (in); AutoRpmConfig overwrites on init
-    private double nearSpeedRpm   = 1000.0; // RPM at near anchor; matches AutoRpmConfig.NEAR_RPM unless testing locally
-    private double farDistanceIn  = 120.0; // Far anchor distance (in); overwritten by AutoRpmConfig
-    private double farSpeedRpm    = 4500.0; // RPM at far anchor; still clamped by Launcher.RPM_MAX
+    // CHANGES (2025-10-31): Updated default anchors (65.4 in → 4550 RPM, 114 in → 5000 RPM), default hold RPM,
+    //                       and now remember the last vision-calculated RPM so the default only seeds pre-lock behavior.
+    private double nearDistanceIn = 65.4;   // Near anchor distance (in); AutoRpmConfig overwrites on init
+    private double nearSpeedRpm   = 4550.0; // RPM at near anchor; matches AutoRpmConfig.NEAR_RPM unless testing locally
+    private double farDistanceIn  = 114.0;  // Far anchor distance (in); overwritten by AutoRpmConfig
+    private double farSpeedRpm    = 5000.0; // RPM at far anchor; still clamped by Launcher.RPM_MAX
 
     // === MODE / STATE ===
     private boolean autoEnabled   = false; // Tracks if auto mode is currently feeding RPM updates
-    private double  lastAutoRpm   = 0.0;   // Last computed auto RPM (also used when tag data drops)
+    private double  defaultRpm    = 4450.0; // RPM to hold before first tag lock; overwritten by AutoRpmConfig
+    private Double  lastVisionRpm = null;  // Remembers the last RPM produced from vision (null until first lock)
+    private double  lastAutoRpm   = defaultRpm;   // Last commanded RPM (default until a vision lock updates it)
 
     // === SMOOTHING (0..1). 0 disables smoothing, 0.10–0.30 = gentle smoothing. ===
     private double smoothingAlpha = 0.15;  // Exponential smoothing factor; AutoRpmConfig resets this each apply()
@@ -79,6 +86,17 @@ public class LauncherAutoSpeedController {
 
     /** Set smoothing alpha in [0,1]. 0 = no smoothing. */
     public void setSmoothingAlpha(double alpha) { this.smoothingAlpha = clamp01(alpha); }
+
+    /**
+     * Seed the RPM used before a tag lock is acquired.
+     * Only resets the commanded RPM when no tag lock has ever been processed.
+     */
+    public void setDefaultRpm(double defaultRpm) {
+        this.defaultRpm = defaultRpm;
+        if (lastVisionRpm == null) {
+            this.lastAutoRpm = defaultRpm;
+        }
+    }
 
     /** Enable/disable automatic RPM mode. */
     public void setAutoEnabled(boolean enabled) { this.autoEnabled = enabled; }
@@ -106,7 +124,8 @@ public class LauncherAutoSpeedController {
         }
 
         if (distanceInchesOrNull == null) {
-            // Tag lost: hold last
+            // Tag lost: hold last vision-derived RPM if available, otherwise fall back to default seed.
+            lastAutoRpm = (lastVisionRpm != null) ? lastVisionRpm : defaultRpm;
             return lastAutoRpm;
         }
 
@@ -117,6 +136,7 @@ public class LauncherAutoSpeedController {
             rpm = lastAutoRpm + smoothingAlpha * (rpm - lastAutoRpm);
         }
 
+        lastVisionRpm = rpm;
         lastAutoRpm = rpm;
         return lastAutoRpm;
     }
@@ -139,6 +159,7 @@ public class LauncherAutoSpeedController {
     public double getFarDistanceIn()  { return farDistanceIn; }
     public double getFarSpeedRpm()    { return farSpeedRpm; }
     public double getSmoothingAlpha() { return smoothingAlpha; }
+    public double getDefaultRpm()     { return defaultRpm; }
 
     // -------------------------------------------------------------------------
     // INTERNALS

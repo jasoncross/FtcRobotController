@@ -57,6 +57,9 @@
  *                       Gamepad 2 D-pad, refreshed telemetry with concise
  *                       profile/perf lines, and kept camera control warnings
  *                       throttled for driver readability.
+ * CHANGES (2025-10-31): Disabled feed idle hold while StopAll is latched so the
+ *                       motor stays at 0 power, restoring the hold when Start
+ *                       resumes TeleOp control.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -410,6 +413,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (!autoStopTriggered && remainingMs == 0) {
                 autoStopTriggered = true;
                 stopLatched = true;
+                feed.setIdleHoldActive(false); // keep feed fully stopped while StopAll is latched
                 stopAll();
                 telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
@@ -783,10 +787,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void toggleStopLatch() {
         stopLatched = !stopLatched;
         if (stopLatched) {
+            feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
             stopAll();
             // Optional haptic cue: single pulse to confirm STOP
             pulseSingle(gamepad1);
         } else {
+            feed.setIdleHoldActive(true); // restore idle hold once TeleOp control resumes
             // Optional haptic cue: single pulse to confirm RESUME
             pulseSingle(gamepad1);
         }

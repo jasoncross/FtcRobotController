@@ -228,9 +228,10 @@ or game mode owns each parameter before making adjustments.
 ## StopAll & Auto-Stop Timer (NEW)
 
 ### What is StopAll?
-`StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.  
-While STOPPED, TeleOp ignores control outputs and keeps mechanisms at zero power.  
-Press **Start** again to **RESUME** normal control.
+`StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.
+While STOPPED, TeleOp ignores control outputs, keeps mechanisms at zero power, and temporarily disables the feed motor's idle
+hold so the motor rests at 0.
+Press **Start** again to **RESUME** normal control, which restores the idle hold automatically.
 
 - Engaged manually any time by pressing **Start** (G1 or G2).  
 - Also executed automatically by the **Auto-Stop timer** when enabled and the countdown reaches zero.  
@@ -259,7 +260,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, and raised the feed idle counter-rotation to −0.5 by default.
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, and ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

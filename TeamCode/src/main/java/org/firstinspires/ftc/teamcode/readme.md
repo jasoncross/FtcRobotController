@@ -259,7 +259,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, and refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields.
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, and added a tunable idle counter-rotation for the feed motor when not firing.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

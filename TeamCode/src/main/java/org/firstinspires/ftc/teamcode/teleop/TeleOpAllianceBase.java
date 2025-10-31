@@ -105,6 +105,7 @@ import java.util.Locale;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
+    // CHANGES (2025-10-31): Added safeInit gating and defaulted AutoSpeed + intake to ON after START.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -200,8 +201,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     /** Auto-Stop timer seconds from TeleOp INIT (defaults 119). */
     protected int autoStopTimerTimeSec = TeleOpDriverDefaults.AUTO_STOP_TIMER_TIME_SEC; // Default countdown seconds when timer enabled
 
-    /** Timestamp captured at TeleOp INIT; used as the timer start. */
-    private long teleopInitMillis = 0L; // TeleOp init timestamp for timer calculations
+    /** Timestamp captured when TeleOp STARTS; used as the timer start. */
+    private long teleopInitMillis = 0L; // TeleOp start timestamp for timer calculations
 
     /** Ensures the timer only trips StopAll once at expiry. */
     private boolean autoStopTriggered = false; // Ensures we only stop once when timer expires
@@ -218,7 +219,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         launcher = new Launcher(hardwareMap);
         feed     = new Feed(hardwareMap);
         intake   = new Intake(hardwareMap);
-        intake.set(DEFAULT_INTAKE_ENABLED);
+        drive.safeInit();
+        launcher.safeInit();
+        feed.safeInit();
+        intake.safeInit();
 
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
@@ -265,32 +269,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // AutoSpeed toggle (seed RPM if tag; else use InitialAutoDefaultSpeed)
         controls.bindPress(Pad.G1, Btn.Y, () -> {
-            autoSpeedEnabled = !autoSpeedEnabled;
-            ensureAutoCtrl();
-            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED: used to be local tunables here
-            autoCtrl.setAutoEnabled(autoSpeedEnabled);
-
-            if (autoSpeedEnabled) {
-                autoHadTagFix = false;
-                int targetId = (alliance() == Alliance.BLUE)
-                        ? VisionAprilTag.TAG_BLUE_GOAL
-                        : VisionAprilTag.TAG_RED_GOAL;
-                AprilTagDetection detNow = vision.getDetectionFor(targetId);
-                Double seedIn = getGoalDistanceInchesScaled(detNow);
-
-                double seededRpm;
-                if (seedIn != null) {
-                    seededRpm = autoCtrl.updateWithVision(seedIn);
-                    autoHadTagFix = true;
-                } else {
-                    seededRpm = InitialAutoDefaultSpeed;
-                }
-                launcher.setTargetRpm(seededRpm);
-
-                manualRpmLocked = false;
+            boolean enable = !autoSpeedEnabled;
+            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
+            if (enable) {
                 pulseDouble(gamepad1);
             } else {
-                autoCtrl.onManualOverride(launcher.getCurrentRpm());
                 pulseSingle(gamepad1);
             }
         });
@@ -348,32 +331,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
         controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
-            autoSpeedEnabled = !autoSpeedEnabled;
-            ensureAutoCtrl();
-            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED
-            autoCtrl.setAutoEnabled(autoSpeedEnabled);
-
-            if (autoSpeedEnabled) {
-                autoHadTagFix = false;
-                int targetId = (alliance() == Alliance.BLUE)
-                        ? VisionAprilTag.TAG_BLUE_GOAL
-                        : VisionAprilTag.TAG_RED_GOAL;
-                AprilTagDetection detNow = vision.getDetectionFor(targetId);
-                Double seedIn = getGoalDistanceInchesScaled(detNow);
-
-                double seededRpm;
-                if (seedIn != null) {
-                    seededRpm = autoCtrl.updateWithVision(seedIn);
-                    autoHadTagFix = true;
-                } else {
-                    seededRpm = InitialAutoDefaultSpeed;
-                }
-                launcher.setTargetRpm(seededRpm);
-
-                manualRpmLocked = false;
+            boolean enable = !autoSpeedEnabled;
+            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
+            if (enable) {
                 pulseDouble(gamepad1);
             } else {
-                autoCtrl.onManualOverride(launcher.getCurrentRpm());
                 pulseSingle(gamepad1);
             }
         });
@@ -394,11 +356,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         AutoRpmConfig.apply(autoCtrl);      // CENTRALIZED
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
-        // ---- Auto-Stop Timer: base timestamp at TeleOp INIT ----
-        teleopInitMillis = System.currentTimeMillis();
-        autoStopTriggered = false;
-        stopLatched = false; // start un-stopped
-
         // ---- FIRST LINE telemetry (init): obelisk memory ----
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
         telemetry.addData("TeleOp", "Alliance: %s", alliance());
@@ -410,6 +367,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
         }
         telemetry.update();
+    }
+
+    @Override
+    public void start() {
+        feed.setIdleHoldActive(true);
+        intake.set(DEFAULT_INTAKE_ENABLED);
+
+        autoAimEnabled = DEFAULT_AUTOAIM_ENABLED;
+        aimLossStartMs = -1;
+        manualRpmLocked = false;
+        rpmTestEnabled = false;
+        autoStopTriggered = false;
+        stopLatched = false;
+        lastStartG1 = false;
+        lastStartG2 = false;
+
+        applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
+
+        teleopInitMillis = System.currentTimeMillis();
     }
 
     @Override
@@ -629,6 +605,38 @@ public abstract class TeleOpAllianceBase extends OpMode {
         String fpsStr = (fps == null) ? "---" : String.format(Locale.US, "%.1f", fps);
         String latencyStr = (latency == null) ? "---" : String.format(Locale.US, "%.0f", latency);
         visionPerfLine = String.format(Locale.US, "Perf: FPS=%s LatMs=%s", fpsStr, latencyStr);
+    }
+
+    private void applyAutoSpeedEnablement(boolean enable, boolean stopOnDisable) {
+        ensureAutoCtrl();
+        AutoRpmConfig.apply(autoCtrl);
+
+        autoSpeedEnabled = enable;
+        autoCtrl.setAutoEnabled(enable);
+
+        if (enable) {
+            autoHadTagFix = false;
+            int targetId = (alliance() == Alliance.BLUE)
+                    ? VisionAprilTag.TAG_BLUE_GOAL
+                    : VisionAprilTag.TAG_RED_GOAL;
+            AprilTagDetection detNow = (vision != null) ? vision.getDetectionFor(targetId) : null;
+            Double seedIn = getGoalDistanceInchesScaled(detNow);
+
+            double seededRpm;
+            if (seedIn != null) {
+                seededRpm = autoCtrl.updateWithVision(seedIn);
+                autoHadTagFix = true;
+            } else {
+                seededRpm = InitialAutoDefaultSpeed;
+            }
+            launcher.setTargetRpm(seededRpm);
+            manualRpmLocked = false;
+        } else {
+            autoCtrl.onManualOverride(launcher.getCurrentRpm());
+            if (stopOnDisable) {
+                launcher.stop();
+            }
+        }
     }
 
     private void ensureAutoCtrl() {

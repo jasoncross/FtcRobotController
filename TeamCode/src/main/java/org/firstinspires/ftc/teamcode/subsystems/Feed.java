@@ -46,6 +46,7 @@ public class Feed {
 
     // CHANGES (2025-10-30): Locked zero-power BRAKE + RUN_WITHOUT_ENCODER and guard before each power command.
     // CHANGES (2025-10-31): Added idle counter-rotation via FeedTuning.IDLE_HOLD_POWER when not firing.
+    // CHANGES (2025-10-31): Added safeInit + idle hold gating so motors stay idle until START.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -53,10 +54,24 @@ public class Feed {
 
     private final DcMotorEx motor;
     private long lastFire = 0;
+    private boolean idleHoldActive = false;
 
     public Feed(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "FeedMotor");
         applySafetyConfig();
+        safeInit();
+    }
+
+    /** Ensure the feed holds zero power during INIT (no motion before START). */
+    public void safeInit() {
+        applySafetyConfig();
+        idleHoldActive = false;
+        motor.setPower(0.0);
+    }
+
+    /** Enable or disable the idle hold counter-rotation after START. */
+    public void setIdleHoldActive(boolean enable) {
+        idleHoldActive = enable;
         applyIdleHoldPower();
     }
 
@@ -99,11 +114,8 @@ public class Feed {
     }
 
     private void applyIdleHoldPower() {
-        double power = idleHoldPower;
-        if (Math.abs(power) < 1e-6) {
-            motor.setPower(0.0);
-        } else {
-            motor.setPower(power);
-        }
+        double power = (idleHoldActive) ? idleHoldPower : 0.0;
+        if (Math.abs(power) < 1e-6) power = 0.0;
+        motor.setPower(power);
     }
 }

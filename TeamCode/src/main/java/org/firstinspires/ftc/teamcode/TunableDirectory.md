@@ -40,7 +40,7 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | `FeedTuning.FIRE_POWER` | `config/FeedTuning.java` | Both | Motor power used to push a ring. | Shared by Auto `fireN` and TeleOp feed buttons. | Bump to `1.0` when rings stick; lower to `0.75` to reduce jams. |
 | `FeedTuning.FIRE_TIME_MS` | `config/FeedTuning.java` | Both | Time the feed motor runs per shot. | Single source for Auto + TeleOp. | `450 ms` after tightening timing; `650 ms` if rings hesitate. |
 | `FeedTuning.MIN_CYCLE_MS` | `config/FeedTuning.java` | Both | Cooldown between shots. | Keep consistent so Auto and TeleOp pacing match. | `200 ms` when hardware tolerates quick cycles. |
-| `FeedTuning.IDLE_HOLD_POWER` | `config/FeedTuning.java` | Both | Counter-rotation power while the feed is idle. | `Feed` applies this constantly between shots; set to `0` to rely on BRAKE only. | Start near `-0.04` to keep rings staged; back off toward `-0.02` if gears chatter. |
+| `FeedTuning.IDLE_HOLD_POWER` | `config/FeedTuning.java` | Both | Counter-rotation power while the feed is idle. | `Feed` enables this only after START via `setIdleHoldActive(true)` so INIT stays still. | Defaults to `-0.5` to hold artifacts firmly; back off toward `-0.3` if gears chatter. |
 | `TeleOpEjectTuning.RPM` | `config/TeleOpEjectTuning.java` | TeleOp | Launcher RPM during eject routine. | TeleOp-only; Auto never calls eject. Tune here without affecting Auto. | `400 RPM` for gentle clears; `800 RPM` for stubborn jams. |
 | `TeleOpEjectTuning.TIME_MS` | `config/TeleOpEjectTuning.java` | TeleOp | Duration of eject routine. | TeleOp only. | `600 ms` for quick clear, `1400 ms` for heavy debris. |
 
@@ -95,8 +95,8 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | Parameter | Set in | Impacts | What it controls | Tune here vs. elsewhere | Sample adjustments |
 | --- | --- | --- | --- | --- | --- |
 | `IntakeTuning.POWER_ON` | `config/IntakeTuning.java` | Both | Motor power while intake is active. | Single source for Auto and TeleOp. | `0.9` for faster capture; `0.6` to prevent jams. |
-| `TeleOpDriverDefaults.INTAKE_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether TeleOp starts with intake running. | TeleOp-only driver preference. | Set `true` when wanting instant cycling. |
-| `TeleOpDriverDefaults.AUTO_SPEED_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether AutoSpeed is enabled at init. | TeleOp only; Auto uses AutoSpeed automatically when requested. | `true` when AutoSpeed is always desired. |
+| `TeleOpDriverDefaults.INTAKE_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether TeleOp starts with intake running. | TeleOp-only driver preference. | Defaults to `true`; safeInit keeps the motor idle during INIT if you prefer to toggle manually. |
+| `TeleOpDriverDefaults.AUTO_SPEED_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether AutoSpeed is enabled at init. | TeleOp only; Auto uses AutoSpeed automatically when requested. | Defaults to `true`; flip to `false` if drivers want to spool manually after START. |
 | `TeleOpDriverDefaults.AUTO_AIM_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether AutoAim starts enabled. | TeleOp only. | `true` when drivers rely on aim assist immediately. |
 | `TeleOpDriverDefaults.AUTO_STOP_TIMER_ENABLED` / `AUTO_STOP_TIMER_TIME_SEC` | `config/TeleOpDriverDefaults.java` | TeleOp | Optional end-of-match safety timer. | No impact on Auto; tune per event policy. | Enable with `115 s` to stop before endgame. |
 | `TeleOpDriverDefaults.SLOWEST_SPEED` | `config/TeleOpDriverDefaults.java` | TeleOp | Minimum drive speed with brake trigger held. | TeleOp-only brake scaling. | `0.15` for tight endgame alignment; `0.35` if too sluggish. |

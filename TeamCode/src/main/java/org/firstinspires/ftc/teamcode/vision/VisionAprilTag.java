@@ -468,6 +468,162 @@ public class VisionAprilTag {
         }
     }
 
+    private void scheduleCameraControlApply() {
+        if (portal == null) return;
+        if (controlsThreadStarted) return;
+        controlsThreadStarted = true;
+        controlsThread = new Thread(() -> {
+            try {
+                long start = System.currentTimeMillis();
+                boolean streaming = false;
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        VisionPortal.CameraState state = null;
+                        try { state = portal.getCameraState(); } catch (Throwable ignored) {}
+                        if (state == VisionPortal.CameraState.STREAMING) { streaming = true; break; }
+                        if ((System.currentTimeMillis() - start) > 2500) break;
+                        Thread.sleep(40);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                if (streaming) {
+                    applyCameraControls();
+                    controlsApplied = true;
+                }
+            } finally {
+                controlsThread = null;
+            }
+        }, "VA-CamCtrl");
+        controlsThread.setDaemon(true);
+        controlsThread.start();
+    }
+
+    private void applyCameraControls() {
+        if (portal == null) return;
+        StringBuilder warn = new StringBuilder();
+        if (!applyExposure()) warn.append(" Exposure");
+        if (!applyGain()) warn.append(" Gain");
+        if (!applyWhiteBalance()) warn.append(" WhiteBalance");
+        if (warn.length() > 0 && controlWarningOnce == null) {
+            controlWarningOnce = String.format(Locale.US,
+                    "Vision control unsupported: %s", warn.toString().trim());
+        }
+    }
+
+    private boolean applyExposure() {
+        try {
+            ExposureControl exposureControl = portal.getCameraControl(ExposureControl.class);
+            if (exposureControl == null) return false;
+            try {
+                if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                    exposureControl.setMode(ExposureControl.Mode.Manual);
+                }
+            } catch (Throwable ignored) {}
+            exposureControl.setExposure(VisionTuning.EXPOSURE_MS, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean applyGain() {
+        try {
+            GainControl gainControl = portal.getCameraControl(GainControl.class);
+            if (gainControl == null) return false;
+            gainControl.setGain(VisionTuning.GAIN);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private boolean applyWhiteBalance() {
+        try {
+            Class<?> wbClass = Class.forName("org.firstinspires.ftc.robotcore.external.hardware.camera.controls.WhiteBalanceControl");
+            Object wbControl = portal.getCameraControl((Class) wbClass);
+            if (wbControl == null) return false;
+
+            boolean desiredLock = VisionTuning.WHITE_BALANCE_LOCK_ENABLED;
+            boolean handled = invokeWhiteBalanceLock(wbClass, wbControl, desiredLock);
+            if (!handled) handled = invokeWhiteBalanceMode(wbClass, wbControl, desiredLock);
+            return handled;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean invokeWhiteBalanceLock(Class<?> wbClass, Object control, boolean desiredLock) {
+        try {
+            for (Method m : wbClass.getMethods()) {
+                if (!m.getName().equals("setWhiteBalanceLocked")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 1) continue;
+                if (params[0] == boolean.class || params[0] == Boolean.class) {
+                    m.invoke(control, desiredLock);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private boolean invokeWhiteBalanceMode(Class<?> wbClass, Object control, boolean desiredLock) {
+        try {
+            for (Method m : wbClass.getMethods()) {
+                if (!m.getName().equals("setMode")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 1) continue;
+                Class<?> modeClass = params[0];
+                if (!modeClass.isEnum()) continue;
+                Object[] constants = modeClass.getEnumConstants();
+                Object manual = null, auto = null;
+                for (Object constant : constants) {
+                    String name = constant.toString().toUpperCase(Locale.US);
+                    if (manual == null && (name.contains("MANUAL") || name.contains("LOCK"))) manual = constant;
+                    if (auto == null && name.contains("AUTO")) auto = constant;
+                }
+                if (desiredLock && manual != null) {
+                    m.invoke(control, manual);
+                    return true;
+                }
+                if (!desiredLock && auto != null) {
+                    m.invoke(control, auto);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private void applyTargetFpsLimit() {
+        if (portal == null || tagProcessor == null) return;
+        double fps = VisionTuning.VISION_TARGET_FPS;
+        if (fps <= 0) return;
+        try {
+            for (Method m : portal.getClass().getMethods()) {
+                if (!m.getName().equals("setProcessorFpsLimit")) continue;
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length != 2) continue;
+                if (!params[0].isInstance(tagProcessor) && !params[0].isAssignableFrom(tagProcessor.getClass())) continue;
+                if (params[1] == double.class || params[1] == Double.TYPE) {
+                    m.invoke(portal, tagProcessor, fps);
+                    return;
+                } else if (params[1] == float.class || params[1] == Float.TYPE) {
+                    m.invoke(portal, tagProcessor, (float) fps);
+                    return;
+                } else if (params[1] == int.class || params[1] == Integer.TYPE) {
+                    m.invoke(portal, tagProcessor, (int)Math.round(fps));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+            // leave unlimited if SDK does not support FPS limits
+        }
+    }
+
     // =============================================================
     //  METHOD: getDetectionsCompat
     //  PURPOSE:

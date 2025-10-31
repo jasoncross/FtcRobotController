@@ -39,10 +39,11 @@ public final class TeleOpDriverDefaults {
     private TeleOpDriverDefaults() {}
 
     // CHANGES (2025-10-30): Point intake assist mirror at FeedTuning after tunable move.
+    // CHANGES (2025-10-31): Default AutoSpeed + Intake to ON per driver request.
     // Startup toggles
-    public static boolean AUTO_SPEED_ENABLED = false;
+    public static boolean AUTO_SPEED_ENABLED = true;
     public static boolean AUTO_AIM_ENABLED   = false;
-    public static boolean INTAKE_ENABLED     = false;
+    public static boolean INTAKE_ENABLED     = true;
 
     // Drive brake floor
     public static double SLOWEST_SPEED = 0.25;

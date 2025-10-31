@@ -62,7 +62,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Start** | **StopAll toggle** (same behavior as G1) |
 
 **Startup defaults:**
-`AutoSpeed = OFF`, `AutoAim = OFF`, `Intake = OFF` (edit in `config/TeleOpDriverDefaults.java`).
+`AutoSpeed = ON`, `AutoAim = OFF`, `Intake = ON` (edit in `config/TeleOpDriverDefaults.java`).
 
 ---
 
@@ -153,9 +153,9 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - D-pad left/right apply ±`LauncherTuning.MANUAL_RPM_STEP` adjustments for quick fine-tuning **only while Manual Lock is engaged** (keeps lock and AutoSpeed off).
 
 ### Intake, Feed, and Eject
-- `DEFAULT_INTAKE_ENABLED` determines initial intake state.
+- `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply.
 - Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
-- Feed motor holds position with BRAKE zero-power behavior so the pusher stays planted between cycles.
+- Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
@@ -259,7 +259,7 @@ Press **Start** again to **RESUME** normal control.
 ---
 
 ## Revision History
-- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, and added a tunable idle counter-rotation for the feed motor when not firing.
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, and raised the feed idle counter-rotation to −0.5 by default.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

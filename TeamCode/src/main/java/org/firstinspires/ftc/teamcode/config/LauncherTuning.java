@@ -36,8 +36,8 @@ public final class LauncherTuning {
     public static double FLYWHEEL_TPR = 28.0;   // Ticks per revolution at the wheel shaft
 
     // Software RPM clamps
-    public static double RPM_MIN = 0.0;         // Minimum allowed command
-    public static double RPM_MAX = 6000.0;      // Maximum allowed command (keep ≥ AutoRpmConfig.FAR_RPM)
+    public static double RPM_MIN = 4000.0;         // Minimum allowed command
+    public static double RPM_MAX = 5000.0;      // Maximum allowed command (keep ≥ AutoRpmConfig.FAR_RPM)
 
     // REV Hub RUN_USING_ENCODER PIDF coefficients
     public static double PID_P = 10.0;

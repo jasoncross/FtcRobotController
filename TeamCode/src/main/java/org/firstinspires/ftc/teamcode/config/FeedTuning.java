@@ -35,5 +35,5 @@ public final class FeedTuning {
     public static int FIRE_TIME_MS  = 600;
     public static int MIN_CYCLE_MS  = 300;
     public static int INTAKE_ASSIST_MS = 250; // Intake assist duration (ms) after a feed when intake was off
-    public static double IDLE_HOLD_POWER = -0.5; // Idle counter-rotation power (0 = BRAKE only)
+    public static double IDLE_HOLD_POWER = -0.4; // Idle counter-rotation power (0 = BRAKE only)
 }

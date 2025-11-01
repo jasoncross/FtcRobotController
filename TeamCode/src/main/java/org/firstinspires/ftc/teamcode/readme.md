@@ -139,12 +139,12 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
 
 ### AutoSpeed
-- When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.  
-- When **disabled**, right trigger controls RPM directly.  
-- **Defaults:**  
-  - `InitialAutoDefaultSpeed = 2500 RPM` (used before first tag detection)  
-  - AutoRPM interpolation between `(24 in → 1000 RPM)` and `(120 in → 4500 RPM)`  
-  - Holds last valid RPM when tag not visible after first fix.  
+- When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.
+- When **disabled**, right trigger controls RPM directly.
+- **Defaults:**
+  - AutoRPM interpolation between **65.4 in → 4550 RPM** and **114 in → 5000 RPM** (`AutoRpmConfig` anchors)
+  - **Default hold** while no tag is visible = **4450 RPM** (`AutoRpmConfig.DEFAULT_NO_TAG_RPM`)
+  - Holds the **last vision-derived RPM** once at least one tag fix has occurred.
 
 ### Manual Launcher Mode
 - In manual (AutoSpeed = OFF), right trigger scales between `rpmBottom` and `rpmTop`.
@@ -188,6 +188,52 @@ kD = 0.003
 twistClamp = ±0.6
 deadband = 1.5°
 ```
+---
+## Autonomous Routines (2025-10-31 Refresh)
+
+All autonomous modes extend `BaseAuto`, which now surfaces a shared telemetry bundle every loop:
+
+- **Alliance** (BLUE/RED)
+- **Auto** (OpMode display name)
+- **Start Pose** (human-readable staging reminder)
+- **Obelisk** (`ObeliskSignal.getDisplay()` live latch)
+- **AprilTag Lock** (`LOCKED`/`SEARCHING`)
+- **Phase** (current step description from the active helper)
+
+While those lines remain visible, the helper methods continue to enforce **no-shot-without-lock** and **±50 RPM at-speed** gating before the feed motor ever cycles. `SharedRobotTuning.SHOT_BETWEEN_MS` (default **3000 ms**) spaces each ball in the three-round volleys, and `stopAll()` plus a `"Auto complete – DS will queue TeleOp."` telemetry banner finish every routine. `VisionAprilTag` keeps the Obelisk AprilTag observer running in the background during all phases so the latched motif carries into TeleOp.
+
+### 🔵 Auto_Blue_Target – Depot launch line, facing EAST
+1. **Drive forward 36"** to establish the standoff range.
+2. **Scan counter-clockwise** until AprilTag 20 centers within ±1°.
+3. **Spin the launcher** with AutoSpeed until the wheels are within ±50 RPM of target.
+4. **Fire three balls** with ~3 s spacing enforced by `SharedRobotTuning.SHOT_BETWEEN_MS`.
+5. **Hold position** for the remainder of the autonomous period.
+
+### 🔴 Auto_Red_Target – Depot launch line, facing WEST
+1. **Drive forward 36"** to the calibrated firing spot.
+2. **Scan clockwise** for AprilTag 24 and settle within ±1°.
+3. **Spin the launcher** to target RPM (±50 RPM tolerance).
+4. **Fire three balls** with ~3 s spacing.
+5. **Remain parked** to leave the lane clear for the partner bot.
+
+### 🔵 Auto_Blue_Human – West of south firing triangle, facing NORTH
+1. **Record heading and bump forward 2"** to clear the wall.
+2. **Scan counter-clockwise** for AprilTag 20 until centered within ±1°.
+3. **Spin the launcher** to target RPM with the shared tolerance window.
+4. **Fire three balls** with the enforced 3 s cadence.
+5. **Return to the original heading**, honoring the recorded IMU value.
+6. **Drive forward 24"** toward the classifier lane.
+
+### 🔴 Auto_Red_Human – East of south firing triangle, facing NORTH
+1. **Record heading and bump forward 2"** to clear the wall.
+2. **Scan clockwise** for AprilTag 24 until centered within ±1°.
+3. **Spin the launcher** into the ±50 RPM window.
+4. **Fire three balls** separated by ~3 s.
+5. **Return to the starting heading** using the shared IMU helper.
+6. **Drive forward 24"** upfield toward the classifier.
+
+> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. Feeding never occurs unless both lock and at-speed checks succeed, aimSpinUntilReady() now seeds launcher RPM through AutoSpeed (honoring `AutoRpmConfig.DEFAULT_NO_TAG_RPM`) before the first tag lock, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
+
 ---
 ## Obelisk AprilTag Signal (DECODE 2025–26)
 
@@ -260,7 +306,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, and ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
+- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, ensured both TeleOp and Auto seed launcher RPM exclusively through AutoSpeed so BaseAuto now idles at the AutoRpmConfig default before first tag lock, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, ensured StopAll disables the feed idle hold until Start resumes TeleOp control, **and refreshed all four autonomous routines** (Blue/Red Target + Human) to follow the latest match playbook: 36" depot standoffs, 2" wall-clear bumps on human starts, ±1° tag lock + ±50 RPM gating before every shot, 3 s cadence spacing, 24" human-lane pushes, enhanced telemetry (Alliance/Auto/Start Pose/Obelisk/Tag Lock/Phase), persistent Obelisk observation, and a shared "Auto complete – DS will queue TeleOp." banner with `stopAll()` catch-all shutdown, and BaseAuto start/stop parity with TeleOp (intake auto-enables at START and feed idle hold releases inside stopAll()).
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

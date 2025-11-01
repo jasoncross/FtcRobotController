@@ -19,11 +19,11 @@ import org.firstinspires.ftc.teamcode.Alliance;
  *       • Sets the standoff distance before aiming.
  *       • BaseAuto handles power caps through SharedRobotTuning.DRIVE_MAX_POWER;
  *         edit that shared value for global speed tweaks.
- *   - turnToGoalTag(2000 ms timeout)
- *       • Time allowed to acquire AprilTag 24 after the drive.
+ *   - turnToGoalTag(2500 ms timeout)
+ *       • Time allowed to acquire AprilTag 24 after the 36" standoff drive.
  *       • Shares twist/tolerance limits with SharedRobotTuning; lengthen when
  *         post-drive vibrations slow down lock acquisition.
- *   - aimSpinUntilReady(3000 ms timeout)
+ *   - aimSpinUntilReady(3200 ms timeout)
  *       • Waits for AutoSpeed to reach the shared RPM window defined in
  *         SharedRobotTuning.RPM_TOLERANCE.
  *       • Cadence between shots is still governed by SharedRobotTuning.SHOT_BETWEEN_MS.
@@ -46,6 +46,8 @@ import org.firstinspires.ftc.teamcode.Alliance;
  */
 @Autonomous(name="Auto: Red Target", group="Auto", preselectTeleOp="TeleOp - Red")
 public class Auto_Red_Target extends BaseAuto {
+    // CHANGES (2025-10-31): Matched refreshed spec – 36" drive, CW scan, gated volley, and
+    //                        updated telemetry/hold behavior.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew.
@@ -54,14 +56,23 @@ public class Auto_Red_Target extends BaseAuto {
 
     @Override
     protected void runSequence() throws InterruptedException {
+        updateStatus("Drive 36 in to standoff", false);
+        telemetry.update();
         driveForwardInches(36.0); // Shift to optimum range per driver testing
+        updateStatus("Standoff reached", false);
+        telemetry.update();
 
-        boolean locked = turnToGoalTag(2000);              // Seek Tag 24 within timeout
-        boolean atSpeed = locked && aimSpinUntilReady(3000); // Only wait for RPM if tag sighted
+        boolean locked = turnToGoalTag(2500);               // Seek Tag 24 within timeout
+        boolean atSpeed = locked && aimSpinUntilReady(3200); // Only wait for RPM if tag sighted
 
         if (locked && atSpeed) {
+            updateStatus("Fire 3-shot volley", true);
+            telemetry.update();
             fireN(3);
+            updateStatus("Hold position", true);
+            telemetry.update();
         } else {
+            updateStatus("Hold position", false);
             telemetry.addLine("⚠️ No tag lock/at-speed — skipping volley");
             telemetry.update();
         }

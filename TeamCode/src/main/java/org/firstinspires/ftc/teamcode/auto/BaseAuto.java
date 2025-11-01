@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.auto;
 
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
@@ -41,8 +42,8 @@ import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
  *       • Cap on translational drive helpers (driveForwardInches, strafe, etc.).
  *       • Change here for robot-wide auto speed adjustments instead of editing
  *         individual routines.
- *   - SharedRobotTuning.RPM_TOLERANCE & INITIAL_AUTO_DEFAULT_SPEED
- *       • Readiness window and seed RPM used by aimSpinUntilReady().
+ *   - SharedRobotTuning.RPM_TOLERANCE
+ *       • Readiness window used by aimSpinUntilReady().
  *       • Coordinate with Launcher.atSpeedToleranceRPM and AutoAimSpeed’s local
  *         copy when adjusting precision.
  *   - SharedRobotTuning.SHOT_BETWEEN_MS
@@ -77,6 +78,12 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
+    // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
+    //                        stricter lock-at-speed visibility for Auto volley orchestration.
+    // CHANGES (2025-10-31): Synced auto start/stop behavior with TeleOp defaults (intake on at START,
+    //                        feed idle hold engaged only during run, released on stopAll()).
+    // CHANGES (2025-10-31): aimSpinUntilReady() now seeds launcher RPM exclusively through AutoSpeed so
+    //                        autos honor AutoRpmConfig defaults prior to the first tag lock.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -104,17 +111,19 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double DEF_DRIVE_CAP      = 0.50;
     private static final double DEF_RPM_TOL        = 50.0;
     private static final long   DEF_BETWEEN_MS     = 3000;
-    private static final double DEF_INIT_RPM       = 2500.0;
+
+    private String autoOpModeName;
 
     private double lockTolDeg()   { try { return SharedRobotTuning.LOCK_TOLERANCE_DEG; } catch (Throwable t){ return DEF_LOCK_TOL_DEG; } }
     private double turnTwistCap() { try { return SharedRobotTuning.TURN_TWIST_CAP;     } catch (Throwable t){ return DEF_TURN_CAP;     } }
     private double driveCap()     { try { return SharedRobotTuning.DRIVE_MAX_POWER;    } catch (Throwable t){ return DEF_DRIVE_CAP;    } }
     private double rpmTol()       { try { return SharedRobotTuning.RPM_TOLERANCE;      } catch (Throwable t){ return DEF_RPM_TOL;      } }
     private long betweenShotsMs() { try { return SharedRobotTuning.SHOT_BETWEEN_MS;    } catch (Throwable t){ return DEF_BETWEEN_MS;   } }
-    private double initAutoRpm()  { try { return SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; } catch (Throwable t){ return DEF_INIT_RPM; } }
 
     @Override
     public void runOpMode() throws InterruptedException {
+        autoOpModeName = resolveAutoName();
+
         // Create drivetrain with IMU + encoder helpers for field-aligned movement.
         drive = new Drivebase(this);
         // Initialize AprilTag vision; guard against missing camera on practice bot.
@@ -133,22 +142,21 @@ public abstract class BaseAuto extends LinearOpMode {
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
 
         while (!isStarted() && !isStopRequested()) {
-            if (vision != null) vision.observeObelisk(); // Background-poll AprilTag motif
-            telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
-            telemetry.addData("Auto", "Alliance: %s", alliance());
-            telemetry.addData("Start Pose", startPoseDescription());
+            updateStatus("INIT", false);
             onPreStartLoop();
             telemetry.update();
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
+        intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
         if (vision != null) vision.setObeliskAutoLatchEnabled(true); // Capture motifs during movement
 
         try { runSequence(); }
         finally {
             stopAll();
             stopVisionIfAny();
+            updateStatus("COMPLETE", false);
             telemetry.addLine("Auto complete – DS will queue TeleOp."); telemetry.update();
             sleep(250);
         }
@@ -170,19 +178,34 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive() && (System.currentTimeMillis() - start) < timeoutMs) {
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
+            double bearing = Double.NaN;
+            boolean lockedNow = false;
             if (det != null) {
                 double err = det.ftcPose.bearing;
-                if (Math.abs(err) <= tol) { drive.stopAll(); return true; }
+                bearing = err;
+                if (Math.abs(err) <= tol) {
+                    drive.stopAll();
+                    updateStatus("Scan lock", true);
+                    telemetry.addData("Bearing (deg)", err);
+                    telemetry.update();
+                    return true;
+                }
                 double cmd = clamp(aim.turnPower(det), -cap, +cap);
                 drive.drive(0, 0, cmd);
+                lockedNow = Math.abs(err) <= tol;
             } else {
                 long now = System.currentTimeMillis();
                 if (now - lastFlip > 700) { scanSign *= -1.0; lastFlip = now; }
                 drive.drive(0, 0, scanSign * 0.25 * cap);
             }
+            updateStatus("Scan for goal tag", lockedNow);
+            telemetry.addData("Bearing (deg)", bearing);
+            telemetry.update();
             idle();
         }
         drive.stopAll();
+        updateStatus("Scan timeout", false);
+        telemetry.update();
         return false;
     }
 
@@ -209,15 +232,24 @@ public abstract class BaseAuto extends LinearOpMode {
                 if (!Double.isNaN(rM) && Double.isFinite(rM)) { in = rM * M_TO_IN; hadFix = true; }
             }
 
-            if (in == null && !hadFix) {
-                launcher.setTargetRpm(initAutoRpm());
-            } else {
-                launcher.setTargetRpm(autoCtrl.updateWithVision(in));
-            }
+            double target = autoCtrl.updateWithVision(in);
+            launcher.setTargetRpm(target);
 
-            if (Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol()) return true;
+            boolean atSpeed = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol();
+            updateStatus("Spin launcher", hadFix && in != null);
+            telemetry.addData("Target RPM", launcher.targetRpm);
+            telemetry.addData("Current RPM", launcher.getCurrentRpm());
+            telemetry.addData("Range (in)", in);
+            telemetry.update();
+            if (atSpeed) {
+                return true;
+            }
             idle();
         }
+        updateStatus("Spin timeout", false);
+        telemetry.addData("Target RPM", launcher.targetRpm);
+        telemetry.addData("Current RPM", launcher.getCurrentRpm());
+        telemetry.update();
         return false;
     }
 
@@ -228,15 +260,21 @@ public abstract class BaseAuto extends LinearOpMode {
      */
     protected final void fireN(int count) throws InterruptedException {
         for (int i = 0; i < count && opModeIsActive(); i++) {
+            final String shotPhase = String.format("Volley %d/%d", i + 1, count);
             // REQUIRE a valid lock before each shot (or skip this shot)
-            if (!requireLockOrTimeOut(1200)) {
-                telemetry.addLine("⚠️ No tag lock — skipping shot " + (i+1));
+            if (!requireLockOrTimeOut(1200, shotPhase + " – acquire lock")) {
+                updateStatus("Hold position", false);
+                telemetry.addLine("⚠️ No tag lock — skipping shot " + (i + 1));
                 telemetry.update();
                 continue; // do not free-fire
             }
 
             // REQUIRE at-speed
             while (opModeIsActive()) {
+                updateStatus(shotPhase + " – wait for RPM", true);
+                telemetry.addData("Target RPM", launcher.targetRpm);
+                telemetry.addData("Current RPM", launcher.getCurrentRpm());
+                telemetry.update();
                 if (Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol()) break;
                 idle();
             }
@@ -244,6 +282,10 @@ public abstract class BaseAuto extends LinearOpMode {
             // Feed once with intake assist
             boolean wasOn = intake.isOn();
             if (!wasOn) intake.set(true);
+            updateStatus(shotPhase + " – feed", true);
+            telemetry.addData("Target RPM", launcher.targetRpm);
+            telemetry.addData("Current RPM", launcher.getCurrentRpm());
+            telemetry.update();
             feed.feedOnceBlocking();
             if (!wasOn) {
                 int assist = FeedTuning.INTAKE_ASSIST_MS;
@@ -253,11 +295,13 @@ public abstract class BaseAuto extends LinearOpMode {
 
             sleep((int)betweenShotsMs());
             drive.stopAll();
+            updateStatus("Stabilize after volley", true);
+            telemetry.update();
         }
     }
 
     /** Wait up to guardMs to achieve a tag lock (|bearing| ≤ tol). Returns true if locked. */
-    private boolean requireLockOrTimeOut(long guardMs) {
+    private boolean requireLockOrTimeOut(long guardMs, String phase) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
@@ -267,15 +311,29 @@ public abstract class BaseAuto extends LinearOpMode {
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
             if (det != null) {
                 double err = det.ftcPose.bearing;
-                if (Math.abs(err) <= tol) { drive.stopAll(); return true; }
+                boolean locked = Math.abs(err) <= tol;
+                if (locked) {
+                    drive.stopAll();
+                    updateStatus(phase, true);
+                    telemetry.addData("Bearing (deg)", err);
+                    telemetry.update();
+                    return true;
+                }
                 double cmd = clamp(aim.turnPower(det), -cap, +cap);
                 drive.drive(0, 0, cmd * 0.6);
+                updateStatus(phase, false);
+                telemetry.addData("Bearing (deg)", err);
             } else {
                 drive.stopAll();
+                updateStatus(phase, false);
+                telemetry.addData("Bearing (deg)", Double.NaN);
             }
+            telemetry.update();
             idle();
         }
         drive.stopAll();
+        updateStatus(phase + " – timeout", false);
+        telemetry.update();
         return false;
     }
 
@@ -295,12 +353,36 @@ public abstract class BaseAuto extends LinearOpMode {
     protected final void stopAll() {
         try { drive.stop(); } catch (Throwable ignored) {}
         try { launcher.stop(); } catch (Throwable ignored) {}
-        try { feed.stop(); } catch (Throwable ignored) {}
+        try { feed.setIdleHoldActive(false); feed.stop(); } catch (Throwable ignored) {}
         try { intake.stop(); } catch (Throwable ignored) {}
+        try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
     }
     /** Shutdown the vision portal safely if it was created. */
     protected final void stopVisionIfAny() {
         try { if (vision != null) { vision.setObeliskAutoLatchEnabled(false); vision.stop(); } } catch (Exception ignored) {}
+    }
+
+    private String resolveAutoName() {
+        Autonomous meta = getClass().getAnnotation(Autonomous.class);
+        if (meta != null) {
+            String name = meta.name();
+            if (name != null && !name.isEmpty()) {
+                return name;
+            }
+        }
+        return getClass().getSimpleName();
+    }
+
+    protected final void updateStatus(String phase, boolean tagLocked) {
+        if (vision != null) {
+            try { vision.observeObelisk(); } catch (Throwable ignored) {}
+        }
+        telemetry.addData("Alliance", alliance());
+        telemetry.addData("Auto", autoOpModeName);
+        telemetry.addData("Start Pose", startPoseDescription());
+        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+        telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
+        telemetry.addData("Phase", phase);
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }

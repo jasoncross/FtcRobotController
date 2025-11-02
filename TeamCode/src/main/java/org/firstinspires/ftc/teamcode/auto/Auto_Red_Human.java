@@ -21,7 +21,7 @@ import org.firstinspires.ftc.teamcode.Alliance;
  *         as the blue routine; extend toward 3200 ms if the red goal is darker.
  *   - aimSpinUntilReady(3200 ms timeout)
  *       • Waits for LauncherAutoSpeedController to reach the shared RPM window.
- *       • Works with SharedRobotTuning.SHOT_BETWEEN_MS for multi-ring cadence.
+ *       • `fire(..., betweenShotsMs)` now encodes cadence inline (3000 ms default here).
  *   - driveForwardInches(24.0)
  *       • Drives forward after the volley to open the intake lane.
  *       • Movement speed is bounded by SharedRobotTuning.DRIVE_MAX_POWER inside
@@ -48,6 +48,9 @@ import org.firstinspires.ftc.teamcode.Alliance;
 public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear bump, telemetry-guided Tag 24 volley, heading
     //                        reset, and 24" advance mirroring the refreshed Auto flow.
+    // CHANGES (2025-10-31): Migrated to AutoSequence builder for declarative steps and
+    //                        clarified lock/aim/fire sequencing with configurable speed caps.
+    // CHANGES (2025-11-02): Added AutoSpeed warm-up stage and explicit volley spacing parameter.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation.
@@ -57,34 +60,15 @@ public class Auto_Red_Human extends BaseAuto {
     // Main autonomous path: aim, fire, and roll forward for cycle setup.
     @Override
     protected void runSequence() throws InterruptedException {
-        double startHeading = drive.heading(); // Keep heading so we can unwind the turn
-
-        updateStatus("Clear wall (drive 2 in)", false);
-        telemetry.update();
-        driveForwardInches(2.0); // Clear the wall before scanning
-        updateStatus("Scan setup", false);
-        telemetry.update();
-
-        boolean locked = turnToGoalTag(2600);                // Acquire AprilTag 24 within timeout
-        boolean atSpeed = locked && aimSpinUntilReady(3200);  // Wait for RPM only if tag lock succeeded
-
-        if (locked && atSpeed) {
-            updateStatus("Fire 3-shot volley", true);
-            telemetry.update();
-            fireN(3);
-        } else {
-            updateStatus("Hold position", false);
-            telemetry.addLine("⚠️ No tag lock/at-speed — skipping volley");
-            telemetry.update();
-        }
-
-        updateStatus("Return to start heading", locked && atSpeed);
-        telemetry.update();
-        turnBackTo(startHeading); // Return to original heading for the next path step
-        updateStatus("Drive 24 in upfield", false);
-        telemetry.update();
-        driveForwardInches(24.0); // Advance toward intake/classifier lane
-        updateStatus("Advance complete", false);
-        telemetry.update();
+        sequence()
+                .rememberHeading("Record start heading")
+                .move("Clear wall (drive 2 in)", 2.0, 0.0, 0.35)
+                .spinToAutoRpm("Pre-spin launcher to auto RPM")
+                .rotateToTarget("Scan for Tag 24", 2600, true)
+                .aim("Spin launcher for volley", 3200)
+                .fire("Fire 3-shot volley", 3, true, 3000)
+                .returnToStoredHeading("Return to start heading", 0.45)
+                .move("Drive 24 in upfield", 24.0, 0.0, 0.55)
+                .run();
     }
 }

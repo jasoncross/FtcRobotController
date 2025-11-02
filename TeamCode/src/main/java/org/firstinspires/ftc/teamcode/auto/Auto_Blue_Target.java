@@ -25,7 +25,7 @@ import org.firstinspires.ftc.teamcode.Alliance;
  *         autos; extend the timeout if the robot drives farther before aiming.
  *   - aimSpinUntilReady(3200 ms timeout)
  *       • Waits for LauncherAutoSpeedController to reach the shared RPM window.
- *       • Works with SharedRobotTuning.SHOT_BETWEEN_MS for the three-shot cadence.
+ *       • Followed by `fire(..., betweenShotsMs)` so cadence is chosen per sequence (defaults to 3000 ms here).
  *
  * METHODS
  *   - alliance()
@@ -47,6 +47,9 @@ import org.firstinspires.ftc.teamcode.Alliance;
 public class Auto_Blue_Target extends BaseAuto {
     // CHANGES (2025-10-31): Rebased routine on 36" standoff → CCW scan → locked volley with
     //                        shared telemetry + hold-in-place finish per Auto spec refresh.
+    // CHANGES (2025-10-31): Adopted AutoSequence for easier route edits and no-lock volley
+    //                        toggles while keeping depot hold behavior.
+    // CHANGES (2025-11-02): Added pre-spin AutoSpeed warm-up and explicit volley cadence parameter.
     // BaseAuto needs the declared alliance to load the correct AprilTag IDs.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry annotation so setup crew knows correct orientation.
@@ -55,26 +58,13 @@ public class Auto_Blue_Target extends BaseAuto {
 
     @Override
     protected void runSequence() throws InterruptedException {
-        updateStatus("Drive 36 in to standoff", false);
-        telemetry.update();
-        driveForwardInches(36.0); // Adjust per TunableDirectory when range drift occurs
-        updateStatus("Standoff reached", false);
-        telemetry.update();
-
-        boolean locked = turnToGoalTag(2500);               // Acquire Tag 20 with a reliable timeout
-        boolean atSpeed = locked && aimSpinUntilReady(3200); // Wait for RPM only if we saw the tag
-
-        if (locked && atSpeed) {
-            updateStatus("Fire 3-shot volley", true);
-            telemetry.update();
-            fireN(3);
-            updateStatus("Hold position", true);
-            telemetry.update();
-        } else {
-            updateStatus("Hold position", false);
-            telemetry.addLine("⚠️ No tag lock/at-speed — skipping volley");
-            telemetry.update();
-        }
-        // Stay put (per request) to avoid interfering with partner.
+        sequence()
+                .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
+                .spinToAutoRpm("Pre-spin launcher to auto RPM")
+                .rotateToTarget("Scan for Tag 20", 2500, false)
+                .aim("Spin launcher for volley", 3200)
+                .fire("Fire 3-shot volley", 3, true, 3000)
+                .waitFor("Hold position", 500)
+                .run();
     }
 }

@@ -17,6 +17,9 @@ import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /*
  * FILE: BaseAuto.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
@@ -46,9 +49,9 @@ import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
  *       • Readiness window used by aimSpinUntilReady().
  *       • Coordinate with Launcher.atSpeedToleranceRPM and AutoAimSpeed’s local
  *         copy when adjusting precision.
- *   - SharedRobotTuning.SHOT_BETWEEN_MS
- *       • Minimum delay between shots enforced by fireN().
- *       • Align with Feed.minCycleMs so motors have time to reset.
+ *   - SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED
+ *       • Seeds launcher RPM before the first goal lock via spinLauncherToAutoRpm().
+ *       • Mirrors TeleOp's AutoSpeed warm-up so both modes share the same idle spin.
  *   - AutoRpmConfig (NEAR/FAR anchors + SMOOTH_ALPHA)
  *       • Defines the distance→RPM curve applied to LauncherAutoSpeedController.
  *       • Overrides the controller’s internal defaults each time runOpMode() starts.
@@ -84,6 +87,11 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        feed idle hold engaged only during run, released on stopAll()).
     // CHANGES (2025-10-31): aimSpinUntilReady() now seeds launcher RPM exclusively through AutoSpeed so
     //                        autos honor AutoRpmConfig defaults prior to the first tag lock.
+    // CHANGES (2025-10-31): Introduced AutoSequence builder for declarative route scripting and added
+    //                        optional no-lock volleys plus customizable scan/aim status labels.
+    // CHANGES (2025-11-02): Added spinLauncherToAutoRpm() warm-up helper, parameterized fire cadence,
+    //                        reasserted AutoSpeed targets during volleys, and extended AutoSequence to
+    //                        pre-spin flywheels ahead of tag locks.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -98,7 +106,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected Drivebase drive;           // Field-centric mecanum drive helper
     protected VisionAprilTag vision;     // AprilTag pipeline (goal + obelisk)
     protected Launcher launcher;         // Flywheel subsystem for scoring
-    protected Feed feed;                 // Ring feed motor controller
+    protected Feed feed;                 // Artifact feed motor controller
     protected Intake intake;             // Intake roller subsystem
 
     // Controllers supporting aiming and RPM automation.
@@ -110,7 +118,8 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double DEF_TURN_CAP       = 0.35;
     private static final double DEF_DRIVE_CAP      = 0.50;
     private static final double DEF_RPM_TOL        = 50.0;
-    private static final long   DEF_BETWEEN_MS     = 3000;
+    private static final double DEF_AUTO_SEED_RPM  = 2500.0;
+    private static final long   DEFAULT_BETWEEN_MS = 3000; // Default between-shot wait used when callers pass ≤ 0
 
     private String autoOpModeName;
 
@@ -118,7 +127,10 @@ public abstract class BaseAuto extends LinearOpMode {
     private double turnTwistCap() { try { return SharedRobotTuning.TURN_TWIST_CAP;     } catch (Throwable t){ return DEF_TURN_CAP;     } }
     private double driveCap()     { try { return SharedRobotTuning.DRIVE_MAX_POWER;    } catch (Throwable t){ return DEF_DRIVE_CAP;    } }
     private double rpmTol()       { try { return SharedRobotTuning.RPM_TOLERANCE;      } catch (Throwable t){ return DEF_RPM_TOL;      } }
-    private long betweenShotsMs() { try { return SharedRobotTuning.SHOT_BETWEEN_MS;    } catch (Throwable t){ return DEF_BETWEEN_MS;   } }
+    private double autoSeedRpm() {
+        try { return SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; }
+        catch (Throwable t) { return DEF_AUTO_SEED_RPM; }
+    }
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -168,13 +180,19 @@ public abstract class BaseAuto extends LinearOpMode {
      * Returns true when lock achieved, false when timed out.
      */
     protected final boolean turnToGoalTag(long timeoutMs) {
+        return turnToGoalTag(timeoutMs, "Scan for goal tag", null);
+    }
+
+    protected final boolean turnToGoalTag(long timeoutMs, String phase, Boolean scanClockwiseFirst) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
+        final String label = (phase == null || phase.isEmpty()) ? "Scan for goal tag" : phase;
 
         long start = System.currentTimeMillis();
         long lastFlip = start;
-        double scanSign = initialScanCW() ? -1.0 : +1.0; // CW=negative twist
+        boolean cwFirst = (scanClockwiseFirst != null) ? scanClockwiseFirst : initialScanCW();
+        double scanSign = cwFirst ? -1.0 : +1.0; // CW=negative twist
 
         while (opModeIsActive() && (System.currentTimeMillis() - start) < timeoutMs) {
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
@@ -185,7 +203,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 bearing = err;
                 if (Math.abs(err) <= tol) {
                     drive.stopAll();
-                    updateStatus("Scan lock", true);
+                    updateStatus(label + " – lock", true);
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
@@ -198,13 +216,13 @@ public abstract class BaseAuto extends LinearOpMode {
                 if (now - lastFlip > 700) { scanSign *= -1.0; lastFlip = now; }
                 drive.drive(0, 0, scanSign * 0.25 * cap);
             }
-            updateStatus("Scan for goal tag", lockedNow);
+            updateStatus(label, lockedNow);
             telemetry.addData("Bearing (deg)", bearing);
             telemetry.update();
             idle();
         }
         drive.stopAll();
-        updateStatus("Scan timeout", false);
+        updateStatus(label + " – timeout", false);
         telemetry.update();
         return false;
     }
@@ -215,6 +233,10 @@ public abstract class BaseAuto extends LinearOpMode {
      * to enter the tuned tolerance window. Returns true when ready before timeout.
      */
     protected final boolean aimSpinUntilReady(long timeoutMs) {
+        return aimSpinUntilReady(timeoutMs, "Spin launcher");
+    }
+
+    protected final boolean aimSpinUntilReady(long timeoutMs, String phase) {
         drive.stopAll();
         autoCtrl.setAutoEnabled(true);
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
@@ -236,7 +258,7 @@ public abstract class BaseAuto extends LinearOpMode {
             launcher.setTargetRpm(target);
 
             boolean atSpeed = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol();
-            updateStatus("Spin launcher", hadFix && in != null);
+            updateStatus(phase, hadFix && in != null);
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.addData("Range (in)", in);
@@ -246,7 +268,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
             idle();
         }
-        updateStatus("Spin timeout", false);
+        updateStatus(phase + " – timeout", false);
         telemetry.addData("Target RPM", launcher.targetRpm);
         telemetry.addData("Current RPM", launcher.getCurrentRpm());
         telemetry.update();
@@ -255,23 +277,44 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // ---------- Strictly gated shooting ----------
     /**
-     * Fire count rings with strict gating—requires tag lock for each shot and enforces
-     * both RPM readiness and between-shot delay derived from SharedRobotTuning.
+     * Fire count artifacts with strict gating—requires tag lock for each shot and enforces
+     * both RPM readiness and the caller-supplied between-shot delay.
      */
     protected final void fireN(int count) throws InterruptedException {
+        fireN(count, true, DEFAULT_BETWEEN_MS);
+    }
+
+    protected final void fireN(int count, boolean requireLock) throws InterruptedException {
+        fireN(count, requireLock, DEFAULT_BETWEEN_MS);
+    }
+
+    protected final void fireN(int count, boolean requireLock, long betweenShotsMs) throws InterruptedException {
+        autoCtrl.setAutoEnabled(true);
         for (int i = 0; i < count && opModeIsActive(); i++) {
             final String shotPhase = String.format("Volley %d/%d", i + 1, count);
-            // REQUIRE a valid lock before each shot (or skip this shot)
-            if (!requireLockOrTimeOut(1200, shotPhase + " – acquire lock")) {
-                updateStatus("Hold position", false);
-                telemetry.addLine("⚠️ No tag lock — skipping shot " + (i + 1));
-                telemetry.update();
-                continue; // do not free-fire
+            boolean lockedForShot = !requireLock;
+            if (requireLock) {
+                lockedForShot = requireLockOrTimeOut(1200, shotPhase + " – acquire lock");
+                if (!lockedForShot) {
+                    updateStatus("Hold position", false);
+                    telemetry.addLine("⚠️ No tag lock — skipping shot " + (i + 1));
+                    telemetry.update();
+                    continue; // do not free-fire when lock required
+                }
             }
+
+            double holdTarget = autoCtrl.hold();
+            if (holdTarget <= 0) {
+                holdTarget = launcher.targetRpm;
+                if (holdTarget <= 0) {
+                    holdTarget = autoSeedRpm();
+                }
+            }
+            launcher.setTargetRpm(holdTarget);
 
             // REQUIRE at-speed
             while (opModeIsActive()) {
-                updateStatus(shotPhase + " – wait for RPM", true);
+                updateStatus(shotPhase + " – wait for RPM", lockedForShot || !requireLock);
                 telemetry.addData("Target RPM", launcher.targetRpm);
                 telemetry.addData("Current RPM", launcher.getCurrentRpm());
                 telemetry.update();
@@ -282,7 +325,7 @@ public abstract class BaseAuto extends LinearOpMode {
             // Feed once with intake assist
             boolean wasOn = intake.isOn();
             if (!wasOn) intake.set(true);
-            updateStatus(shotPhase + " – feed", true);
+            updateStatus(shotPhase + " – feed", lockedForShot || !requireLock);
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.update();
@@ -293,19 +336,35 @@ public abstract class BaseAuto extends LinearOpMode {
                 intake.set(false);
             }
 
-            sleep((int)betweenShotsMs());
+            // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
+            double recoverTarget = autoCtrl.hold();
+            if (recoverTarget <= 0) {
+                recoverTarget = holdTarget;
+            }
+            launcher.setTargetRpm(recoverTarget);
+
+            long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
+            sleep((int)delay);
             drive.stopAll();
-            updateStatus("Stabilize after volley", true);
+            updateStatus("Stabilize after volley", lockedForShot || !requireLock);
             telemetry.update();
         }
     }
 
     /** Wait up to guardMs to achieve a tag lock (|bearing| ≤ tol). Returns true if locked. */
     private boolean requireLockOrTimeOut(long guardMs, String phase) {
+        return requireLockOrTimeOut(guardMs, phase, null);
+    }
+
+    private boolean requireLockOrTimeOut(long guardMs, String phase, Boolean scanClockwiseFirst) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
+        final String label = (phase == null || phase.isEmpty()) ? "Acquire lock" : phase;
+        boolean cwFirst = (scanClockwiseFirst != null) ? scanClockwiseFirst : initialScanCW();
+        double scanSign = cwFirst ? -1.0 : +1.0;
         long start = System.currentTimeMillis();
+        long lastFlip = start;
 
         while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
@@ -314,25 +373,27 @@ public abstract class BaseAuto extends LinearOpMode {
                 boolean locked = Math.abs(err) <= tol;
                 if (locked) {
                     drive.stopAll();
-                    updateStatus(phase, true);
+                    updateStatus(label, true);
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
                 }
                 double cmd = clamp(aim.turnPower(det), -cap, +cap);
                 drive.drive(0, 0, cmd * 0.6);
-                updateStatus(phase, false);
+                updateStatus(label, false);
                 telemetry.addData("Bearing (deg)", err);
             } else {
-                drive.stopAll();
-                updateStatus(phase, false);
+                long now = System.currentTimeMillis();
+                if (now - lastFlip > 600) { scanSign *= -1.0; lastFlip = now; }
+                drive.drive(0, 0, scanSign * 0.25 * cap);
+                updateStatus(label, false);
                 telemetry.addData("Bearing (deg)", Double.NaN);
             }
             telemetry.update();
             idle();
         }
         drive.stopAll();
-        updateStatus(phase + " – timeout", false);
+        updateStatus(label + " – timeout", false);
         telemetry.update();
         return false;
     }
@@ -347,6 +408,16 @@ public abstract class BaseAuto extends LinearOpMode {
     /** Drive straight forward using the tuned drive cap. */
     protected final void driveForwardInches(double inches) {
         drive.move(inches, 0.0, driveCap());
+    }
+
+    protected final void driveForwardInches(double inches, double speedCap) {
+        drive.move(inches, 0.0, clampTranslationSpeed(speedCap));
+    }
+
+    protected final void turnToHeading(double headingDeg, double speedCap) {
+        double cur = drive.heading();
+        double delta = shortestDiff(headingDeg, cur);
+        drive.turn(delta, clampTurnSpeed(speedCap));
     }
 
     /** Stop all active subsystems (safety catch-all). */
@@ -390,4 +461,207 @@ public abstract class BaseAuto extends LinearOpMode {
         double d = normDeg(target - current); if (d > 180) d -= 360; if (d < -180) d += 360; return d;
     }
     private static double normDeg(double a) { double r = a % 360; if (r < 0) r += 360; return r; }
+
+    private double clampTranslationSpeed(double requested) {
+        double cap = driveCap();
+        if (requested <= 0) { return cap; }
+        return Math.min(requested, cap);
+    }
+
+    private double clampTurnSpeed(double requested) {
+        double defaultCap = clamp(turnTwistCap() + 0.1, 0.2, 0.8);
+        if (requested <= 0) { return defaultCap; }
+        return clamp(requested, 0.2, Math.max(0.2, defaultCap));
+    }
+
+    protected final void spinLauncherToAutoRpm(String phase) {
+        String label = (phase == null || phase.isEmpty()) ? "Spin to auto RPM" : phase;
+        drive.stopAll();
+        autoCtrl.setAutoEnabled(true);
+        double seed = autoSeedRpm();
+        try { autoCtrl.setDefaultRpm(seed); } catch (Throwable ignored) {}
+        double target = autoCtrl.hold();
+        if (target <= 0) { target = seed; }
+        launcher.setTargetRpm(target);
+        updateStatus(label, false);
+        telemetry.addData("Target RPM", target);
+        telemetry.addData("Auto default RPM", seed);
+        telemetry.update();
+    }
+
+    protected final AutoSequence sequence() {
+        return new AutoSequence();
+    }
+
+    protected final class AutoSequence {
+        private final List<AutoStep> steps = new ArrayList<>();
+        private double storedHeading = Double.NaN;
+        private boolean lastLock = false;
+        private boolean lastAimReady = false;
+
+        private AutoSequence addStep(AutoStep step) {
+            steps.add(step);
+            return this;
+        }
+
+        private String resolveLabel(String provided, String fallback) {
+            return (provided == null || provided.isEmpty()) ? fallback : provided;
+        }
+
+        public AutoSequence rememberHeading(String phase) {
+            return addStep(() -> {
+                storedHeading = drive.heading();
+                String label = resolveLabel(phase, "Record heading");
+                updateStatus(label, lastLock);
+                telemetry.addData("Stored heading (deg)", storedHeading);
+                telemetry.update();
+            });
+        }
+
+        public AutoSequence move(String phase, double distanceInches, double headingDeg, double speedCap) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Move");
+                lastLock = false;
+                lastAimReady = false;
+                double speed = clampTranslationSpeed(speedCap);
+                updateStatus(label, false);
+                telemetry.addData("Distance (in)", distanceInches);
+                telemetry.addData("Heading (deg)", headingDeg);
+                telemetry.addData("Speed cap", speed);
+                telemetry.update();
+                drive.move(distanceInches, headingDeg, speed);
+                drive.stopAll();
+                updateStatus(label + " complete", false);
+                telemetry.update();
+            });
+        }
+
+        public AutoSequence rotate(String phase, double degrees, double speedCap) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Rotate");
+                lastLock = false;
+                lastAimReady = false;
+                double speed = clampTurnSpeed(speedCap);
+                updateStatus(label, false);
+                telemetry.addData("Delta (deg)", degrees);
+                telemetry.addData("Speed cap", speed);
+                telemetry.update();
+                drive.turn(degrees, speed);
+                updateStatus(label + " complete", false);
+                telemetry.update();
+            });
+        }
+
+        public AutoSequence rotateToHeading(String phase, double headingDeg, double speedCap) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Rotate to heading");
+                lastLock = false;
+                lastAimReady = false;
+                double speed = clampTurnSpeed(speedCap);
+                updateStatus(label, false);
+                telemetry.addData("Target heading (deg)", headingDeg);
+                telemetry.addData("Speed cap", speed);
+                telemetry.update();
+                double delta = shortestDiff(headingDeg, drive.heading());
+                drive.turn(delta, speed);
+                updateStatus(label + " complete", false);
+                telemetry.update();
+            });
+        }
+
+        public AutoSequence spinToAutoRpm(String phase) {
+            return addStep(() -> {
+                lastLock = false;
+                lastAimReady = false;
+                spinLauncherToAutoRpm(phase);
+            });
+        }
+
+        public AutoSequence rotateToTarget(String phase, long timeoutMs, Boolean scanClockwiseFirst) {
+            return addStep(() -> {
+                lastAimReady = false;
+                lastLock = turnToGoalTag(timeoutMs, phase, scanClockwiseFirst);
+                if (!lastLock) {
+                    telemetry.addLine("⚠️ No tag lock – continuing sequence");
+                    telemetry.update();
+                }
+            });
+        }
+
+        public AutoSequence aim(String phase, long timeoutMs) {
+            return addStep(() -> {
+                lastAimReady = aimSpinUntilReady(timeoutMs, phase);
+                if (!lastAimReady) {
+                    telemetry.addLine("⚠️ Launcher not at speed before timeout");
+                    telemetry.update();
+                }
+            });
+        }
+
+        public AutoSequence waitFor(String phase, long milliseconds) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Wait");
+                updateStatus(label, lastLock);
+                telemetry.addData("Duration (ms)", milliseconds);
+                telemetry.update();
+                sleep(milliseconds);
+            });
+        }
+
+        public AutoSequence fire(String phase, int shots, boolean requireLock, long betweenShotsMs) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Fire");
+                if (requireLock && !lastLock) {
+                    updateStatus(label + " – skipped (no lock)", false);
+                    telemetry.addLine("⚠️ Fire skipped because tag lock was not achieved");
+                    telemetry.update();
+                    return;
+                }
+                updateStatus(label, !requireLock || lastLock);
+                telemetry.addData("Shots", shots);
+                telemetry.addData("Lock required", requireLock);
+                telemetry.addData("Between shots (ms)", betweenShotsMs);
+                telemetry.update();
+                fireN(shots, requireLock, betweenShotsMs);
+                lastAimReady = false;
+                lastLock = requireLock && lastLock;
+            });
+        }
+
+        public AutoSequence returnToStoredHeading(String phase, double speedCap) {
+            return addStep(() -> {
+                double target = Double.isNaN(storedHeading) ? drive.heading() : storedHeading;
+                String label = resolveLabel(phase, "Return to heading");
+                lastLock = false;
+                lastAimReady = false;
+                double speed = clampTurnSpeed(speedCap);
+                updateStatus(label, false);
+                telemetry.addData("Target heading (deg)", target);
+                telemetry.addData("Speed cap", speed);
+                telemetry.update();
+                double delta = shortestDiff(target, drive.heading());
+                drive.turn(delta, speed);
+                updateStatus(label + " complete", false);
+                telemetry.update();
+            });
+        }
+
+        public AutoSequence custom(AutoStep step) {
+            return addStep(step);
+        }
+
+        public void run() throws InterruptedException {
+            for (AutoStep step : steps) {
+                if (!opModeIsActive()) {
+                    break;
+                }
+                step.run();
+            }
+        }
+    }
+
+    @FunctionalInterface
+    protected interface AutoStep {
+        void run() throws InterruptedException;
+    }
 }

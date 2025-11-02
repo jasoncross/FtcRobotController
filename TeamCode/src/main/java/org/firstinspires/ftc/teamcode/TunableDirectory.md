@@ -34,13 +34,14 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 
 | Parameter | Set in | Impacts | What it controls | Tune here vs. elsewhere | Sample adjustments |
 | --- | --- | --- | --- | --- | --- |
-| `SharedRobotTuning.SHOT_BETWEEN_MS` | `config/SharedRobotTuning.java` | Auto | Minimum delay between autonomous shots. | Replaces `BaseAuto.DEF_BETWEEN_MS`; adjust here for global cadence changes. | `2500 ms` for faster volleys once feed is proven. |
-| `FeedTuning.INTAKE_ASSIST_MS` | `config/FeedTuning.java` | Both | How long intake runs after a feed when previously off. | Central value now lives alongside feed cadence so Auto and TeleOp share one number; TeleOp copies it via `TeleOpDriverDefaults.INTAKE_ASSIST_MS`. | `350 ms` for sticky rings; `200 ms` when intake clears fast. |
+| `FeedTuning.INTAKE_ASSIST_MS` | `config/FeedTuning.java` | Both | How long intake runs after a feed when previously off. | Central value now lives alongside feed cadence so Auto and TeleOp share one number; TeleOp copies it via `TeleOpDriverDefaults.INTAKE_ASSIST_MS`. | `350 ms` for sticky artifacts; `200 ms` when intake clears fast. |
 | `TeleOpDriverDefaults.INTAKE_ASSIST_MS` | `config/TeleOpDriverDefaults.java` | TeleOp | TeleOp-only override of intake assist. | Mirrors `FeedTuning.INTAKE_ASSIST_MS`; override here only when drivers want a different assist duration than Auto. | Extend to `320 ms` if TeleOp wants extra assurance. |
-| `FeedTuning.FIRE_POWER` | `config/FeedTuning.java` | Both | Motor power used to push a ring. | Shared by Auto `fireN` and TeleOp feed buttons. | Bump to `1.0` when rings stick; lower to `0.75` to reduce jams. |
-| `FeedTuning.FIRE_TIME_MS` | `config/FeedTuning.java` | Both | Time the feed motor runs per shot. | Single source for Auto + TeleOp. | `450 ms` after tightening timing; `650 ms` if rings hesitate. |
+| `FeedTuning.FIRE_POWER` | `config/FeedTuning.java` | Both | Motor power used to push an artifact. | Shared by Auto `fireN(count, requireLock)` / `AutoSequence.fire(...)` and TeleOp feed buttons. | Bump to `1.0` when artifacts stick; lower to `0.75` to reduce jams. |
+| `FeedTuning.FIRE_TIME_MS` | `config/FeedTuning.java` | Both | Time the feed motor runs per shot. | Single source for Auto + TeleOp. | `450 ms` after tightening timing; `650 ms` if artifacts hesitate. |
 | `FeedTuning.MIN_CYCLE_MS` | `config/FeedTuning.java` | Both | Cooldown between shots. | Keep consistent so Auto and TeleOp pacing match. | `200 ms` when hardware tolerates quick cycles. |
 | `FeedTuning.IDLE_HOLD_POWER` | `config/FeedTuning.java` | Both | Counter-rotation power while the feed is idle. | `Feed` enables this only after START via `setIdleHoldActive(true)` so INIT stays still. | Defaults to `-0.5` to hold artifacts firmly; back off toward `-0.3` if gears chatter. |
+
+> **Note:** Autonomous volley spacing is now passed directly to `AutoSequence.fire(... betweenShotsMs)`. Adjust cadence inside each auto routine instead of a shared tunable.
 | `TeleOpEjectTuning.RPM` | `config/TeleOpEjectTuning.java` | TeleOp | Launcher RPM during eject routine. | TeleOp-only; Auto never calls eject. Tune here without affecting Auto. | `400 RPM` for gentle clears; `800 RPM` for stubborn jams. |
 | `TeleOpEjectTuning.TIME_MS` | `config/TeleOpEjectTuning.java` | TeleOp | Duration of eject routine. | TeleOp only. | `600 ms` for quick clear, `1400 ms` for heavy debris. |
 
@@ -87,7 +88,7 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | Parameter | Set in | Impacts | What it controls | Tune here vs. elsewhere | Sample adjustments |
 | --- | --- | --- | --- | --- | --- |
 | `BaseAuto.turnToGoalTag(timeoutMs)` | `auto/BaseAuto.java` & derived classes | Auto | Timeout for acquiring a tag and aligning. | Each auto class passes its own timeout; if a derived class overrides the method, adjust there first. Shared turn cap & tolerances still come from `SharedRobotTuning`. | `2500 ms` when tags are harder to find. |
-| `BaseAuto.aimSpinUntilReady(timeoutMs)` | `auto/BaseAuto.java` & derived classes | Auto | Spin-up guard while waiting for readiness. | Derived classes set the timeout; cadence is governed by `SharedRobotTuning` shot delay/tolerance. | Extend to `3200 ms` if flywheel needs longer to reach speed. |
+| `BaseAuto.aimSpinUntilReady(timeoutMs)` | `auto/BaseAuto.java` & derived classes | Auto | Spin-up guard while waiting for readiness. | Derived classes set the timeout; RPM tolerance still comes from `SharedRobotTuning`, and volley cadence is now passed per `AutoSequence.fire(...)`. | Extend to `3200 ms` if flywheel needs longer to reach speed. |
 | `BaseAuto.driveForwardInches(distance)` & other `drive` helpers | `auto/Auto_*` routines | Auto | Distances for stage positioning. | Change inside the routine that owns the move. Power cap comes from `SharedRobotTuning.DRIVE_MAX_POWER`. | Shorten setup drive to `30"` for closer standoff. |
 
 ## Intake power & driver defaults

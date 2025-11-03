@@ -27,8 +27,21 @@ behavior consistent across all autos.
 1. Call `sequence()` inside your `runSequence()` override.
 2. Chain the desired steps in the order they should execute.
 3. Finish with `.run()` to execute the scripted actions.
-4. Optionally call `.reset()` if you need to build a second sequence in
-the same OpMode (rare in competition code).
+
+---
+
+### Updating the Start Pose Telemetry Line
+
+Every autonomous class extends `BaseAuto` and surfaces its starting
+instructions through `startPoseDescription()`. That string feeds the
+Driver Station telemetry line labelled **Start Pose** during the INIT
+loop. Whenever you adjust the opening location or robot orientation,
+update the return value in your auto class so field crews receive the
+correct staging reminder (for example, "Start: Blue Human — West of south
+firing triangle, FACING NORTH").
+
+Keeping the text synchronized with the actual setup spot prevents crews
+from launching a route from the wrong tile after code changes.
 
 ---
 
@@ -39,20 +52,22 @@ telemetry as the active **Phase** string while that step runs.
 
 | Call | Description | Notes |
 | --- | --- | --- |
+| `rememberHeading(label)` | Captures the current IMU heading for later reuse. | Call before you plan to return to the same orientation. |
 | `move(label, distanceIn, headingDeg, speedCap)` | Drives a straight line while holding the requested heading. | Distance is signed; heading is absolute (field-centric, 0° = upfield). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`. |
-| `strafe(label, distanceIn, speedCap)` | Strafes left/right relative to the robot. | Positive distance = strafe left, negative = right. Uses the same power clamps as `move`. |
-| `recordHeading(label)` | Captures the current IMU heading for later reuse. | Call before you plan to return to the same orientation. |
-| `returnToRecordedHeading(label, speedCap)` | Turns back to the most recent recorded heading. | No-op if `recordHeading()` was never called. Honors the same twist caps as other turn helpers. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpm(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
-| `rotateToTarget(label, timeoutMs, clockwiseFirst)` | Sweeps for the alliance goal AprilTag until lock tolerance is satisfied or timeout elapses. | Uses `TagAimController` + shared lock tolerance. `clockwiseFirst` sets the initial sweep direction. |
+| `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied. | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. |
 | `aim(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher sits inside the tolerance band or the timeout hits. |
 | `fire(label, shots, requireLock, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireLock` is false, skips the AprilTag lock check but still enforces RPM readiness. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
-| `intake(label, enabled)` | Toggles the intake state mid-sequence. | Respects StopAll and the intake assist timer. |
-| `custom(label, action)` | Runs arbitrary code. | `action` is a `Runnable` executed synchronously; use sparingly for bespoke logic. |
-| `stop(label)` | Stops the drivetrain immediately. | Useful for emergency testing; Auto routines normally finish with `stopAll()` outside the sequence. |
+| `eject(label)` | Runs the TeleOp eject routine mid-auto. | Temporarily overrides AutoSpeed, spins to `TeleOpEjectTuning.RPM`, feeds once with intake assist, then restores the previous RPM/AutoSpeed state. |
+| `intake(label, enabled)` | Toggles the floor intake on or off. | Adds telemetry showing the requested state before calling `intake.set(enabled)`. Useful for pickup experiments without writing custom steps. |
+| `stop(label)` | Stops drive, launcher, feed, intake, and AutoSpeed. | Calls `stopAll()` so you can insert a hard safety stop mid-sequence. |
+| `returnToStoredHeading(label, speedCap)` | Turns back to the most recent stored heading. | No-op if `rememberHeading()` was never called. Honors the same twist caps as other turn helpers. |
+| `custom(action)` / `custom(label, action)` | Runs arbitrary code. | `action` is an `AutoStep` executed synchronously; use for bespoke logic such as toggling vision pipelines or adjusting subsystem states. |
+
+> **Scan sweep primer:** `rotateToTarget(...)` multiplies `SharedRobotTuning.TURN_TWIST_CAP` by the provided `turnSpeedFraction` to compute the twist command while scanning. When the goal tag is not visible, the helper drives the robot to the requested `primarySweepDeg`, then follows the counter-sweep rule you provide before repeating (unless you omit the counter sweep entirely). Passing a **positive** `oppositeSweepDeg` pushes through zero into the other direction (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 90, 30)` visits +90°, returns to 0°, checks -30°, and comes back to center). Passing a **negative** value stops short of zero by that magnitude so the scan bounces on the same side (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 180, -90)` swings 180° counter-clockwise, returns clockwise to +90°—still on the counter-clockwise side of center—and heads back toward 180°). Passing **zero** returns to center before re-running the primary sweep, and omitting `oppositeSweepDeg` holds at the primary sweep limit with no return leg. Choose larger sweep angles when you need to search a wider arc; tweak `TURN_TWIST_CAP` to globally change the underlying twist cap.
 
 ---
 
@@ -64,7 +79,7 @@ telemetry as the active **Phase** string while that step runs.
 sequence()
     .move("Drive to standoff", 36.0, 0.0, 0.55)
     .spinToAutoRpm("Pre-spin launcher")
-    .rotateToTarget("Acquire Tag", 2500, /* clockwiseFirst= */ false)
+    .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30)
     .aim("Spin launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .waitFor("Stabilize", 500)
@@ -85,13 +100,13 @@ the goal tag.
 
 ```java
 sequence()
-    .recordHeading("Capture start heading")
+    .rememberHeading("Capture start heading")
     .move("Bump off wall", 2.0, 0.0, 0.35)
     .spinToAutoRpm("Pre-spin launcher")
-    .rotateToTarget("Find Tag", 2500, true)
+    .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30)
     .aim("Spin launcher", 3200)
     .fire("Volley", 3, true, 3000)
-    .returnToRecordedHeading("Face upfield", 0.40)
+    .returnToStoredHeading("Face upfield", 0.40)
     .move("Drive to classifier", 24.0, 0.0, 0.55)
     .run();
 ```
@@ -106,20 +121,55 @@ the wall and must end facing upfield.
 recovery. Shorten only after confirming the feed motor and flywheels can
 reset without sagging RPM.
 
-### 3. No-Lock Intake-Assist Routine for Testing
+### 3. Clearing a Jam Mid-Route
 
 ```java
 sequence()
-    .intake("Enable intake", true)
+    .fire("Volley", 3, true, 3000)
+    .waitFor("Check for jam", 500)
+    .eject("Clear feeder")
+    .waitFor("Let debris exit", 400)
+    .run();
+```
+
+**When to use:** Practice paths where you intentionally inject a jam or
+want a one-button recovery after detecting a misfire. The eject step
+mirrors the TeleOp B-button behavior: it temporarily overrides AutoSpeed,
+feeds once with intake assist, and then restores the prior RPM.
+
+### 4. Custom Intake-Assist Routine for Testing
+
+```java
+sequence()
+    .custom("Enable intake", () -> intake.set(true))
     .move("Drive to pickup", 18.0, 0.0, 0.30)
     .waitFor("Let artifacts settle", 750)
     .fire("Test feed", 1, false, 2500)
+    .custom("Disable intake", () -> intake.set(false))
     .run();
 ```
 
 **When to use:** Practice or diagnostics when you want to verify the
 feed timing without requiring a tag lock. Avoid using no-lock shots in
 competition code.
+
+---
+
+## Additional `.custom(...)` Ideas
+
+The `.custom(...)` hook runs inside your auto class, so you can access the
+same subsystems that `BaseAuto` exposes. Common use cases include:
+
+- **Vision profile swaps:** `custom("Enable close-range pipeline", () -> vision.applyProfile(...))`
+  lets you change AprilTag settings mid-run after moving closer to the goal.
+- **Sensor logging:** Push a one-off telemetry line (for example, range
+  sensor distance) before taking an action.
+- **Conditional logic:** Check a sensor and branch by queuing additional
+  steps—build the guard in the custom block and append more `sequence()`
+  calls when needed.
+
+Keep custom steps short and deterministic; long loops belong in dedicated
+builder methods so telemetry remains responsive.
 
 ---
 
@@ -149,14 +199,14 @@ controller enabled and reasserts the held RPM after each feed.
 If autonomous translations land short or long during testing:
 
 1. **Tweak the commanded distance.** Adjust the `distanceIn` value passed
-   to `move(...)`/`strafe(...)` until the robot stops near the desired
-   mark.
+   to `move(...)` (and its heading argument when strafing) until the robot
+   stops near the desired mark.
 2. **Verify drivetrain geometry constants.** Confirm wheel diameter,
    gear ratio, and ticks per revolution inside
    [`config/DriveTuning.java`](../config/DriveTuning.java) so
    `Drivebase.TICKS_PER_IN` matches reality.
 3. **Refine lateral compensation.** Update
-   `DriveTuning.STRAFE_CORRECTION` if strafes consistently under- or
+   `DriveTuning.STRAFE_CORRECTION` if sideways moves (heading ±90°) under- or
    overshoot; the value scales the X component inside
    [`Drivebase.move(...)`](../drive/Drivebase.java).
 
@@ -173,6 +223,33 @@ new constant overshoots.
 | Aim step times out. | Goal AprilTag not visible or heading far off. | Increase the timeout, adjust starting pose, or verify the tag ID in the pit. |
 | Shots skip unexpectedly. | `requireLock = true` but tag lock drops momentarily. | Improve lighting, lower `SharedRobotTuning.LOCK_TOLERANCE_DEG`, or allow more settle time before firing. |
 | Sequence stops mid-way. | OpMode interrupted (StopAll or STOP pressed). | Check Driver Station log and confirm StopAll isn’t latched. |
+
+---
+
+## Creating a New Auto Mode Class
+
+1. **Copy an existing template.** Duplicate the closest match (for
+   example, `Auto_Blue_Target`) inside
+   [`auto/`](./) and rename the class + file.
+2. **Update the `@Autonomous` annotation.** Set a unique `name`, the
+   correct `group`, and an optional `preselectTeleOp` so the Driver
+   Station shows the right pairing.
+3. **Override the required hooks.** Implement `alliance()` and
+   `startPoseDescription()` to match the new route. Adjust the start pose
+   string immediately so telemetry reflects the new staging point.
+4. **Decide on your opening sweep.** Pass `ScanDirection.CW/CCW` (or omit
+   the direction to default clockwise) plus the speed and sweep angles you
+   want into `rotateToTarget(...)`. Larger angles cover more field before
+   repeating; higher speed fractions reach those limits faster.
+5. **Build the sequence.** Inside `runSequence()` call `sequence()` and
+   chain the desired builder steps. Use `.custom(...)` for any bespoke
+   logic that does not warrant a dedicated helper yet.
+6. **Test on the practice field.** Confirm telemetry shows the updated
+   Start Pose, the path respects alliance geometry, and AutoSpeed locks
+   before firing.
+
+Follow the checklist below to keep the documentation in sync once the
+code lands.
 
 ---
 

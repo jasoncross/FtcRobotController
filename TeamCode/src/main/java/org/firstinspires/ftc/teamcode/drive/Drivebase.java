@@ -94,12 +94,6 @@ public class Drivebase {
 
     // ---------- Constructor for AUTONOMOUS (blocking helpers allowed) ----------
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
-    // CHANGES (2025-10-31): Corrected move() encoder targets to honor motor directions so
-    //                        positive distances drive forward and negative back without
-    //                        depending on wiring orientation.
-    // CHANGES (2025-10-31): Matched move() power polarity to the TeleOp drive sums so
-    //                        RUN_TO_POSITION moves keep the same forward/back/strafe sense
-    //                        that drivers verified in TeleOp tuning sessions.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -228,26 +222,13 @@ public class Drivebase {
         flMult /= maxMag; frMult /= maxMag; blMult /= maxMag; brMult /= maxMag;
 
         int baseTicks = (int) round(distanceInches * TICKS_PER_IN);
-        double flSign = directionSign(fl.getDirection());
-        double frSign = directionSign(fr.getDirection());
-        double blSign = directionSign(bl.getDirection());
-        double brSign = directionSign(br.getDirection());
-
-        double flDelta = baseTicks * flMult * flSign;
-        double frDelta = baseTicks * frMult * frSign;
-        double blDelta = baseTicks * blMult * blSign;
-        double brDelta = baseTicks * brMult * brSign;
-
-        int flT = fl.getCurrentPosition() + (int) round(flDelta);
-        int frT = fr.getCurrentPosition() + (int) round(frDelta);
-        int blT = bl.getCurrentPosition() + (int) round(blDelta);
-        int brT = br.getCurrentPosition() + (int) round(brDelta);
+        int flT = fl.getCurrentPosition() + (int) round(baseTicks * flMult);
+        int frT = fr.getCurrentPosition() + (int) round(baseTicks * frMult);
+        int blT = bl.getCurrentPosition() + (int) round(baseTicks * blMult);
+        int brT = br.getCurrentPosition() + (int) round(baseTicks * brMult);
 
         setRunToPosition(flT, frT, blT, brT);
-        setRunToPositionPower(fl, speed, flMult);
-        setRunToPositionPower(fr, speed, frMult);
-        setRunToPositionPower(bl, speed, blMult);
-        setRunToPositionPower(br, speed, brMult);
+        setAllPower(speed);
 
         while (isActive() && (fl.isBusy() || fr.isBusy() || bl.isBusy() || br.isBusy())) {
             idle(); // yield to SDK
@@ -351,21 +332,5 @@ public class Drivebase {
     }
     private static double clamp(double v, double lo, double hi) {
         return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static double directionSign(DcMotorSimple.Direction dir) {
-        return (dir == DcMotorSimple.Direction.REVERSE) ? -1.0 : 1.0;
-    }
-
-    private static void setRunToPositionPower(DcMotorEx motor, double speed, double multiplier) {
-        double magnitude = abs(multiplier);
-        if (magnitude < 1e-3) {
-            motor.setPower(0.0);
-            return;
-        }
-        double commanded = speed * magnitude;
-        commanded = max(-1.0, min(1.0, commanded));
-        if (multiplier < 0) commanded = -commanded;
-        motor.setPower(commanded);
     }
 }

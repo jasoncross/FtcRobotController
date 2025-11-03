@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.auto;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.Alliance;
+import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
 
 /*
  * FILE: Auto_Blue_Target.java
@@ -11,30 +12,27 @@ import org.firstinspires.ftc.teamcode.Alliance;
  *   - Execute the BLUE alliance depot-side autonomous (south launch line,
  *     robot facing EAST) that drives to a known standoff, locks onto AprilTag
  *     ID 20, and fires the preload before holding position.
- *   - Provide a clean example of combining driveForwardInches with the shared
- *     AutoAim helpers so students can bolt on additional scoring steps later.
+ *   - Provide a clean example of chaining the AutoSequence builder’s move,
+ *     rotate, aim, and fire steps so students can bolt on additional scoring
+ *     actions later.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - driveForwardInches(36.0)
- *       • Sets the initial range prior to aiming.
- *       • BaseAuto.driveForwardInches() obeys SharedRobotTuning.DRIVE_MAX_POWER;
- *         edit that value when you need a global speed change.
- *   - turnToGoalTag(2500 ms timeout)
- *       • Allows the camera to settle on Tag 20 while sweeping CCW.
- *       • Shares twist/tolerance caps with SharedRobotTuning just like other
- *         autos; extend the timeout if the robot drives farther before aiming.
- *   - aimSpinUntilReady(3200 ms timeout)
+ *   - move(... 36.0 in, heading 0°, speed 0.55)
+ *       • Sets the initial standoff before aiming. Power clamps via
+ *         SharedRobotTuning.DRIVE_MAX_POWER for global speed changes.
+ *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 180°/-90°)
+ *       • Sweeps counter-clockwise up to 180°, then backs clockwise to 90° shy of
+ *         center before heading counter-clockwise again while searching for Tag 20.
+ *   - aim(timeout 3200 ms)
  *       • Waits for LauncherAutoSpeedController to reach the shared RPM window.
- *       • Followed by `fire(..., betweenShotsMs)` so cadence is chosen per sequence (defaults to 3000 ms here).
+ *   - fire(shots = 3, betweenShotsMs = 3000)
+ *       • Fires the preload volley with per-sequence cadence control.
  *
  * METHODS
  *   - alliance()
  *       • Tags this routine as BLUE so BaseAuto uses Tag 20 lookups.
  *   - startPoseDescription()
  *       • Telemetry text confirming correct initial placement for the field crew.
- *   - initialScanCW()
- *       • Returns false so we sweep counter-clockwise first (facing EAST means
- *         the goal is to the robot’s left).
  *   - runSequence()
  *       • Drives to range, waits for aim/speed readiness, then fires.
  *
@@ -52,16 +50,16 @@ public class Auto_Blue_Target extends BaseAuto {
     // CHANGES (2025-11-02): Added pre-spin AutoSpeed warm-up and explicit volley cadence parameter.
     // BaseAuto needs the declared alliance to load the correct AprilTag IDs.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
-    // Telemetry annotation so setup crew knows correct orientation.
+    // Telemetry annotation so setup crew knows correct orientation (edit to
+    // update the Start Pose line shown on the Driver Station).
     @Override protected String startPoseDescription() { return "Start: Blue Target — South depot launch line, FACING EAST"; }
-    @Override protected boolean initialScanCW() { return false; } // CCW first (turn left toward goal)
 
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
                 .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
                 .spinToAutoRpm("Pre-spin launcher to auto RPM")
-                .rotateToTarget("Scan for Tag 20", 2500, false)
+                .rotateToTarget("Scan for Tag 20", ScanDirection.CCW, 0.25, 180, -90) // 180° CCW sweep, CW return to +90°, repeat
                 .aim("Spin launcher for volley", 3200)
                 .fire("Fire 3-shot volley", 3, true, 3000)
                 .waitFor("Hold position", 500)

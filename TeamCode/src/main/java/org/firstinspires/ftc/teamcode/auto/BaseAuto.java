@@ -21,6 +21,9 @@ import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /*
  * FILE: BaseAuto.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
@@ -307,6 +310,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     continue; // do not free-fire when lock required
                 }
             }
+            launcher.setTargetRpm(holdTarget);
 
             double holdRpmTarget = autoCtrl.hold();
             if (holdRpmTarget <= 0) {

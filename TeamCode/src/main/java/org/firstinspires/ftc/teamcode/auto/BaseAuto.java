@@ -92,6 +92,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        autos honor AutoRpmConfig defaults prior to the first tag lock.
     // CHANGES (2025-10-31): Introduced AutoSequence builder for declarative route scripting and added
     //                        optional no-lock volleys plus customizable scan/aim status labels.
+    // CHANGES (2025-10-31): updateStatus now mirrors AutoSequence labels on a dedicated telemetry line so
+    //                        Driver Station shows each step description during execution.
     // CHANGES (2025-11-02): Added spinLauncherToAutoRpm() warm-up helper, parameterized fire cadence,
     //                        reasserted AutoSpeed targets during volleys, and extended AutoSequence to
     //                        pre-spin flywheels ahead of tag locks.
@@ -578,6 +580,10 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     protected final void updateStatus(String phase, boolean tagLocked) {
+        String displayPhase = (phase == null) ? "" : phase.trim();
+        if (displayPhase.isEmpty()) {
+            displayPhase = "(no label)";
+        }
         if (vision != null) {
             try { vision.observeObelisk(); } catch (Throwable ignored) {}
         }
@@ -586,7 +592,8 @@ public abstract class BaseAuto extends LinearOpMode {
         telemetry.addData("Start Pose", startPoseDescription());
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
         telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
-        telemetry.addData("Phase", phase);
+        telemetry.addData("Phase", displayPhase);
+        telemetry.addData("Sequence Step", displayPhase);
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }

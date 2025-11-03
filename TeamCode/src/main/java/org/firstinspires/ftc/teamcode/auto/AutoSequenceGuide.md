@@ -48,12 +48,13 @@ from launching a route from the wrong tile after code changes.
 ## Reference: Builder Methods
 
 Each method returns the builder, so you can chain calls. Labels appear in
-telemetry as the active **Phase** string while that step runs.
+telemetry as both the **Phase** and **Sequence Step** lines while that step
+runs, making the active action obvious on the Driver Station display.
 
 | Call | Description | Notes |
 | --- | --- | --- |
 | `rememberHeading(label)` | Captures the current IMU heading for later reuse. | Call before you plan to return to the same orientation. |
-| `move(label, distanceIn, headingDeg, speedCap)` | Drives a straight line while holding the requested heading. | Distance is signed; heading is absolute (field-centric, 0° = upfield). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`. |
+| `move(label, distanceIn, headingDeg, speedCap)` | Drives a straight line while holding the requested heading. | Distance is signed (positive = forward toward 0°, negative = back toward 180°); heading is absolute (field-centric, 0° = upfield). Power clamps to `speedCap`, never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`, and reuses the same wheel polarity as TeleOp so forward/back/strafe match driver expectations. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpm(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |

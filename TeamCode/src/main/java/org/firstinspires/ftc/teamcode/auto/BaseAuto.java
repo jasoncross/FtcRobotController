@@ -95,6 +95,8 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-11-02): Added spinLauncherToAutoRpm() warm-up helper, parameterized fire cadence,
     //                        reasserted AutoSpeed targets during volleys, and extended AutoSequence to
     //                        pre-spin flywheels ahead of tag locks.
+    // CHANGES (2025-11-03): Raised sequence labels to the top of telemetry with spacing so active phases
+    //                        stay visible while extra status lines append beneath them.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -581,12 +583,17 @@ public abstract class BaseAuto extends LinearOpMode {
         if (vision != null) {
             try { vision.observeObelisk(); } catch (Throwable ignored) {}
         }
+        String statusPhase = (phase == null) ? "" : phase.trim();
+        if (statusPhase.isEmpty()) {
+            statusPhase = "Sequence";
+        }
+        telemetry.addData("Phase", statusPhase);
+        telemetry.addLine("");
         telemetry.addData("Alliance", alliance());
         telemetry.addData("Auto", autoOpModeName);
         telemetry.addData("Start Pose", startPoseDescription());
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
         telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
-        telemetry.addData("Phase", phase);
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }

@@ -16,9 +16,11 @@ import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
+import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /*
  * FILE: BaseAuto.java
@@ -60,9 +62,9 @@ import java.util.List;
  *   - runOpMode()
  *       • Handles subsystem initialization, obelisk observation, and executes
  *         the derived runSequence().
- *   - turnToGoalTag(timeoutMs)
- *       • Scans for the alliance goal tag until the tuned tolerance is satisfied
- *         or the timeout elapses.
+ *   - turnToGoalTag(phase, direction, speed, primarySweepDeg, oppositeSweepDeg)
+ *       • Scans for the alliance goal tag using repeatable angular sweeps and
+ *         returns once the tuned lock tolerance is satisfied.
  *   - aimSpinUntilReady(timeoutMs)
  *       • Enables AutoSpeed, feeds distance data, and waits for RPM readiness.
  *   - fireN(count)
@@ -71,9 +73,10 @@ import java.util.List;
  *       • Utility helpers reused by every derived class.
  *
  * NOTES
- *   - Derived classes must override alliance(), startPoseDescription(),
- *     initialScanCW(), and runSequence(); most also customize runSequence() with
- *     alliance-specific driving steps.
+ *   - Derived classes must override alliance(), startPoseDescription(), and
+ *     runSequence(). Sequence steps can request clockwise or counter-clockwise
+ *     sweeps explicitly via {@link AutoSequence#rotateToTarget(String, ScanDirection, double, double, double)}
+ *     or the overloads that omit the counter sweep.
  *   - ObeliskSignal captures motif tags during init so autos know which pattern
  *     they are starting in without extra hardware.
  */
@@ -96,7 +99,25 @@ public abstract class BaseAuto extends LinearOpMode {
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
     protected abstract String startPoseDescription();
-    protected abstract boolean initialScanCW();
+    /** Direction helpers for tag scan sweeps. */
+    public enum ScanDirection {
+        CW,
+        CCW;
+
+        private boolean isClockwise() {
+            return this == CW;
+        }
+    }
+
+    /** State machine phases used by {@link #turnToGoalTag} while sweeping for the goal tag. */
+    private enum SweepState {
+        PRIMARY_OUT,
+        RETURN_TO_ZERO,
+        OPPOSITE_OUT,
+        OPPOSITE_RETURN,
+        PARTIAL_RETURN,
+        HOLD_PRIMARY
+    }
     protected abstract void runSequence() throws InterruptedException;
 
     // Optional hook allowing derived autos to perform extra telemetry or sensor prep pre-start.
@@ -179,50 +200,154 @@ public abstract class BaseAuto extends LinearOpMode {
      * Rotate until the alliance goal AprilTag is within tolerance or timeout occurs.
      * Returns true when lock achieved, false when timed out.
      */
-    protected final boolean turnToGoalTag(long timeoutMs) {
-        return turnToGoalTag(timeoutMs, "Scan for goal tag", null);
-    }
-
-    protected final boolean turnToGoalTag(long timeoutMs, String phase, Boolean scanClockwiseFirst) {
+    /**
+     * Search for the alliance goal tag by sweeping around the current heading until the
+     * AprilTag lock tolerance is satisfied.
+     *
+     * @param phase              Telemetry label shown while scanning (defaults to
+     *                           "Scan for goal tag" when empty).
+     * @param direction          Opening sweep direction. Pass {@code null} to default to clockwise.
+     * @param turnSpeedFraction  Fraction (0–1] of {@link SharedRobotTuning#TURN_TWIST_CAP} to use while scanning.
+     * @param primarySweepDeg    Degrees to sweep in the opening direction before returning through center.
+     * @param oppositeSweepDeg   How far to probe past center on the counter sweep. Positive values travel through
+     *                           zero into the opposite direction by the requested magnitude. Negative values stop
+     *                           before reaching zero by the requested magnitude (relative to the opening side).
+     *                           Pass {@code 0} to return to center before repeating, or {@code null} / {@link Double#NaN}
+     *                           to hold at the primary sweep limit with no counter pass.
+     */
+    protected final boolean turnToGoalTag(String phase,
+                                           ScanDirection direction,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg,
+                                           Double oppositeSweepDeg) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
         final String label = (phase == null || phase.isEmpty()) ? "Scan for goal tag" : phase;
 
-        long start = System.currentTimeMillis();
-        long lastFlip = start;
-        boolean cwFirst = (scanClockwiseFirst != null) ? scanClockwiseFirst : initialScanCW();
-        double scanSign = cwFirst ? -1.0 : +1.0; // CW=negative twist
+        final double speedFrac = Math.max(0.05, Math.min(Math.abs(turnSpeedFraction), 1.0));
+        final double twist = cap * speedFrac;
+        final double primaryLimit = Math.max(1.0, Math.abs(primarySweepDeg));
+        final boolean disableOpposite = (oppositeSweepDeg == null) || Double.isNaN(oppositeSweepDeg);
+        final double rawOpposite = disableOpposite ? 0.0 : oppositeSweepDeg;
+        final double oppositeLimit = Math.abs(rawOpposite);
+        final boolean oppositeCrossesZero = !disableOpposite && rawOpposite > 0.0;
+        final boolean oppositeStaysSameSide = !disableOpposite && rawOpposite < 0.0;
+        final double zeroTol = 1.5; // degrees around the neutral heading treated as "zero"
 
-        while (opModeIsActive() && (System.currentTimeMillis() - start) < timeoutMs) {
+        ScanDirection resolved = (direction == null) ? ScanDirection.CW : direction;
+        double primarySign = resolved.isClockwise() ? -1.0 : +1.0; // CW scanning uses negative twist
+        double primaryTarget = primarySign * primaryLimit;
+        double oppositeTarget = 0.0;
+        double partialTarget = 0.0;
+        if (oppositeCrossesZero) {
+            double magnitude = Math.max(1.0, oppositeLimit);
+            oppositeTarget = -primarySign * magnitude;
+        } else if (oppositeStaysSameSide) {
+            double magnitude = Math.max(1.0, Math.min(primaryLimit, oppositeLimit));
+            partialTarget = primarySign * magnitude;
+        }
+
+        double zeroHeading = drive.heading();
+        final String sweepSummary;
+        if (disableOpposite) {
+            sweepSummary = String.format(Locale.US, "%.1f / --", primaryTarget);
+        } else if (oppositeCrossesZero) {
+            sweepSummary = String.format(Locale.US, "%.1f / %.1f", primaryTarget, oppositeTarget);
+        } else if (oppositeStaysSameSide) {
+            sweepSummary = String.format(Locale.US, "%.1f / %.1f", primaryTarget, partialTarget);
+        } else {
+            sweepSummary = String.format(Locale.US, "%.1f / %.1f", primaryTarget, 0.0);
+        }
+
+        SweepState state = SweepState.PRIMARY_OUT;
+
+        while (opModeIsActive()) {
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
             double bearing = Double.NaN;
             boolean lockedNow = false;
+
             if (det != null) {
                 double err = det.ftcPose.bearing;
                 bearing = err;
-                if (Math.abs(err) <= tol) {
+                double cmd = clamp(aim.turnPower(det), -cap, +cap);
+                drive.drive(0, 0, cmd);
+                lockedNow = Math.abs(err) <= tol;
+                if (lockedNow) {
                     drive.stopAll();
                     updateStatus(label + " – lock", true);
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
                 }
-                double cmd = clamp(aim.turnPower(det), -cap, +cap);
-                drive.drive(0, 0, cmd);
-                lockedNow = Math.abs(err) <= tol;
             } else {
-                long now = System.currentTimeMillis();
-                if (now - lastFlip > 700) { scanSign *= -1.0; lastFlip = now; }
-                drive.drive(0, 0, scanSign * 0.25 * cap);
+                double offset = shortestDiff(drive.heading(), zeroHeading);
+                double command = 0.0;
+
+                switch (state) {
+                    case PRIMARY_OUT:
+                        command = primarySign * twist;
+                        if ((primarySign < 0 && offset <= primaryTarget) ||
+                                (primarySign > 0 && offset >= primaryTarget)) {
+                            if (disableOpposite) {
+                                state = SweepState.HOLD_PRIMARY;
+                            } else {
+                                state = oppositeStaysSameSide ? SweepState.PARTIAL_RETURN : SweepState.RETURN_TO_ZERO;
+                            }
+                        }
+                        break;
+                    case RETURN_TO_ZERO:
+                        command = -primarySign * twist;
+                        if (Math.abs(offset) <= zeroTol) {
+                            zeroHeading = drive.heading();
+                            state = oppositeCrossesZero ? SweepState.OPPOSITE_OUT : SweepState.PRIMARY_OUT;
+                        }
+                        break;
+                    case OPPOSITE_OUT:
+                        command = -primarySign * twist;
+                        if ((-primarySign < 0 && offset <= oppositeTarget) ||
+                                (-primarySign > 0 && offset >= oppositeTarget)) {
+                            state = SweepState.OPPOSITE_RETURN;
+                        }
+                        break;
+                    case OPPOSITE_RETURN:
+                        command = primarySign * twist;
+                        if (Math.abs(offset) <= zeroTol) {
+                            zeroHeading = drive.heading();
+                            state = SweepState.PRIMARY_OUT;
+                        }
+                        break;
+                    case PARTIAL_RETURN:
+                        command = -primarySign * twist;
+                        if (primarySign > 0) {
+                            if (offset <= partialTarget) {
+                                state = SweepState.PRIMARY_OUT;
+                            }
+                        } else {
+                            if (offset >= partialTarget) {
+                                state = SweepState.PRIMARY_OUT;
+                            }
+                        }
+                        break;
+                    case HOLD_PRIMARY:
+                        command = 0.0;
+                        break;
+                }
+
+                drive.drive(0, 0, command);
+                telemetry.addData("Scan offset (deg)", offset);
+                telemetry.addData("Scan state", state);
             }
+
             updateStatus(label, lockedNow);
             telemetry.addData("Bearing (deg)", bearing);
+            telemetry.addData("Turn speed (|twist|)", twist);
+            telemetry.addData("Sweep offsets (deg)", sweepSummary);
             telemetry.update();
             idle();
         }
         drive.stopAll();
-        updateStatus(label + " – timeout", false);
+        updateStatus(label + " – cancelled", false);
         telemetry.update();
         return false;
     }
@@ -353,15 +478,23 @@ public abstract class BaseAuto extends LinearOpMode {
 
     /** Wait up to guardMs to achieve a tag lock (|bearing| ≤ tol). Returns true if locked. */
     private boolean requireLockOrTimeOut(long guardMs, String phase) {
-        return requireLockOrTimeOut(guardMs, phase, null);
+        return requireLockOrTimeOut(guardMs, phase, (ScanDirection) null);
     }
 
     private boolean requireLockOrTimeOut(long guardMs, String phase, Boolean scanClockwiseFirst) {
+        ScanDirection dir = (scanClockwiseFirst == null)
+                ? null
+                : (scanClockwiseFirst ? ScanDirection.CW : ScanDirection.CCW);
+        return requireLockOrTimeOut(guardMs, phase, dir);
+    }
+
+    private boolean requireLockOrTimeOut(long guardMs, String phase, ScanDirection direction) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
         final String label = (phase == null || phase.isEmpty()) ? "Acquire lock" : phase;
-        boolean cwFirst = (scanClockwiseFirst != null) ? scanClockwiseFirst : initialScanCW();
+        ScanDirection resolved = (direction == null) ? ScanDirection.CW : direction;
+        boolean cwFirst = resolved.isClockwise();
         double scanSign = cwFirst ? -1.0 : +1.0;
         long start = System.currentTimeMillis();
         long lastFlip = start;
@@ -577,14 +710,70 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence rotateToTarget(String phase, long timeoutMs, Boolean scanClockwiseFirst) {
+        public AutoSequence rotateToTarget(String phase,
+                                           ScanDirection direction,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg,
+                                           double oppositeSweepDeg) {
             return addStep(() -> {
                 lastAimReady = false;
-                lastLock = turnToGoalTag(timeoutMs, phase, scanClockwiseFirst);
+                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg);
                 if (!lastLock) {
                     telemetry.addLine("⚠️ No tag lock – continuing sequence");
                     telemetry.update();
                 }
+            });
+        }
+
+        public AutoSequence rotateToTarget(String phase,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg,
+                                           double oppositeSweepDeg) {
+            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg);
+        }
+
+        public AutoSequence rotateToTarget(String phase,
+                                           ScanDirection direction,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg) {
+            return addStep(() -> {
+                lastAimReady = false;
+                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, null);
+                if (!lastLock) {
+                    telemetry.addLine("⚠️ No tag lock – continuing sequence");
+                    telemetry.update();
+                }
+            });
+        }
+
+        public AutoSequence rotateToTarget(String phase,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg) {
+            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg);
+        }
+
+        public AutoSequence intake(String phase, boolean enabled) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, enabled ? "Enable intake" : "Disable intake");
+                lastLock = false;
+                lastAimReady = false;
+                updateStatus(label, false);
+                telemetry.addData("Intake state", enabled ? "ON" : "OFF");
+                telemetry.update();
+                intake.set(enabled);
+            });
+        }
+
+        public AutoSequence stop(String phase) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Stop all");
+                lastLock = false;
+                lastAimReady = false;
+                updateStatus(label, false);
+                telemetry.update();
+                stopAll();
+                updateStatus(label + " complete", false);
+                telemetry.update();
             });
         }
 
@@ -625,6 +814,61 @@ public abstract class BaseAuto extends LinearOpMode {
                 fireN(shots, requireLock, betweenShotsMs);
                 lastAimReady = false;
                 lastLock = requireLock && lastLock;
+            });
+        }
+
+        public AutoSequence eject(String phase) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Eject artifact");
+                lastLock = false;
+                lastAimReady = false;
+
+                updateStatus(label, false);
+                telemetry.addData("Eject RPM", TeleOpEjectTuning.RPM);
+                telemetry.addData("Eject duration (ms)", TeleOpEjectTuning.TIME_MS);
+                telemetry.update();
+
+                double previousTarget = launcher.targetRpm;
+                double previousHold = autoCtrl.hold();
+                boolean autoWasEnabled = autoCtrl.isAutoEnabled();
+                if (autoWasEnabled) {
+                    double manualSync = previousTarget;
+                    if (manualSync <= 0 && previousHold > 0) {
+                        manualSync = previousHold;
+                    }
+                    autoCtrl.onManualOverride(manualSync);
+                }
+
+                int ejectDuration = Math.max(100, TeleOpEjectTuning.TIME_MS);
+                int spinUpDelay = Math.max(100, ejectDuration / 3);
+
+                double ejectRpm = Math.max(0.0, TeleOpEjectTuning.RPM);
+                launcher.setTargetRpm(ejectRpm);
+                sleep(spinUpDelay);
+
+                boolean intakeWasOn = intake.isOn();
+                if (!intakeWasOn) intake.set(true);
+                feed.feedOnceBlocking();
+                sleep(ejectDuration);
+                if (!intakeWasOn) {
+                    sleep(FeedTuning.INTAKE_ASSIST_MS);
+                    intake.set(false);
+                }
+
+                double restoreRpm = previousTarget;
+                if (autoWasEnabled) {
+                    autoCtrl.setAutoEnabled(true);
+                    double holdTarget = previousHold;
+                    if (holdTarget <= 0) {
+                        holdTarget = (restoreRpm > 0) ? restoreRpm : autoSeedRpm();
+                    }
+                    launcher.setTargetRpm(holdTarget);
+                } else {
+                    launcher.setTargetRpm(restoreRpm);
+                }
+
+                updateStatus(label + " complete", false);
+                telemetry.update();
             });
         }
 

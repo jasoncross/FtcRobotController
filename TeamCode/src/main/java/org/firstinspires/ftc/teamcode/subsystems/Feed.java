@@ -18,12 +18,12 @@ import org.firstinspires.ftc.teamcode.config.FeedTuning;
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Shot cadence, feed, and eject)
  *   - firePower
  *       • Motor power applied during the feed pulse.
- *       • Shared across modes; increase toward 1.0 when rings stick, lower toward
+ *       • Shared across modes; increase toward 1.0 when artifacts stick, lower toward
  *         0.7 if jams occur.
  *   - fireTimeMs
  *       • Duration of the feed pulse in milliseconds (450–650 typical).
- *       • Coordinate with SharedRobotTuning.SHOT_BETWEEN_MS so cadence leaves
- *         enough recovery time.
+ *       • Confirm autonomous sequences leave enough recovery time between
+ *         feedOnceBlocking() calls for the flywheels to stay at speed.
  *   - minCycleMs
  *       • Minimum delay between feeds to prevent double-fires.
  *       • Keep aligned with TeleOpAllianceBase button debounce expectations.
@@ -38,7 +38,7 @@ import org.firstinspires.ftc.teamcode.config.FeedTuning;
  *
  * NOTES
  *   - Motor uses BRAKE zero-power behavior so the pusher stays loaded against the
- *     ring stack when idle.
+ *     artifact stack when idle.
  *   - Future encoder-based feeds can extend this class by replacing the timed
  *     sleep with RUN_TO_POSITION logic.
  */
@@ -47,8 +47,9 @@ public class Feed {
     // CHANGES (2025-10-30): Locked zero-power BRAKE + RUN_WITHOUT_ENCODER and guard before each power command.
     // CHANGES (2025-10-31): Added idle counter-rotation via FeedTuning.IDLE_HOLD_POWER when not firing.
     // CHANGES (2025-10-31): Added safeInit + idle hold gating so motors stay idle until START.
+    // CHANGES (2025-11-02): Clarified cadence guidance now that shot spacing is per AutoSequence.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
-    public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); coordinate with SHOT_BETWEEN_MS cadence
+    public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
     public double idleHoldPower = FeedTuning.IDLE_HOLD_POWER; // Counter-rotation while idle (0 = BRAKE only)
 

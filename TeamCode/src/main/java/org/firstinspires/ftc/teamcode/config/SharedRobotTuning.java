@@ -9,9 +9,6 @@
  *     TeleOpAllianceBase and BaseAuto.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md for ranges & examples)
- *   - SHOT_BETWEEN_MS
- *       • Minimum delay between autonomous shots enforced by BaseAuto.fireN().
- *       • Coordinate with Feed.minCycleMs to prevent overlapping feed cycles.
  *   - RPM_TOLERANCE
  *       • Shared ±RPM window considered "at speed" by BaseAuto, AutoAimSpeed,
  *         and TeleOpAllianceBase when no override is provided.
@@ -46,15 +43,13 @@ public final class SharedRobotTuning {
     private SharedRobotTuning() {}
 
     // CHANGES (2025-10-30): Moved INTAKE_ASSIST_MS to FeedTuning; kept deprecated alias for compatibility.
+    // CHANGES (2025-11-02): Removed autonomous shot spacing tunable; cadence now provided per sequence.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
 
     public static RevHubOrientationOnRobot.UsbFacingDirection USB_DIRECTION =
             RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
-
-    // --- Shot timing ---
-    public static long   SHOT_BETWEEN_MS            = 3000;   // BaseAuto.fireN() delay (ms); coordinate with Feed.minCycleMs
 
     // --- Launcher speed gate ---
     public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match

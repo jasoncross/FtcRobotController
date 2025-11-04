@@ -109,6 +109,7 @@ import java.util.Locale;
 public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
     // CHANGES (2025-10-31): Added safeInit gating and defaulted AutoSpeed + intake to ON after START.
+    // CHANGES (2025-11-04): StopAll now enforces BRAKE zero-power behavior across drive, launcher, feed, and intake.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -755,31 +756,30 @@ public abstract class TeleOpAllianceBase extends OpMode {
     protected void stopAll() {
         // DRIVE
         try {
-            // Prefer explicit stop() if your Drivebase exposes it
-            drive.stop();
+            drive.applyBrakeHold();
         } catch (Throwable t) {
-            try { drive.drive(0, 0, 0); } catch (Throwable ignored) {}
+            try { drive.stopAll(); } catch (Throwable ignored) {}
         }
 
         // LAUNCHER
         try {
-            launcher.stop();
+            launcher.applyBrakeHold();
         } catch (Throwable t) {
-            try { launcher.setTargetRpm(0); } catch (Throwable ignored) {}
+            try { launcher.stop(); } catch (Throwable ignored) {}
         }
 
         // FEED
         try {
-            feed.stop();
+            feed.applyBrakeHold();
         } catch (Throwable t) {
-            try { feed.setPower(0); } catch (Throwable ignored) {}
+            try { feed.stop(); } catch (Throwable ignored) {}
         }
 
         // INTAKE
         try {
-            intake.stop();
+            intake.applyBrakeHold();
         } catch (Throwable t) {
-            try { intake.set(false); } catch (Throwable ignored) {}
+            try { intake.stop(); } catch (Throwable ignored) {}
         }
     }
 

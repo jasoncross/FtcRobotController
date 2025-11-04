@@ -94,6 +94,7 @@ public class Drivebase {
 
     // ---------- Constructor for AUTONOMOUS (blocking helpers allowed) ----------
     // CHANGES (2025-11-04): Aligned Auto move() forward sign with TeleOp + added vector telemetry.
+    // CHANGES (2025-11-04): stopAll() now reapplies BRAKE zero-power behavior before zeroing power.
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
 
     public Drivebase(LinearOpMode op) {
@@ -302,8 +303,14 @@ public class Drivebase {
     /** Stop all drive motors. (Alias retained for compatibility with TeleOp StopAll.) */
     public void stop() { stopAll(); }
 
-    /** Stop all drive motors. */
-    public void stopAll() { setAllPower(0); }
+    /** Stop all drive motors and ensure BRAKE is engaged. */
+    public void stopAll() { applyBrakeHold(); }
+
+    /** Engage BRAKE on all motors and zero power. */
+    public void applyBrakeHold() {
+        setAllZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        setAllPower(0);
+    }
 
     // --- internal move/turn helpers ---
     private void setRunToPosition(int flT, int frT, int blT, int brT) {
@@ -318,6 +325,14 @@ public class Drivebase {
         stopAll();
         for (DcMotorEx m : new DcMotorEx[]{fl, fr, bl, br}) {
             m.setMode(baseRunModeAfterMove); // RUN_USING_ENCODER
+        }
+    }
+
+    private void setAllZeroPowerBehavior(DcMotor.ZeroPowerBehavior behavior) {
+        for (DcMotorEx m : new DcMotorEx[]{fl, fr, bl, br}) {
+            if (m.getZeroPowerBehavior() != behavior) {
+                m.setZeroPowerBehavior(behavior);
+            }
         }
     }
 

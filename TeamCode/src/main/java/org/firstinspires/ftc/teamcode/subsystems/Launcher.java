@@ -82,6 +82,7 @@ public class Launcher {
 
     // === CONSTRUCTOR ===
     // CHANGES (2025-10-31): Added safeInit to hold zero RPM during INIT.
+    // CHANGES (2025-11-04): Added applyBrakeHold() for StopAll + auto-restoring FLOAT on next command.
 
     public Launcher(HardwareMap hw) {
         // Retrieve motors from configuration
@@ -119,6 +120,7 @@ public class Launcher {
      * Converts RPM → ticks/second and uses closed-loop velocity control.
      */
     public void setTargetRpm(double rpm) {
+        ensureCoastMode();
         targetRpm = clamp(rpm, RPM_MIN, RPM_MAX);
         double ticksPerSec = rpmToTicksPerSec(targetRpm);
 
@@ -130,6 +132,15 @@ public class Launcher {
     /** Immediately stops both flywheels (open loop 0 power). */
     public void stop() {
         targetRpm = 0;
+        left.setPower(0);
+        right.setPower(0);
+    }
+
+    /** Engage BRAKE zero-power behavior and hold both flywheels at zero power. */
+    public void applyBrakeHold() {
+        targetRpm = 0;
+        left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        right.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         left.setPower(0);
         right.setPower(0);
     }
@@ -166,5 +177,15 @@ public class Launcher {
     /** Clamp helper for numeric safety. */
     private static double clamp(double v, double lo, double hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    /** Restore FLOAT zero-power behavior before commanding velocity. */
+    private void ensureCoastMode() {
+        if (left.getZeroPowerBehavior() != DcMotor.ZeroPowerBehavior.FLOAT) {
+            left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        }
+        if (right.getZeroPowerBehavior() != DcMotor.ZeroPowerBehavior.FLOAT) {
+            right.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        }
     }
 }

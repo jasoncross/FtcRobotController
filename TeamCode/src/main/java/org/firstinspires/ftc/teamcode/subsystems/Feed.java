@@ -48,6 +48,7 @@ public class Feed {
     // CHANGES (2025-10-31): Added idle counter-rotation via FeedTuning.IDLE_HOLD_POWER when not firing.
     // CHANGES (2025-10-31): Added safeInit + idle hold gating so motors stay idle until START.
     // CHANGES (2025-11-02): Clarified cadence guidance now that shot spacing is per AutoSequence.
+    // CHANGES (2025-11-04): Added applyBrakeHold() so StopAll explicitly latches BRAKE with zero power.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -95,6 +96,13 @@ public class Feed {
     public void stop() {
         applySafetyConfig();
         applyIdleHoldPower();
+    }
+
+    /** Force BRAKE zero-power behavior with no idle counter-rotation. */
+    public void applyBrakeHold() {
+        idleHoldActive = false;
+        applySafetyConfig();
+        motor.setPower(0.0);
     }
 
     /** Helper exposed for safety fallbacks and testing. */

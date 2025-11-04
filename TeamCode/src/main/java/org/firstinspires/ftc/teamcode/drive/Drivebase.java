@@ -93,6 +93,7 @@ public class Drivebase {
     private DcMotor.RunMode baseRunModeAfterMove = DcMotor.RunMode.RUN_USING_ENCODER;
 
     // ---------- Constructor for AUTONOMOUS (blocking helpers allowed) ----------
+    // CHANGES (2025-11-04): Aligned Auto move() forward sign with TeleOp + added vector telemetry.
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
 
     public Drivebase(LinearOpMode op) {
@@ -201,15 +202,22 @@ public class Drivebase {
 
         speed = clamp(speed, 0.1, 1.0);
 
-        // Polar (robot-centric) with 0°=forward
+        // Polar (robot-centric) with 0°=forward (match TeleOp forward sign)
         double rad = toRadians(degrees);
-        double y =  cos(rad); // +forward   (0° = forward)
-        double x =  sin(rad); // +right     (+90° = right)
+        double forwardRaw = cos(rad);   // prior convention (+) backward; log for reference
+        double lateral = sin(rad);      // +right (+90° = right)
+        double forward = -forwardRaw;   // ALIGN: positive distance now drives +forward
 
+        if (telemetry != null) {
+            telemetry.addData("Auto move vector",
+                    "hd=%.1f rawF=%.3f rawL=%.3f fwd=%.3f lat=%.3f",
+                    degrees, forwardRaw, lateral, forward, lateral);
+            telemetry.update();
+        }
 
         // Compensate lateral losses
-        double xAdj = x * STRAFE_CORRECTION;
-        double yAdj = y;
+        double xAdj = lateral * STRAFE_CORRECTION;
+        double yAdj = forward;
 
         // Wheel multipliers (no twist)
         double flMult = yAdj + xAdj;

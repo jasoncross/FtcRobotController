@@ -39,6 +39,7 @@ public class Intake {
     public double powerOn = IntakeTuning.POWER_ON; // Shared intake power; referenced by TeleOp + Auto assists (see TunableDirectory)
 
     // CHANGES (2025-10-31): Added safeInit to guarantee zero power during INIT.
+    // CHANGES (2025-11-04): Added applyBrakeHold() to reinforce BRAKE during StopAll events.
 
     public Intake(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "Intake");
@@ -68,5 +69,12 @@ public class Intake {
     /** Immediately turns intake OFF (safe to call repeatedly). */
     public void stop() {
         set(false);
+    }
+
+    /** Ensure BRAKE zero-power behavior is set and hold motor idle. */
+    public void applyBrakeHold() {
+        motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        motor.setPower(0.0);
+        on = false;
     }
 }

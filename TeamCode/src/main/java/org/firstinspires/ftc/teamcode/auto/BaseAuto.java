@@ -99,6 +99,7 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        stay visible while extra status lines append beneath them.
     // CHANGES (2025-11-03): Renamed aim() → readyToLaunch(), added RPM settle gating, and matched the
     //                        AutoSpeed calibration flow used by TeleOp for launcher prep.
+    // CHANGES (2025-11-04): stopAll() now latches BRAKE zero-power behavior across subsystems for end-of-match hold.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -617,10 +618,10 @@ public abstract class BaseAuto extends LinearOpMode {
 
     /** Stop all active subsystems (safety catch-all). */
     protected final void stopAll() {
-        try { drive.stop(); } catch (Throwable ignored) {}
-        try { launcher.stop(); } catch (Throwable ignored) {}
-        try { feed.setIdleHoldActive(false); feed.stop(); } catch (Throwable ignored) {}
-        try { intake.stop(); } catch (Throwable ignored) {}
+        try { drive.applyBrakeHold(); } catch (Throwable ignored) {}
+        try { launcher.applyBrakeHold(); } catch (Throwable ignored) {}
+        try { feed.setIdleHoldActive(false); feed.applyBrakeHold(); } catch (Throwable ignored) {}
+        try { intake.applyBrakeHold(); } catch (Throwable ignored) {}
         try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
     }
     /** Shutdown the vision portal safely if it was created. */

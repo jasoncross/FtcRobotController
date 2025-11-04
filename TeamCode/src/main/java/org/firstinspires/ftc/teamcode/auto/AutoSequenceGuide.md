@@ -56,9 +56,9 @@ telemetry as the active **Phase** string while that step runs.
 | `move(label, distanceIn, headingDeg, speedCap)` | Drives a straight line while holding the requested heading. | Distance is signed; heading is absolute (field-centric, 0° = upfield). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
-| `spinToAutoRpm(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
+| `spinToAutoRpmDefault(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
 | `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied. | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. |
-| `aim(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher sits inside the tolerance band or the timeout hits. |
+| `readyToLaunch(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window + settle timer. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher stays inside the tolerance band for `SharedRobotTuning.RPM_READY_SETTLE_MS` or the timeout hits. |
 | `fire(label, shots, requireLock, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireLock` is false, skips the AprilTag lock check but still enforces RPM readiness. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
 | `eject(label)` | Runs the TeleOp eject routine mid-auto. | Temporarily overrides AutoSpeed, spins to `TeleOpEjectTuning.RPM`, feeds once with intake assist, then restores the previous RPM/AutoSpeed state. |
@@ -78,9 +78,9 @@ telemetry as the active **Phase** string while that step runs.
 ```java
 sequence()
     .move("Drive to standoff", 36.0, 0.0, 0.55)
-    .spinToAutoRpm("Pre-spin launcher")
+    .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30)
-    .aim("Spin launcher", 3200)
+    .readyToLaunch("Ready launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .waitFor("Stabilize", 500)
     .run();
@@ -102,9 +102,9 @@ the goal tag.
 sequence()
     .rememberHeading("Capture start heading")
     .move("Bump off wall", 2.0, 0.0, 0.35)
-    .spinToAutoRpm("Pre-spin launcher")
+    .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30)
-    .aim("Spin launcher", 3200)
+    .readyToLaunch("Ready launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .returnToStoredHeading("Face upfield", 0.40)
     .move("Drive to classifier", 24.0, 0.0, 0.55)
@@ -173,19 +173,20 @@ builder methods so telemetry remains responsive.
 
 ---
 
-## Choosing Between `spinToAutoRpm(...)` and `aim(...)`
+## Choosing Between `spinToAutoRpmDefault(...)` and `readyToLaunch(...)`
 
-- **`spinToAutoRpm(...)`** is a quick warm-up step. It enables
+- **`spinToAutoRpmDefault(...)`** is a quick warm-up step. It enables
   AutoSpeed, seeds the controller with the default autonomous RPM, and
   commands that value immediately. Use it when you want the wheels
   spinning before the goal tag is visible (for example, while driving to
   a launch spot). The launcher keeps that RPM latched until another step
   refreshes it.
-- **`aim(...)`** requires a valid AprilTag lock (pair it with
+- **`readyToLaunch(...)`** requires a valid AprilTag lock (pair it with
   `rotateToTarget(...)`). While it runs, AutoSpeed continually samples
-  tag range and recomputes the RPM target until the launcher sits within
-  `SharedRobotTuning.RPM_TOLERANCE`, or the timeout expires. When the
-  step finishes, the same AutoSpeed hold keeps the wheels at the last
+  tag range and recomputes the RPM target until the launcher stays
+  within `SharedRobotTuning.RPM_TOLERANCE` for the
+  `SharedRobotTuning.RPM_READY_SETTLE_MS` window, or the timeout expires.
+  When the step finishes, the same AutoSpeed hold keeps the wheels at the last
   calculated target.
 
 In both cases the launcher continues spinning at the commanded AutoSpeed

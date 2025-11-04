@@ -201,7 +201,7 @@ All autonomous modes extend `BaseAuto`, which now surfaces a shared telemetry bu
 - **AprilTag Lock** (`LOCKED`/`SEARCHING`)
 - **Phase** (current step description from the active helper)
 
-While those lines remain visible, the helper methods continue to enforce **no-shot-without-lock** and **±50 RPM at-speed** gating before the feed motor ever cycles. Each firing step now supplies its own between-shot delay (the stock autos use **3000 ms**) and `spinToAutoRpm(...)` keeps the launcher warm while the robot drives or scans. `stopAll()` plus a `"Auto complete – DS will queue TeleOp."` telemetry banner finish every routine. `VisionAprilTag` keeps the Obelisk AprilTag observer running in the background during all phases so the latched motif carries into TeleOp.
+While those lines remain visible, the helper methods continue to enforce **no-shot-without-lock** and **±50 RPM at-speed** gating before the feed motor ever cycles. Each firing step now supplies its own between-shot delay (the stock autos use **3000 ms**) and `spinToAutoRpmDefault(...)` keeps the launcher warm while the robot drives or scans. `stopAll()` plus a `"Auto complete – DS will queue TeleOp."` telemetry banner finish every routine. `VisionAprilTag` keeps the Obelisk AprilTag observer running in the background during all phases so the latched motif carries into TeleOp.
 
 Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the fluent API’s method reference and examples.
 
@@ -209,7 +209,7 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 1. **Drive forward 36"** to establish the standoff range.
 2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
 3. **Scan counter-clockwise** until AprilTag 20 centers within ±1°.
-4. **Spin the launcher** with AutoSpeed until the wheels are within ±50 RPM of target.
+4. **Ready the launcher** with AutoSpeed until the wheels hold within ±50 RPM for the shared settle window.
 5. **Fire three artifacts** with ~3 s spacing.
 6. **Hold position** for the remainder of the autonomous period.
 
@@ -217,7 +217,7 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 1. **Drive forward 36"** to the calibrated firing spot.
 2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
 3. **Scan clockwise** for AprilTag 24 and settle within ±1°.
-4. **Spin the launcher** to target RPM (±50 RPM tolerance).
+4. **Ready the launcher** to target RPM (±50 RPM tolerance with settle).
 5. **Fire three artifacts** with ~3 s spacing.
 6. **Remain parked** to leave the lane clear for the partner bot.
 
@@ -225,7 +225,7 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 1. **Record heading and bump forward 2"** to clear the wall.
 2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
 3. **Scan counter-clockwise** for AprilTag 20 until centered within ±1°.
-4. **Spin the launcher** to target RPM with the shared tolerance window.
+4. **Ready the launcher** to target RPM with the shared tolerance + settle window.
 5. **Fire three artifacts** with the 3 s cadence.
 6. **Return to the original heading**, honoring the recorded IMU value.
 7. **Drive forward 24"** toward the classifier lane.
@@ -234,12 +234,12 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 1. **Record heading and bump forward 2"** to clear the wall.
 2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
 3. **Scan clockwise** for AprilTag 24 until centered within ±1°.
-4. **Spin the launcher** into the ±50 RPM window.
+4. **Ready the launcher** into the ±50 RPM window with the shared settle timer.
 5. **Fire three artifacts** separated by ~3 s.
 6. **Return to the starting heading** using the shared IMU helper.
 7. **Drive forward 24"** upfield toward the classifier.
 
-> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. Feeding never occurs unless both lock and at-speed checks succeed, aimSpinUntilReady() now seeds launcher RPM through AutoSpeed (honoring `AutoRpmConfig.DEFAULT_NO_TAG_RPM`) before the first tag lock, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
+> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. Feeding never occurs unless both lock and at-speed checks succeed, `readyLauncherUntilReady()` now shares the TeleOp AutoSpeed curve while seeding from `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` and waiting out `SharedRobotTuning.RPM_READY_SETTLE_MS`, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
 
 ---
 ## Obelisk AprilTag Signal (DECODE 2025–26)
@@ -314,7 +314,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 
 ## Revision History
 - **2025-11-04** – Corrected the Autonomous `move(...)` forward vector so positive distances now drive upfield like TeleOp, added inline telemetry logging for raw/applied vectors to confirm heading math, and documented the fix inside `Drivebase.java`.
-- **2025-11-03** – Elevated AutoSequence telemetry labels so each phase now prints as the first line with a spacer before the shared status bundle, making the active step obvious while additional data (RPM, range, etc.) continues to append underneath.
+- **2025-11-03** – Elevated AutoSequence telemetry labels so each phase now prints as the first line with a spacer before the shared status bundle, making the active step obvious while additional data (RPM, range, etc.) continues to append underneath. Later in the day we renamed the launcher prep step to `readyToLaunch(...)`, added a shared RPM settle timer (`SharedRobotTuning.RPM_READY_SETTLE_MS`), unified Auto launcher spin-up with the TeleOp AutoSpeed curve, refreshed telemetry (distance/target/actual/tolerance/remaining time) during launcher prep, and updated docs + autos to use `spinToAutoRpmDefault(...)`/`readyToLaunch(...)`.
 - **2025‑11-02** – **Refreshed all four autonomous routines** (Blue/Red Target + Human) to follow the latest match playbook: 36" depot standoffs, 2" wall-clear bumps on human starts, ±1° tag lock + ±50 RPM gating before every shot, 3 s cadence spacing, 24" human-lane pushes, enhanced telemetry (Alliance/Auto/Start Pose/Obelisk/Tag Lock/Phase), persistent Obelisk observation, and a shared "Auto complete – DS will queue TeleOp." banner with `stopAll()` catch-all shutdown, BaseAuto start/stop parity with TeleOp (intake auto-enables at START and feed idle hold releases inside stopAll()), **plus a new `AutoSequence` builder that chains move/rotate/aim/fire steps with adjustable speed caps and optional tag-lock gating—rewriting all four autos with the fluent API resolved the backwards drive regression by standardizing drive power limits and makes future route tweaks a single-line edit. Documented the sequencing workflow in `auto/AutoSequenceGuide.md`, linked it from the README, and captured the expanded builder methods for future route authors.** Extended the builder with `spinToAutoRpm(...)`, updated all autos to pre-spin the launcher before tag scans, parameterized the volley cadence per sequence (removing the shared tunable), reaffirmed that AutoSpeed stays enabled during feeds, and migrated the detailed builder breakdown out of this README in favor of the dedicated guide. Added AutoSpeed hold protection inside `BaseAuto.fireN(...)` so the launcher never sags between artifacts and updated docs/terminology to call the scoring pieces artifacts consistently.
 - **2025‑10-31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, ensured both TeleOp and Auto seed launcher RPM exclusively through AutoSpeed so BaseAuto now idles at the AutoRpmConfig default before first tag lock, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.

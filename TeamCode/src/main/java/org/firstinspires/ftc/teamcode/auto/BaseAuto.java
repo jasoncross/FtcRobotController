@@ -52,7 +52,7 @@ import java.util.Locale;
  *       • Coordinate with Launcher.atSpeedToleranceRPM and AutoAimSpeed’s local
  *         copy when adjusting precision.
  *   - SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED
- *       • Seeds launcher RPM before the first goal lock via spinLauncherToAutoRpm().
+ *       • Seeds launcher RPM before the first goal lock via spinLauncherToAutoRpmDefault().
  *       • Mirrors TeleOp's AutoSpeed warm-up so both modes share the same idle spin.
  *   - AutoRpmConfig (NEAR/FAR anchors + SMOOTH_ALPHA)
  *       • Defines the distance→RPM curve applied to LauncherAutoSpeedController.
@@ -65,8 +65,8 @@ import java.util.Locale;
  *   - turnToGoalTag(phase, direction, speed, primarySweepDeg, oppositeSweepDeg)
  *       • Scans for the alliance goal tag using repeatable angular sweeps and
  *         returns once the tuned lock tolerance is satisfied.
- *   - aimSpinUntilReady(timeoutMs)
- *       • Enables AutoSpeed, feeds distance data, and waits for RPM readiness.
+ *   - readyLauncherUntilReady(timeoutMs)
+ *       • Enables AutoSpeed, feeds distance data, waits for settle time inside the RPM window.
  *   - fireN(count)
  *       • Gated shooting loop requiring tag lock + RPM readiness between shots.
  *   - turnBackTo(...), driveForwardInches(...), stopAll(), stopVisionIfAny()
@@ -97,6 +97,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        pre-spin flywheels ahead of tag locks.
     // CHANGES (2025-11-03): Raised sequence labels to the top of telemetry with spacing so active phases
     //                        stay visible while extra status lines append beneath them.
+    // CHANGES (2025-11-03): Renamed aim() → readyToLaunch(), added RPM settle gating, and matched the
+    //                        AutoSpeed calibration flow used by TeleOp for launcher prep.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -142,6 +144,7 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double DEF_DRIVE_CAP      = 0.50;
     private static final double DEF_RPM_TOL        = 50.0;
     private static final double DEF_AUTO_SEED_RPM  = 2500.0;
+    private static final long   DEF_RPM_SETTLE_MS  = 150L;
     private static final long   DEFAULT_BETWEEN_MS = 3000; // Default between-shot wait used when callers pass ≤ 0
 
     private String autoOpModeName;
@@ -153,6 +156,11 @@ public abstract class BaseAuto extends LinearOpMode {
     private double autoSeedRpm() {
         try { return SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; }
         catch (Throwable t) { return DEF_AUTO_SEED_RPM; }
+    }
+
+    private long rpmSettleMs() {
+        try { return SharedRobotTuning.RPM_READY_SETTLE_MS; }
+        catch (Throwable t) { return DEF_RPM_SETTLE_MS; }
     }
 
     @Override
@@ -359,45 +367,97 @@ public abstract class BaseAuto extends LinearOpMode {
      * Enable AutoSpeed, feed AprilTag distance into the curve, and wait for launcher RPM
      * to enter the tuned tolerance window. Returns true when ready before timeout.
      */
-    protected final boolean aimSpinUntilReady(long timeoutMs) {
-        return aimSpinUntilReady(timeoutMs, "Spin launcher");
+    protected final boolean readyLauncherUntilReady(long timeoutMs) {
+        return readyLauncherUntilReady(timeoutMs, "Ready launcher");
     }
 
-    protected final boolean aimSpinUntilReady(long timeoutMs, String phase) {
+    protected final boolean readyLauncherUntilReady(long timeoutMs, String phase) {
         drive.stopAll();
         autoCtrl.setAutoEnabled(true);
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
 
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double M_TO_IN = 39.37007874015748;
-        boolean hadFix = false;
-        long start = System.currentTimeMillis();
+        final long settleMs = rpmSettleMs();
+        final double tolerance = rpmTol();
+        final double fallbackRpm = autoSeedRpm();
+        try { autoCtrl.setDefaultRpm(fallbackRpm); } catch (Throwable ignored) {}
 
-        while (opModeIsActive() && (System.currentTimeMillis() - start) < timeoutMs) {
+        boolean hadLock = false;
+        long start = System.currentTimeMillis();
+        long settleStart = -1L;
+
+        while (opModeIsActive()) {
+            long now = System.currentTimeMillis();
+            if ((now - start) >= timeoutMs) {
+                break;
+            }
+
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
-            Double in = null;
+            Double distanceIn = null;
             if (det != null) {
                 double rM = vision.getScaledRange(det);
-                if (!Double.isNaN(rM) && Double.isFinite(rM)) { in = rM * M_TO_IN; hadFix = true; }
+                if (!Double.isNaN(rM) && Double.isFinite(rM)) {
+                    distanceIn = rM * M_TO_IN;
+                    hadLock = true;
+                }
             }
 
-            double target = autoCtrl.updateWithVision(in);
-            launcher.setTargetRpm(target);
+            double targetRpm;
+            if (distanceIn != null) {
+                targetRpm = autoCtrl.updateWithVision(distanceIn);
+            } else if (hadLock) {
+                targetRpm = autoCtrl.updateWithVision(null);
+            } else {
+                targetRpm = fallbackRpm;
+            }
 
-            boolean atSpeed = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol();
-            updateStatus(phase, hadFix && in != null);
+            launcher.setTargetRpm(targetRpm);
+
+            double currentRpm = launcher.getCurrentRpm();
+            double error = Math.abs(currentRpm - launcher.targetRpm);
+            boolean withinBand = error <= tolerance;
+            String distanceText = (distanceIn == null) ? "---" : String.format(Locale.US, "%.1f", distanceIn);
+
+            if (withinBand && hadLock) {
+                if (settleStart < 0) settleStart = now;
+                if ((now - settleStart) >= settleMs) {
+                    updateStatus(phase + " – ready", true);
+                    telemetry.addData("Phase", phase);
+                    telemetry.addData("Distance (in)", distanceText);
+                    telemetry.addData("Target RPM", launcher.targetRpm);
+                    telemetry.addData("Current RPM", currentRpm);
+                    telemetry.addData("Tolerance", tolerance);
+                    telemetry.addData("Within band", withinBand);
+                    telemetry.addData("Time remaining (ms)", Math.max(0, timeoutMs - (now - start)));
+                    telemetry.update();
+                    return true;
+                }
+            } else {
+                settleStart = -1L;
+            }
+
+            updateStatus(phase, hadLock && distanceIn != null);
+            telemetry.addData("Phase", phase);
+            telemetry.addData("Distance (in)", distanceText);
             telemetry.addData("Target RPM", launcher.targetRpm);
-            telemetry.addData("Current RPM", launcher.getCurrentRpm());
-            telemetry.addData("Range (in)", in);
+            telemetry.addData("Current RPM", currentRpm);
+            telemetry.addData("Tolerance", tolerance);
+            telemetry.addData("Within band", withinBand);
+            telemetry.addData("Time remaining (ms)", Math.max(0, timeoutMs - (now - start)));
             telemetry.update();
-            if (atSpeed) {
-                return true;
-            }
+
             idle();
         }
+
         updateStatus(phase + " – timeout", false);
+        telemetry.addData("Phase", phase);
+        telemetry.addData("Distance (in)", "---");
         telemetry.addData("Target RPM", launcher.targetRpm);
         telemetry.addData("Current RPM", launcher.getCurrentRpm());
+        telemetry.addData("Tolerance", tolerance);
+        telemetry.addData("Within band", false);
+        telemetry.addData("Time remaining (ms)", 0);
         telemetry.update();
         return false;
     }
@@ -614,7 +674,7 @@ public abstract class BaseAuto extends LinearOpMode {
         return clamp(requested, 0.2, Math.max(0.2, defaultCap));
     }
 
-    protected final void spinLauncherToAutoRpm(String phase) {
+    protected final void spinLauncherToAutoRpmDefault(String phase) {
         String label = (phase == null || phase.isEmpty()) ? "Spin to auto RPM" : phase;
         drive.stopAll();
         autoCtrl.setAutoEnabled(true);
@@ -709,12 +769,18 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence spinToAutoRpm(String phase) {
+        public AutoSequence spinToAutoRpmDefault(String phase) {
             return addStep(() -> {
                 lastLock = false;
                 lastAimReady = false;
-                spinLauncherToAutoRpm(phase);
+                spinLauncherToAutoRpmDefault(phase);
             });
+        }
+
+        @Deprecated
+        public AutoSequence spinToAutoRpm(String phase) {
+            telemetry.log().add("DEPRECATED AutoSequence.spinToAutoRpm(...) – use spinToAutoRpmDefault(...)");
+            return spinToAutoRpmDefault(phase);
         }
 
         public AutoSequence rotateToTarget(String phase,
@@ -784,14 +850,20 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence aim(String phase, long timeoutMs) {
+        public AutoSequence readyToLaunch(String phase, long timeoutMs) {
             return addStep(() -> {
-                lastAimReady = aimSpinUntilReady(timeoutMs, phase);
+                lastAimReady = readyLauncherUntilReady(timeoutMs, phase);
                 if (!lastAimReady) {
                     telemetry.addLine("⚠️ Launcher not at speed before timeout");
                     telemetry.update();
                 }
             });
+        }
+
+        @Deprecated
+        public AutoSequence aim(String phase, long timeoutMs) {
+            telemetry.log().add("DEPRECATED AutoSequence.aim(...) – use readyToLaunch(...)");
+            return readyToLaunch(phase, timeoutMs);
         }
 
         public AutoSequence waitFor(String phase, long milliseconds) {

@@ -14,6 +14,11 @@
  *         and TeleOpAllianceBase when no override is provided.
  *       • Keep aligned with Launcher.atSpeedToleranceRPM if you tighten or loosen
  *         precision expectations.
+ *   - RPM_READY_SETTLE_MS (ADDED 2025-11-03)
+ *       • Minimum time the launcher must remain inside the RPM window before
+ *         BaseAuto/TeleOp declare it "ready".
+ *       • Keep modest so volleys remain responsive while filtering transient
+ *         noise after large RPM adjustments.
  *   - LOCK_TOLERANCE_DEG
  *       • Bearing tolerance used when declaring an AprilTag lock.
  *       • Ensure Drivebase.TURN_TOLERANCE_DEG and TagAimController gains support
@@ -53,6 +58,7 @@ public final class SharedRobotTuning {
 
     // --- Launcher speed gate ---
     public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
+    public static long   RPM_READY_SETTLE_MS        = 150L;   // Time launcher must remain inside tolerance before declaring ready
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG

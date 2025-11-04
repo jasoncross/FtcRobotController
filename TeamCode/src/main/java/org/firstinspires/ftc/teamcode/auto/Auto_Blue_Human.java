@@ -23,8 +23,8 @@ import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
  *       • Sweeps counter-clockwise up to 90° after the wall-clear, then checks
  *         30° clockwise while searching for Tag 20. Increase the sweep angles
  *         or speed fraction for more aggressive hunts.
- *   - aim(timeout 3200 ms)
- *       • Waits for the launcher to reach SharedRobotTuning.RPM_TOLERANCE.
+ *   - readyToLaunch(timeout 3200 ms)
+ *       • Waits for the launcher to reach SharedRobotTuning.RPM_TOLERANCE and settle.
  *   - fire(shots = 3, betweenShotsMs = 3000)
  *       • Supplies cadence inline so each sequence controls its own spacing.
  *   - move(... 24 in, heading 0°, speed 0.55)
@@ -53,6 +53,8 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-10-31): Switched to AutoSequence for clearer movement/aim/fire scripting
     //                        with adjustable power caps and explicit tag scan control.
     // CHANGES (2025-11-02): Added AutoSpeed pre-spin warm-up and configurable volley spacing parameter.
+    // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
+    //                        adopted the shared AutoSpeed settle behavior.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -66,9 +68,9 @@ public class Auto_Blue_Human extends BaseAuto {
         sequence()
                 .rememberHeading("Record start heading")
                 .move("Clear wall (drive 2 in)", 2.0, 0.0, 0.35)
-                .spinToAutoRpm("Pre-spin launcher to auto RPM")
+                .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .rotateToTarget("Scan for Tag 20", ScanDirection.CCW, 0.25, 90, 30)
-                .aim("Spin launcher for volley", 3200)
+                .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire 3-shot volley", 3, true, 3000)
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive 24 in upfield", 24.0, 0.0, 0.55)

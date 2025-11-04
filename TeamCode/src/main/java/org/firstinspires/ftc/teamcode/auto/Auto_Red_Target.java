@@ -22,9 +22,9 @@ import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
  *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 180°/-90°)
  *       • Sweeps clockwise up to 180°, then backs counter-clockwise to 90° shy of
  *         center before heading clockwise again while searching for Tag 24.
- *   - aim(timeout 3200 ms)
- *       • Waits for AutoSpeed to reach the shared RPM window defined in
- *         SharedRobotTuning.RPM_TOLERANCE.
+ *   - readyToLaunch(timeout 3200 ms)
+ *       • Waits for AutoSpeed to reach the shared RPM window + settle time defined in
+ *         SharedRobotTuning.
  *   - fire(shots = 3, betweenShotsMs = 3000)
  *       • Controls cadence inline with the sequence.
  *
@@ -48,6 +48,8 @@ public class Auto_Red_Target extends BaseAuto {
     // CHANGES (2025-10-31): Converted to AutoSequence for declarative standoff/aim/fire scripting
     //                        while preserving depot hold spacing.
     // CHANGES (2025-11-02): Added AutoSpeed pre-spin stage and explicit cadence parameter for volleys.
+    // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
+    //                        adopted the shared AutoSpeed settle behavior.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew (edit to refresh the Start Pose
@@ -58,10 +60,10 @@ public class Auto_Red_Target extends BaseAuto {
     protected void runSequence() throws InterruptedException {
         sequence()
                 .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
-                .spinToAutoRpm("Pre-spin launcher to auto RPM")
+                .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
                 .rotateToTarget("Scan for Tag 20", ScanDirection.CW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
-                .aim("Spin launcher for volley", 3200)
+                .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire 3-shot volley", 3, true, 3000)
                 .waitFor("Hold position", 500)
                 .run();

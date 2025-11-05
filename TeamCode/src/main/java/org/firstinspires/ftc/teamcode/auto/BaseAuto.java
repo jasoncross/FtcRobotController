@@ -17,6 +17,7 @@ import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
+import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -100,6 +101,8 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-11-03): Renamed aim() → readyToLaunch(), added RPM settle gating, and matched the
     //                        AutoSpeed calibration flow used by TeleOp for launcher prep.
     // CHANGES (2025-11-04): stopAll() now latches BRAKE zero-power behavior across subsystems for end-of-match hold.
+    // CHANGES (2025-11-05): Applied VisionTuning range scale during Auto init and added
+    //                        AutoSequence.visionMode(...) for mid-sequence AprilTag profile swaps.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -171,7 +174,11 @@ public abstract class BaseAuto extends LinearOpMode {
         // Create drivetrain with IMU + encoder helpers for field-aligned movement.
         drive = new Drivebase(this);
         // Initialize AprilTag vision; guard against missing camera on practice bot.
-        try { vision = new VisionAprilTag(); vision.init(hardwareMap, "Webcam 1"); } catch (Exception ex) { vision = null; }
+        try {
+            vision = new VisionAprilTag();
+            vision.init(hardwareMap, "Webcam 1");
+            try { vision.setRangeScale(VisionTuning.RANGE_SCALE); } catch (Throwable ignored) {}
+        } catch (Exception ex) { vision = null; }
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
         intake   = new Intake(hardwareMap);     // Floor intake
@@ -824,6 +831,40 @@ public abstract class BaseAuto extends LinearOpMode {
                                            double turnSpeedFraction,
                                            double primarySweepDeg) {
             return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg);
+        }
+
+        public AutoSequence visionMode(String phase, VisionTuning.Mode mode) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Select vision profile");
+                lastLock = false;
+                lastAimReady = false;
+                updateStatus(label, false);
+
+                VisionTuning.Mode requested = (mode != null) ? mode : VisionTuning.DEFAULT_MODE;
+                telemetry.addData("Requested mode", requested);
+
+                if (vision == null) {
+                    telemetry.addLine("⚠️ Vision unavailable – skipping profile change");
+                } else {
+                    try {
+                        vision.applyProfile(requested);
+                        try { vision.setRangeScale(VisionTuning.RANGE_SCALE); } catch (Throwable ignored) {}
+
+                        VisionTuning.Mode activeMode = vision.getActiveMode();
+                        VisionTuning.Profile profile = vision.getActiveProfile();
+                        telemetry.addData("Active mode", activeMode);
+                        if (profile != null) {
+                            telemetry.addData("Resolution", String.format(Locale.US, "%dx%d@%dfps", profile.width, profile.height, profile.fps));
+                            telemetry.addData("Decimation", profile.decimation);
+                            telemetry.addData("Process every N", profile.processEveryN);
+                        }
+                    } catch (IllegalStateException ise) {
+                        telemetry.addLine("⚠️ Vision profile error: " + ise.getMessage());
+                    }
+                }
+
+                telemetry.update();
+            });
         }
 
         public AutoSequence intake(String phase, boolean enabled) {

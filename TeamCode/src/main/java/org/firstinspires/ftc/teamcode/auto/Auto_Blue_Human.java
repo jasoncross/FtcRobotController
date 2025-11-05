@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.auto;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
+import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 /*
  * FILE: Auto_Blue_Human.java
@@ -55,6 +56,7 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-11-02): Added AutoSpeed pre-spin warm-up and configurable volley spacing parameter.
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
+    // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -66,6 +68,7 @@ public class Auto_Blue_Human extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
+                .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .move("Clear wall (drive 2 in)", 2.0, 0.0, 0.35)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")

@@ -58,6 +58,7 @@ telemetry as the active **Phase** string while that step runs.
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpmDefault(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
 | `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied. | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. |
+| `visionMode(label, mode)` | Swaps the AprilTag vision profile mid-sequence. | Calls `VisionAprilTag.applyProfile(...)`, reapplies `VisionTuning.RANGE_SCALE`, and logs the active resolution so you can flip between `P480` and `P720` before aim steps. |
 | `readyToLaunch(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window + settle timer. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher stays inside the tolerance band for `SharedRobotTuning.RPM_READY_SETTLE_MS` or the timeout hits. |
 | `fire(label, shots, requireLock, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireLock` is false, skips the AprilTag lock check but still enforces RPM readiness. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
@@ -160,8 +161,7 @@ competition code.
 The `.custom(...)` hook runs inside your auto class, so you can access the
 same subsystems that `BaseAuto` exposes. Common use cases include:
 
-- **Vision profile swaps:** `custom("Enable close-range pipeline", () -> vision.applyProfile(...))`
-  lets you change AprilTag settings mid-run after moving closer to the goal.
+- **Vision profile swaps:** Use `.visionMode("Switch to 720p", VisionTuning.Mode.P720)` when you want to change pipelines mid-run without writing a custom block.
 - **Sensor logging:** Push a one-off telemetry line (for example, range
   sensor distance) before taking an action.
 - **Conditional logic:** Check a sensor and branch by queuing additional

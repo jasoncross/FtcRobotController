@@ -86,6 +86,7 @@ TeamCode/
     │   ├── ControllerTuning.java             ← Trigger thresholds
     │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
     │   ├── FeedTuning.java                   ← Feed power, duration, cooldown
+    │   ├── FeedStopConfig.java               ← Feed gate servo scaling + timing
     │   ├── IntakeTuning.java                 ← Intake motor power
     │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
     │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
@@ -157,6 +158,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply.
 - Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
 - Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
+- FeedStop servo (`config/FeedStopConfig.java`) defaults to **BLOCK**, swings to **RELEASE** `FIRE_LEAD_MS` (50 ms) before the feed motor powers, holds for `RELEASE_HOLD_MS` (250 ms), and automatically re-latches unless another fire request extends the window. TeleOp surfaces state/position/hold telemetry and Auto calls `feed.update()` each loop to keep the gate non-blocking.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
 
 ### Haptics
@@ -315,6 +317,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-06** – Integrated a FeedStop servo gate across Feed/TeleOp/BaseAuto, added `config/FeedStopConfig.java` tunables (scale, block/release, hold, lead), refreshed telemetry + StopAll handling so the gate re-latches cleanly, and updated docs/Tunable Directory to explain the new feed blocker behavior.
 - **2025-11-05** – Aligned Autonomous range scaling with TeleOp by applying `VisionTuning.RANGE_SCALE` during BaseAuto init, added an `AutoSequence.visionMode(...)` builder step for runtime AprilTag profile swaps, updated both human-side autos to begin in the 720p sighting profile, and refreshed docs/Tunable Directory to describe the shared calibration helper.
 - **2025-11-04** – Corrected the Autonomous `move(...)` forward vector so positive distances now drive upfield like TeleOp, added inline telemetry logging for raw/applied vectors to confirm heading math, documented the fix inside `Drivebase.java`, and updated `stopAll()` in TeleOp + Auto to reapply BRAKE mode on every drivetrain/subsystem motor (with the launcher restoring FLOAT on the next command) so endgame holds resist pushes from alliance partners.
 - **2025-11-03** – Elevated AutoSequence telemetry labels so each phase now prints as the first line with a spacer before the shared status bundle, making the active step obvious while additional data (RPM, range, etc.) continues to append underneath. Later in the day we renamed the launcher prep step to `readyToLaunch(...)`, added a shared RPM settle timer (`SharedRobotTuning.RPM_READY_SETTLE_MS`), unified Auto launcher spin-up with the TeleOp AutoSpeed curve, refreshed telemetry (distance/target/actual/tolerance/remaining time) during launcher prep, and updated docs + autos to use `spinToAutoRpmDefault(...)`/`readyToLaunch(...)`.

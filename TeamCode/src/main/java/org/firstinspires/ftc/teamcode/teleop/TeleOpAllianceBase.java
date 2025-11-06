@@ -227,6 +227,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         launcher.safeInit();
         feed.safeInit();
         intake.safeInit();
+        feed.initFeedStop(hardwareMap, telemetry);
 
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
@@ -394,6 +395,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void loop() {
+        if (feed != null) feed.update();
+
         // -------- High-priority Start edge-detect (works even while STOPPED) --------
         boolean start1 = gamepad1.start, start2 = gamepad2.start;
         boolean startPressed = (!lastStartG1 && start1) || (!lastStartG2 && start2);
@@ -415,6 +418,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 autoStopTriggered = true;
                 stopLatched = true;
                 feed.setIdleHoldActive(false); // keep feed fully stopped while StopAll is latched
+                feed.setBlock();
                 stopAll();
                 telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
@@ -547,6 +551,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (autoAimEnabled && aimLossStartMs >= 0 && goalDet == null) {
             telemetry.addData("AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
         }
+
+        double feedStopPos = feed.getCurrentPosition();
+        telemetry.addData("FeedStop State", feed.getFeedStopState());
+        telemetry.addData("FeedStop Pos", Double.isNaN(feedStopPos) ? "---" : String.format(Locale.US, "%.2f", feedStopPos));
+        telemetry.addData("FeedStop HoldMs", feed.getHoldRemainingMs());
 
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled(goalDet);
@@ -714,10 +723,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void feedOnceWithIntakeAssist() {
         boolean wasOn = intake.isOn();
         if (!wasOn) intake.set(true);
+        feed.requestReleaseHold();
+        feed.update();
         feed.feedOnceBlocking();
+        feed.update();
         if (!wasOn) {
             sleepMs(intakeAssistMs);
             intake.set(false);
+            feed.update();
         }
     }
 
@@ -732,13 +745,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean wasOn = intake.isOn();
         if (!wasOn) intake.set(true);
 
+        feed.requestReleaseHold();
+        feed.update();
         feed.feedOnceBlocking();
+        feed.update();
 
         sleepMs(ejectTimeMs);
 
         if (!wasOn) {
             sleepMs(intakeAssistMs);
             intake.set(false);
+            feed.update();
         }
 
         launcher.setTargetRpm(prevCmd); // restore exact prior commanded RPM
@@ -788,6 +805,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         stopLatched = !stopLatched;
         if (stopLatched) {
             feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
+            feed.setBlock();
             stopAll();
             // Optional haptic cue: single pulse to confirm STOP
             pulseSingle(gamepad1);
@@ -801,6 +819,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     /** While STOP is latched, continuously enforce 0 outputs and render a concise status line. */
     private void onStoppedLoopHold() {
         stopAll(); // defensive: keep everything off each frame
+        if (feed != null) feed.update();
         telemetry.addLine("⛔ STOPPED — press START to RESUME");
         telemetry.update();
     }

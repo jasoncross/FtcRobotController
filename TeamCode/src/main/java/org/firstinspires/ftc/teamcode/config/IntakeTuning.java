@@ -16,5 +16,5 @@ package org.firstinspires.ftc.teamcode.config;
 public final class IntakeTuning {
     private IntakeTuning() {}
 
-    public static double POWER_ON = 0.8;
+    public static double POWER_ON = 0.9;
 }

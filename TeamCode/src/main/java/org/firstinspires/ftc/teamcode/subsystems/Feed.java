@@ -3,6 +3,9 @@ package org.firstinspires.ftc.teamcode.subsystems;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.ServoImplEx;
+import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.teamcode.config.FeedStopConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 
 /*
@@ -49,6 +52,7 @@ public class Feed {
     // CHANGES (2025-10-31): Added safeInit + idle hold gating so motors stay idle until START.
     // CHANGES (2025-11-02): Clarified cadence guidance now that shot spacing is per AutoSequence.
     // CHANGES (2025-11-04): Added applyBrakeHold() so StopAll explicitly latches BRAKE with zero power.
+    // CHANGES (2025-11-06): Integrated FeedStop servo gate with request/hold timing + tunables.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -57,6 +61,17 @@ public class Feed {
     private final DcMotorEx motor;
     private long lastFire = 0;
     private boolean idleHoldActive = false;
+
+    private ServoImplEx feedStop;
+    private Telemetry feedStopTelemetry;
+    private boolean feedStopReady = false;
+    private FeedStopState feedStopState = FeedStopState.UNKNOWN;
+    private double blockPosition = FeedStopConfig.BLOCK_POS;
+    private double releasePosition = FeedStopConfig.RELEASE_POS;
+    private long releaseHoldMs = FeedStopConfig.RELEASE_HOLD_MS;
+    private long fireLeadMs = FeedStopConfig.FIRE_LEAD_MS;
+    private long releaseUntilMs = 0L;
+    private long feedAllowedAfterMs = 0L;
 
     public Feed(HardwareMap hw) {
         motor = hw.get(DcMotorEx.class, "FeedMotor");
@@ -69,12 +84,117 @@ public class Feed {
         applySafetyConfig();
         idleHoldActive = false;
         motor.setPower(0.0);
+        setBlock();
     }
 
     /** Enable or disable the idle hold counter-rotation after START. */
     public void setIdleHoldActive(boolean enable) {
         idleHoldActive = enable;
         applyIdleHoldPower();
+    }
+
+    /** Configure the FeedStop servo, scaling its range and parking at BLOCK. */
+    public void initFeedStop(HardwareMap hw, Telemetry telemetry) {
+        this.feedStopTelemetry = telemetry;
+        try {
+            feedStop = hw.get(ServoImplEx.class, "FeedStop");
+            feedStop.scaleRange(FeedStopConfig.SCALE_MIN, FeedStopConfig.SCALE_MAX);
+            feedStopReady = true;
+            setTunables(FeedStopConfig.BLOCK_POS, FeedStopConfig.RELEASE_POS,
+                    FeedStopConfig.RELEASE_HOLD_MS, FeedStopConfig.FIRE_LEAD_MS);
+            setBlock();
+        } catch (Exception ex) {
+            feedStopReady = false;
+            if (this.feedStopTelemetry != null) {
+                this.feedStopTelemetry.addLine("FeedStop init failed: " + ex.getMessage());
+            }
+        }
+    }
+
+    /** Immediately commands the servo to the BLOCK position. */
+    public void setBlock() {
+        releaseUntilMs = 0L;
+        feedAllowedAfterMs = 0L;
+        if (!feedStopReady || feedStop == null) {
+            feedStopState = FeedStopState.UNKNOWN;
+            return;
+        }
+        feedStop.setPosition(clip(blockPosition));
+        feedStopState = FeedStopState.BLOCK;
+    }
+
+    /** Immediately commands the servo to the RELEASE position. */
+    public void setRelease() {
+        if (!feedStopReady || feedStop == null) {
+            feedStopState = FeedStopState.UNKNOWN;
+            return;
+        }
+        feedStop.setPosition(clip(releasePosition));
+        feedStopState = FeedStopState.RELEASE;
+    }
+
+    /** Request a release window, extending the hold timer and enforcing fire lead time. */
+    public void requestReleaseHold() {
+        if (!feedStopReady || feedStop == null) return;
+        long now = System.currentTimeMillis();
+        releaseUntilMs = now + Math.max(0L, releaseHoldMs);
+        feedAllowedAfterMs = now + Math.max(0L, fireLeadMs);
+        setRelease();
+    }
+
+    /** Update servo state machine; call every loop. */
+    public void update() {
+        if (!feedStopReady || feedStop == null) return;
+        if (feedStopState == FeedStopState.RELEASE && releaseUntilMs > 0) {
+            long now = System.currentTimeMillis();
+            if (now >= releaseUntilMs) {
+                setBlock();
+            }
+        }
+    }
+
+    /** Current servo position (scaled range) or NaN if unavailable. */
+    public double getCurrentPosition() {
+        if (!feedStopReady || feedStop == null) return Double.NaN;
+        return feedStop.getPosition();
+    }
+
+    /** Remaining hold time before returning to BLOCK (ms). */
+    public long getHoldRemainingMs() {
+        if (!feedStopReady || feedStop == null || releaseUntilMs <= 0) return 0L;
+        long remaining = releaseUntilMs - System.currentTimeMillis();
+        return Math.max(0L, remaining);
+    }
+
+    /** Returns the configured fire lead time (ms). */
+    public long getFireLeadMs() {
+        return Math.max(0L, fireLeadMs);
+    }
+
+    /** Current FeedStop gate state. */
+    public FeedStopState getFeedStopState() {
+        return feedStopState;
+    }
+
+    /** Update tunables at runtime. */
+    public void setTunables(double block, double release, long holdMs, long leadMs) {
+        blockPosition = clip(block);
+        releasePosition = clip(release);
+        releaseHoldMs = Math.max(0L, holdMs);
+        fireLeadMs = Math.max(0L, leadMs);
+        if (feedStopReady && feedStop != null) {
+            if (feedStopState == FeedStopState.RELEASE) {
+                feedStop.setPosition(clip(releasePosition));
+            } else {
+                feedStop.setPosition(clip(blockPosition));
+            }
+        }
+    }
+
+    public enum FeedStopState {
+        BLOCK,
+        RELEASE,
+        UNKNOWN
     }
 
     /** Returns true if enough time has passed since last feed to fire again. */
@@ -86,16 +206,20 @@ public class Feed {
     public void feedOnceBlocking() {
         if (!canFire()) return;
         lastFire = System.currentTimeMillis();
+        applyFeedLeadDelay();
         applySafetyConfig();
         motor.setPower(firePower);
+        update();
         sleep(fireTimeMs);
         applyIdleHoldPower();
+        update();
     }
 
     /** Immediately stops the feed motor. */
     public void stop() {
         applySafetyConfig();
         applyIdleHoldPower();
+        setBlock();
     }
 
     /** Force BRAKE zero-power behavior with no idle counter-rotation. */
@@ -103,6 +227,7 @@ public class Feed {
         idleHoldActive = false;
         applySafetyConfig();
         motor.setPower(0.0);
+        setBlock();
     }
 
     /** Helper exposed for safety fallbacks and testing. */
@@ -113,6 +238,20 @@ public class Feed {
 
     private void sleep(int ms) {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+
+    private void applyFeedLeadDelay() {
+        if (!feedStopReady || feedStop == null) return;
+        long now = System.currentTimeMillis();
+        long waitMs = feedAllowedAfterMs - now;
+        if (waitMs <= 0) return;
+        while (waitMs > 0) {
+            long chunk = Math.min(waitMs, 20);
+            sleep((int) chunk);
+            update();
+            now = System.currentTimeMillis();
+            waitMs = feedAllowedAfterMs - now;
+        }
     }
 
     private void applySafetyConfig() {
@@ -126,5 +265,10 @@ public class Feed {
         double power = (idleHoldActive) ? idleHoldPower : 0.0;
         if (Math.abs(power) < 1e-6) power = 0.0;
         motor.setPower(power);
+    }
+
+    private double clip(double v) {
+        if (Double.isNaN(v)) return 0.0;
+        return Math.max(0.0, Math.min(1.0, v));
     }
 }

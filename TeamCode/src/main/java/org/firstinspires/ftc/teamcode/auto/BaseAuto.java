@@ -188,6 +188,7 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher.safeInit();
         feed.safeInit();
         intake.safeInit();
+        feed.initFeedStop(hardwareMap, telemetry);
 
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {} // Sync AutoSpeed curve
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
@@ -524,11 +525,15 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.update();
+            feed.requestReleaseHold();
+            feed.update();
             feed.feedOnceBlocking();
+            feed.update();
             if (!wasOn) {
                 int assist = FeedTuning.INTAKE_ASSIST_MS;
                 sleep(assist);
                 intake.set(false);
+                feed.update();
             }
 
             // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
@@ -540,6 +545,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
             sleep((int)delay);
+            feed.update();
             drive.stopAll();
             updateStatus("Stabilize after volley", lockedForShot || !requireLock);
             telemetry.update();
@@ -648,6 +654,9 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     protected final void updateStatus(String phase, boolean tagLocked) {
+        if (feed != null) {
+            try { feed.update(); } catch (Throwable ignored) {}
+        }
         if (vision != null) {
             try { vision.observeObelisk(); } catch (Throwable ignored) {}
         }
@@ -969,11 +978,16 @@ public abstract class BaseAuto extends LinearOpMode {
 
                 boolean intakeWasOn = intake.isOn();
                 if (!intakeWasOn) intake.set(true);
+                feed.requestReleaseHold();
+                feed.update();
                 feed.feedOnceBlocking();
+                feed.update();
                 sleep(ejectDuration);
+                feed.update();
                 if (!intakeWasOn) {
                     sleep(FeedTuning.INTAKE_ASSIST_MS);
                     intake.set(false);
+                    feed.update();
                 }
 
                 double restoreRpm = previousTarget;

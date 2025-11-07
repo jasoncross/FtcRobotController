@@ -28,10 +28,10 @@ public final class FeedStopConfig {
     private FeedStopConfig() {}
 
     // CHANGES (2025-11-06): Initial FeedStop servo tuning defaults for goBILDA 25-3 speed servo.
-    public static double SCALE_MIN = 0.42; // Minimum PWM range (tune on-robot)
-    public static double SCALE_MAX = 0.58; // Maximum PWM range (tune on-robot)
+    public static double SCALE_MIN = 0.8; // Minimum PWM range (tune on-robot)
+    public static double SCALE_MAX = 1.5; // Maximum PWM range (tune on-robot)
     public static double BLOCK_POS = 0.00; // Servo position (scaled) for blocking artifacts
-    public static double RELEASE_POS = 1.00; // Servo position (scaled) for releasing artifacts
-    public static long RELEASE_HOLD_MS = 250; // Duration to remain at RELEASE (ms)
-    public static long FIRE_LEAD_MS = 50;     // Delay before feed motor starts (ms)
+    public static double RELEASE_POS = 1.20; // Servo position (scaled) for releasing artifacts
+    public static long RELEASE_HOLD_MS = 1000; // Duration to remain at RELEASE (ms)
+    public static long FIRE_LEAD_MS = 500;     // Delay before feed motor starts (ms)
 }

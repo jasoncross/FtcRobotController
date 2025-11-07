@@ -105,11 +105,25 @@ import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rum
 import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag range calibration
 
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
     // CHANGES (2025-10-31): Added safeInit gating and defaulted AutoSpeed + intake to ON after START.
     // CHANGES (2025-11-04): StopAll now enforces BRAKE zero-power behavior across drive, launcher, feed, and intake.
+    // CHANGES (2025-11-07): Made feed/eject routines asynchronous with intake-assist timers so driver
+    //                       controls remain responsive during shots, and reworked toggle rumble pulses
+    //                       to queue the second blip without sleeping the TeleOp thread.
+    // CHANGES (2025-11-07): Queue vision profile swaps on a background executor so TeleOp drive
+    //                       updates continue while the VisionPortal rebuilds when drivers change modes.
+    // CHANGES (2025-11-07): Queue AutoSpeed enable/disable requests so seeding RPM + rumble feedback
+    //                       execute after the control scan without stalling drive inputs.
+    // CHANGES (2025-11-07): Surface FeedStop homing status/telemetry and run init_loop updates so zero
+    //                       is established before START without blocking the thread.
+    // CHANGES (2025-11-09): Condensed FeedStop telemetry to a single summary line plus warnings only
+    //                       when clamping or homing guards trigger.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -133,6 +147,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     // ---------------- State ----------------
     private boolean autoSpeedEnabled = DEFAULT_AUTOSPEED_ENABLED; // Live state toggled by drivers
+    private enum AutoSpeedRumble { NONE, SINGLE, DOUBLE }
+    private boolean autoSpeedTogglePending = false;
+    private boolean autoSpeedToggleTarget = false;
+    private boolean autoSpeedToggleStopOnDisable = false;
+    private Gamepad autoSpeedTogglePad = null;
+    private AutoSpeedRumble autoSpeedToggleRumble = AutoSpeedRumble.NONE;
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
 
     // Manual RPM Lock (Square/X) — only when AutoSpeed == false
@@ -147,6 +167,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private String visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
     private String visionPerfLine = "Perf: FPS=--- LatMs=---";
     private boolean visionWarningShown = false;
+    private ExecutorService visionTaskExecutor;
+    private volatile boolean visionProfileSwapInProgress = false;
+    private volatile VisionTuning.Mode visionProfileSwapMode = null;
+    private volatile String visionProfileError = null;
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -181,6 +205,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private int    togglePulseStepMs       = TeleOpRumbleTuning.TOGGLE_STEP_MS;  // Duration of each pulse step (ms)
     private int    togglePulseGapMs        = TeleOpRumbleTuning.TOGGLE_GAP_MS;   // Gap between pulse steps (ms)
 
+    // Queued second-stage rumble pulses (per gamepad)
+    private boolean doublePulseQueuedG1    = false;
+    private long    doublePulseAtMsG1      = 0L;
+    private boolean doublePulseQueuedG2    = false;
+    private long    doublePulseAtMsG2      = 0L;
+
     // ---------------- Auto Launcher Speed (RPM) ----------------
     private LauncherAutoSpeedController autoCtrl;     // Shared AutoSpeed helper fed by AutoRpmConfig
 
@@ -194,6 +224,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private int    intakeAssistMs = TeleOpDriverDefaults.INTAKE_ASSIST_MS; // TeleOp copy of shared intake assist duration
     private double ejectRpm       = TeleOpEjectTuning.RPM;   // Launcher RPM during eject routine (TeleOp only)
     private int    ejectTimeMs    = TeleOpEjectTuning.TIME_MS;   // Duration of eject routine (ms)
+
+    private boolean intakeAssistRestorePending = false;
+    private boolean intakeAssistWaitingForFeed = false;
+    private boolean intakeAssistTargetState = false;
+    private long intakeAssistResumeAtMs = 0L;
+    private long intakeAssistExtraHoldMs = 0L;
+    private boolean intakeAssistSawFeedActive = false;
+
+    private enum EjectPhase { IDLE, SPOOL, FEED, HOLD }
+    private EjectPhase ejectPhase = EjectPhase.IDLE;
+    private long ejectPhaseUntilMs = 0L;
+    private double ejectPrevRpmCommand = 0.0;
+    private boolean ejectFeedStarted = false;
 
     // ---------------- NEW: StopAll / Latch & Auto-Stop Timer ----------------
     /** When true, all outputs are forced to zero every loop until Start is pressed again. */
@@ -229,6 +272,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intake.safeInit();
         feed.initFeedStop(hardwareMap, telemetry);
 
+        if (visionTaskExecutor != null) {
+            visionTaskExecutor.shutdownNow();
+        }
+        visionTaskExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "TeleOpVisionTasks");
+            t.setDaemon(true);
+            return t;
+        });
+        visionProfileSwapInProgress = false;
+        visionProfileSwapMode = null;
+        visionProfileError = null;
+
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
@@ -237,6 +292,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionWarningShown = false;
         visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
         visionPerfLine = "Perf: FPS=--- LatMs=---";
+
+        resetTogglePulseQueue();
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -275,12 +332,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // AutoSpeed toggle (seed RPM if tag; else use InitialAutoDefaultSpeed)
         controls.bindPress(Pad.G1, Btn.Y, () -> {
             boolean enable = !autoSpeedEnabled;
-            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
-            if (enable) {
-                pulseDouble(gamepad1);
-            } else {
-                pulseSingle(gamepad1);
-            }
+            queueAutoSpeedEnablement(enable, /*stopOnDisable=*/false, gamepad1,
+                    enable ? AutoSpeedRumble.DOUBLE : AutoSpeedRumble.SINGLE);
         });
 
         // Manual RPM LOCK (X/Square) — only when AutoSpeed == false & not in Test
@@ -337,12 +390,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             boolean enable = !autoSpeedEnabled;
-            applyAutoSpeedEnablement(enable, /*stopOnDisable=*/false);
-            if (enable) {
-                pulseDouble(gamepad1);
-            } else {
-                pulseSingle(gamepad1);
-            }
+            queueAutoSpeedEnablement(enable, /*stopOnDisable=*/false, gamepad1,
+                    enable ? AutoSpeedRumble.DOUBLE : AutoSpeedRumble.SINGLE);
         });
         controls.bindPress(Pad.G2, Btn.DPAD_LEFT,  () -> selectVisionProfile(VisionTuning.Mode.P480));
         controls.bindPress(Pad.G2, Btn.DPAD_RIGHT, () -> selectVisionProfile(VisionTuning.Mode.P720));
@@ -375,6 +424,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     @Override
+    public void init_loop() {
+        if (feed != null) {
+            feed.update();
+            if (feed.wasWindowLimitReached()) {
+                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+            } else if (feed.wasAngleClamped()) {
+                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+            }
+            if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
+                telemetry.addLine(feed.getSoftLimitMessage());
+            }
+            if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
+                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+            }
+            telemetry.addLine(feed.getFeedStopSummaryLine());
+        }
+        telemetry.update();
+    }
+
+    @Override
     public void start() {
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
@@ -387,6 +456,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         stopLatched = false;
         lastStartG1 = false;
         lastStartG2 = false;
+        cancelEjectSequence();
+        resetIntakeAssistState();
+        resetTogglePulseQueue();
+        autoSpeedTogglePending = false;
+        autoSpeedTogglePad = null;
+        autoSpeedToggleRumble = AutoSpeedRumble.NONE;
+        autoSpeedToggleStopOnDisable = false;
+        autoSpeedToggleTarget = autoSpeedEnabled;
+
+        visionProfileSwapInProgress = false;
+        visionProfileSwapMode = null;
+        visionProfileError = null;
 
         applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
 
@@ -395,7 +476,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void loop() {
+        long now = System.currentTimeMillis();
         if (feed != null) feed.update();
+        updatePendingToggleRumbles(now);
 
         // -------- High-priority Start edge-detect (works even while STOPPED) --------
         boolean start1 = gamepad1.start, start2 = gamepad2.start;
@@ -405,7 +488,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Optional Auto-Stop timer (top-line telemetry only when enabled) --------
         if (autoStopTimerEnabled) {
-            long now = System.currentTimeMillis();
             long elapsedMs = Math.max(0, now - teleopInitMillis);
             long remainingMs = Math.max(0, (long) autoStopTimerTimeSec * 1000L - elapsedMs);
             int remSec = (int)Math.ceil(remainingMs / 1000.0);
@@ -432,6 +514,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Normal controls (only run when NOT STOPPED) --------
         controls.update(gamepad1, gamepad2);
+        drainAutoSpeedQueue();
+
+        now = System.currentTimeMillis();
+        updateEjectSequence(now);
+        updateIntakeAssist(now);
 
         // Honor manual lock in manual mode
         if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled) {
@@ -468,7 +555,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         // AutoAim + grace handling
-        long now = System.currentTimeMillis();
         if (autoAimEnabled) {
             appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
             driveY  *= appliedAimSpeedScale;
@@ -552,11 +638,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addData("AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
         }
 
-        double feedStopPos = feed.getCurrentPosition();
-        telemetry.addData("FeedStop State", feed.getFeedStopState());
-        telemetry.addData("FeedStop Pos", Double.isNaN(feedStopPos) ? "---" : String.format(Locale.US, "%.2f", feedStopPos));
-        telemetry.addData("FeedStop HoldMs", feed.getHoldRemainingMs());
-
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled(goalDet);
         updateVisionTelemetry(goalDet, rawIn);
@@ -573,12 +654,30 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         telemetry.addLine(visionStatusLine);
         telemetry.addLine(visionPerfLine);
+        if (visionProfileError != null) {
+            telemetry.addLine("Vision profile error: " + visionProfileError);
+            visionProfileError = null;
+        }
         if (!visionWarningShown && vision != null) {
             String warn = vision.consumeControlWarning();
             if (warn != null) {
                 telemetry.addLine(warn);
                 visionWarningShown = true;
             }
+        }
+        if (feed != null) {
+            if (feed.wasWindowLimitReached()) {
+                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+            } else if (feed.wasAngleClamped()) {
+                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+            }
+            if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
+                telemetry.addLine(feed.getSoftLimitMessage());
+            }
+            if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
+                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+            }
+            telemetry.addLine(feed.getFeedStopSummaryLine());
         }
         telemetry.update();
     }
@@ -587,6 +686,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     public void stop() {
         // Ensure everything is off when OpMode stops for any reason.
         stopAll();
+        if (visionTaskExecutor != null) {
+            visionTaskExecutor.shutdownNow();
+            visionTaskExecutor = null;
+        }
     }
 
     // =========================================================================
@@ -597,6 +700,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         long now = System.currentTimeMillis();
         if ((now - lastVisionTelemetryMs) < 100) return; // ~10 Hz updates
         lastVisionTelemetryMs = now;
+
+        if (visionProfileSwapInProgress) {
+            String pendingName = "--";
+            VisionTuning.Mode mode = visionProfileSwapMode;
+            if (mode != null) {
+                pendingName = mode.name();
+            }
+            visionStatusLine = String.format(Locale.US, "Vision: Switching to %s …", pendingName);
+            visionPerfLine = "Perf: --- LatMs=--- (profile swap)";
+            return;
+        }
 
         VisionTuning.Profile profile = vision.getActiveProfile();
         if (profile == null) profile = VisionTuning.DEFAULT_PROFILE;
@@ -670,11 +784,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void selectVisionProfile(VisionTuning.Mode mode) {
         if (vision == null || mode == null) return;
-        try {
-            vision.applyProfile(mode);
-        } catch (IllegalStateException ise) {
-            telemetry.addLine("Vision profile error: " + ise.getMessage());
-        }
+        queueVisionProfileSwap(mode);
         visionWarningShown = false;
         lastVisionTelemetryMs = 0L;
         pulseSingle(gamepad2);
@@ -686,6 +796,75 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionWarningShown = false;
         lastVisionTelemetryMs = 0L;
         pulseSingle(gamepad2);
+    }
+
+    private void queueAutoSpeedEnablement(boolean enable, boolean stopOnDisable, Gamepad pad,
+                                          AutoSpeedRumble rumble) {
+        autoSpeedTogglePending = true;
+        autoSpeedToggleTarget = enable;
+        autoSpeedToggleStopOnDisable = stopOnDisable;
+        autoSpeedTogglePad = pad;
+        autoSpeedToggleRumble = (rumble != null) ? rumble : AutoSpeedRumble.NONE;
+    }
+
+    private void drainAutoSpeedQueue() {
+        if (!autoSpeedTogglePending) {
+            return;
+        }
+
+        boolean enable = autoSpeedToggleTarget;
+        boolean stopOnDisable = autoSpeedToggleStopOnDisable;
+        Gamepad pad = autoSpeedTogglePad;
+        AutoSpeedRumble rumble = autoSpeedToggleRumble;
+
+        autoSpeedTogglePending = false;
+        autoSpeedTogglePad = null;
+        autoSpeedToggleRumble = AutoSpeedRumble.NONE;
+
+        applyAutoSpeedEnablement(enable, stopOnDisable);
+
+        if (pad != null) {
+            if (rumble == AutoSpeedRumble.DOUBLE) {
+                pulseDouble(pad);
+            } else if (rumble == AutoSpeedRumble.SINGLE) {
+                pulseSingle(pad);
+            }
+        }
+    }
+
+    private void queueVisionProfileSwap(VisionTuning.Mode mode) {
+        if (vision == null || mode == null) return;
+
+        Runnable task = () -> applyVisionProfileBlocking(mode);
+
+        ExecutorService executor = visionTaskExecutor;
+        if (executor == null) {
+            task.run();
+            return;
+        }
+        try {
+            executor.submit(task);
+        } catch (RejectedExecutionException rex) {
+            task.run();
+        }
+    }
+
+    private void applyVisionProfileBlocking(VisionTuning.Mode mode) {
+        visionProfileSwapInProgress = true;
+        visionProfileSwapMode = mode;
+        try {
+            vision.applyProfile(mode);
+            visionProfileError = null;
+        } catch (IllegalStateException ise) {
+            String msg = ise.getMessage();
+            visionProfileError = (msg != null && !msg.isEmpty()) ? msg : "applyProfile failed";
+        } catch (Throwable t) {
+            String msg = t.getMessage();
+            visionProfileError = (msg != null && !msg.isEmpty()) ? msg : t.getClass().getSimpleName();
+        } finally {
+            visionProfileSwapInProgress = false;
+            visionProfileSwapMode = null;
+        }
     }
 
     private void initAimRumble() {
@@ -703,12 +882,41 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // --- Rumble helpers (SDK-compatible: no RumbleEffect.builder) ---
     private void pulseDouble(Gamepad gp) {
         gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
-        sleepMs(togglePulseGapMs);
-        gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
+        int gap = Math.max(0, togglePulseGapMs);
+        if (gap <= 0) {
+            gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
+            return;
+        }
+        long nextAt = System.currentTimeMillis() + gap;
+        if (gp == gamepad1) {
+            doublePulseQueuedG1 = true;
+            doublePulseAtMsG1 = nextAt;
+        } else if (gp == gamepad2) {
+            doublePulseQueuedG2 = true;
+            doublePulseAtMsG2 = nextAt;
+        }
     }
 
     private void pulseSingle(Gamepad gp) {
         gp.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs + 30);
+    }
+
+    private void updatePendingToggleRumbles(long now) {
+        if (doublePulseQueuedG1 && now >= doublePulseAtMsG1) {
+            gamepad1.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
+            doublePulseQueuedG1 = false;
+        }
+        if (doublePulseQueuedG2 && now >= doublePulseAtMsG2) {
+            gamepad2.rumble((float)togglePulseStrength, (float)togglePulseStrength, togglePulseStepMs);
+            doublePulseQueuedG2 = false;
+        }
+    }
+
+    private void resetTogglePulseQueue() {
+        doublePulseQueuedG1 = false;
+        doublePulseQueuedG2 = false;
+        doublePulseAtMsG1 = 0L;
+        doublePulseAtMsG2 = 0L;
     }
 
     /** Returns SCALED distance to goal in inches if a detection is provided, else null. */
@@ -721,48 +929,138 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
+        if (ejectPhase != EjectPhase.IDLE) return;
         boolean wasOn = intake.isOn();
-        if (!wasOn) intake.set(true);
-        feed.requestReleaseHold();
-        feed.update();
-        feed.feedOnceBlocking();
-        feed.update();
-        if (!wasOn) {
-            sleepMs(intakeAssistMs);
-            intake.set(false);
-            feed.update();
+        if (feed.beginFeedCycle()) {
+            startIntakeAssist(wasOn, 0L);
         }
     }
 
-    /** Eject one ball: temporarily set launcher to EjectRPM, feed once w/ Intake Assist, then restore previous RPM. */
+    /** Eject one ball asynchronously: spool, feed, hold, then restore previous RPM. */
     private void ejectOnce() {
-        double prevCmd = launcher.targetRpm;
+        if (ejectPhase != EjectPhase.IDLE) return;
+        ejectPrevRpmCommand = launcher.targetRpm;
         double tempCmd = clamp(ejectRpm, 0, rpmTop);
-
         launcher.setTargetRpm(tempCmd);
-        sleepMs(Math.max(100, ejectTimeMs / 3));
 
-        boolean wasOn = intake.isOn();
-        if (!wasOn) intake.set(true);
+        startIntakeAssist(intake.isOn(), ejectTimeMs);
 
-        feed.requestReleaseHold();
-        feed.update();
-        feed.feedOnceBlocking();
-        feed.update();
-
-        sleepMs(ejectTimeMs);
-
-        if (!wasOn) {
-            sleepMs(intakeAssistMs);
-            intake.set(false);
-            feed.update();
-        }
-
-        launcher.setTargetRpm(prevCmd); // restore exact prior commanded RPM
+        ejectPhase = EjectPhase.SPOOL;
+        ejectFeedStarted = false;
+        ejectPhaseUntilMs = System.currentTimeMillis() + Math.max(100, ejectTimeMs / 3);
     }
 
-    private void sleepMs(int ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    private void updateEjectSequence(long now) {
+        if (ejectPhase == EjectPhase.IDLE) {
+            return;
+        }
+
+        if (feed == null) {
+            cancelEjectSequence();
+            return;
+        }
+
+        if (ejectPhase == EjectPhase.SPOOL) {
+            if (now < ejectPhaseUntilMs) {
+                return;
+            }
+            ejectPhase = EjectPhase.FEED;
+        }
+
+        if (ejectPhase == EjectPhase.FEED) {
+            if (!ejectFeedStarted) {
+                ejectFeedStarted = feed.beginFeedCycle();
+            }
+            if (!ejectFeedStarted) {
+                return; // keep trying until debounce clears
+            }
+            if (feed.isFeedCycleActive()) {
+                return;
+            }
+            ejectPhase = EjectPhase.HOLD;
+            ejectPhaseUntilMs = now + Math.max(0L, ejectTimeMs);
+            return;
+        }
+
+        if (ejectPhase == EjectPhase.HOLD) {
+            if (now < ejectPhaseUntilMs) {
+                return;
+            }
+            launcher.setTargetRpm(ejectPrevRpmCommand);
+            ejectPhase = EjectPhase.IDLE;
+            ejectFeedStarted = false;
+            ejectPhaseUntilMs = 0L;
+        }
+    }
+
+    private void updateIntakeAssist(long now) {
+        if (!intakeAssistRestorePending) {
+            return;
+        }
+
+        if (feed == null || intake == null) {
+            resetIntakeAssistState();
+            return;
+        }
+
+        if (intakeAssistWaitingForFeed) {
+            if (feed.isFeedCycleActive()) {
+                intakeAssistSawFeedActive = true;
+                return;
+            }
+            if (!intakeAssistSawFeedActive) {
+                return; // wait until the feed cycle runs once
+            }
+            intakeAssistWaitingForFeed = false;
+            intakeAssistResumeAtMs = now + Math.max(0L, intakeAssistMs + intakeAssistExtraHoldMs);
+            return;
+        }
+
+        if (intakeAssistResumeAtMs <= 0L || now < intakeAssistResumeAtMs) {
+            return;
+        }
+
+        boolean current = intake.isOn();
+        if (current != intakeAssistTargetState) {
+            intakeAssistRestorePending = false; // driver changed the state — respect manual override
+        } else {
+            intake.set(intakeAssistTargetState);
+            intakeAssistRestorePending = false;
+        }
+        intakeAssistResumeAtMs = 0L;
+        intakeAssistExtraHoldMs = 0L;
+        intakeAssistSawFeedActive = false;
+    }
+
+    private void startIntakeAssist(boolean wasOn, long extraHoldMs) {
+        if (intake == null) {
+            return;
+        }
+        if (wasOn) {
+            return;
+        }
+        intake.set(true);
+        intakeAssistRestorePending = true;
+        intakeAssistTargetState = wasOn;
+        intakeAssistWaitingForFeed = true;
+        intakeAssistSawFeedActive = false;
+        intakeAssistResumeAtMs = 0L;
+        intakeAssistExtraHoldMs = Math.max(0L, extraHoldMs);
+    }
+
+    private void resetIntakeAssistState() {
+        intakeAssistRestorePending = false;
+        intakeAssistWaitingForFeed = false;
+        intakeAssistTargetState = false;
+        intakeAssistResumeAtMs = 0L;
+        intakeAssistExtraHoldMs = 0L;
+        intakeAssistSawFeedActive = false;
+    }
+
+    private void cancelEjectSequence() {
+        ejectPhase = EjectPhase.IDLE;
+        ejectFeedStarted = false;
+        ejectPhaseUntilMs = 0L;
     }
 
     // =========================================================================
@@ -771,6 +1069,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Immediately stops ALL moving mechanisms and outputs. Safe to call repeatedly. */
     protected void stopAll() {
+        cancelEjectSequence();
+        resetIntakeAssistState();
+
         // DRIVE
         try {
             drive.applyBrakeHold();

@@ -103,6 +103,11 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-11-04): stopAll() now latches BRAKE zero-power behavior across subsystems for end-of-match hold.
     // CHANGES (2025-11-05): Applied VisionTuning range scale during Auto init and added
     //                        AutoSequence.visionMode(...) for mid-sequence AprilTag profile swaps.
+    // CHANGES (2025-11-07): Updated fireN() to rely on Feed.beginFeedCycle() so the new
+    //                        asynchronous servo lead applies consistently without manual release calls.
+    // CHANGES (2025-11-07): Surfaced FeedStop homing telemetry so INIT shows when zero is established.
+    // CHANGES (2025-11-09): Trimmed FeedStop telemetry to a single summary line with warnings only
+    //                        when soft-limit or scaling guards trigger.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -525,8 +530,6 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.update();
-            feed.requestReleaseHold();
-            feed.update();
             feed.feedOnceBlocking();
             feed.update();
             if (!wasOn) {
@@ -671,6 +674,20 @@ public abstract class BaseAuto extends LinearOpMode {
         telemetry.addData("Start Pose", startPoseDescription());
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
         telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
+        if (feed != null) {
+            if (feed.wasWindowLimitReached()) {
+                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+            } else if (feed.wasAngleClamped()) {
+                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+            }
+            if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
+                telemetry.addLine(feed.getSoftLimitMessage());
+            }
+            if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
+                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+            }
+            telemetry.addLine(feed.getFeedStopSummaryLine());
+        }
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -978,8 +995,6 @@ public abstract class BaseAuto extends LinearOpMode {
 
                 boolean intakeWasOn = intake.isOn();
                 if (!intakeWasOn) intake.set(true);
-                feed.requestReleaseHold();
-                feed.update();
                 feed.feedOnceBlocking();
                 feed.update();
                 sleep(ejectDuration);

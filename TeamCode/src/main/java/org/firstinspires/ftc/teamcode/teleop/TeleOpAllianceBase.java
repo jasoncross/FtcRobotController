@@ -53,6 +53,10 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-10): Added a Reverse Drive toggle on Gamepad 1 left stick
+ *                       click that inverts forward/strafe commands and emits
+ *                       double/single rumble on enable/disable for driver
+ *                       confirmation.
  * CHANGES (2025-10-31): Added runtime vision profile + live-view switching on
  *                       Gamepad 2 D-pad, refreshed telemetry with concise
  *                       profile/perf lines, and kept camera control warnings
@@ -185,6 +189,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- Controller Bindings ----------------
     private ControllerBindings controls;              // Centralized driver bindings helper
 
+    // ---------------- Reverse Drive Mode ----------------
+    private boolean reverseDriveMode = false;         // Treat rear as the front when true
+
     // ---------------- RPM Test Mode ----------------
     private boolean rpmTestEnabled = false; // Manual RPM sweep test (D-pad adjustments)
     private double  rpmTestTarget  = 0.0;   // Current manual test RPM when enabled
@@ -306,6 +313,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Feed / Intake
         controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
         controls.bindPress(Pad.G1, Btn.RB, () -> intake.toggle());
+
+        // Reverse Drive toggle
+        controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
 
         // AutoAim toggle (gated by current tag visibility)
         controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
@@ -465,6 +475,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         autoSpeedToggleStopOnDisable = false;
         autoSpeedToggleTarget = autoSpeedEnabled;
 
+        reverseDriveMode = false;
+
         visionProfileSwapInProgress = false;
         visionProfileSwapMode = null;
         visionProfileError = null;
@@ -579,6 +591,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
+        if (reverseDriveMode) {
+            driveY = -driveY;
+            strafeX = -strafeX;
+        }
+
         // Drive it
         drive.drive(driveY, strafeX, twist);
 
@@ -626,6 +643,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.isOn() ? "ON" : "OFF");
         telemetry.addData("AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
+        telemetry.addData("ReverseMode", reverseDriveMode ? "ON" : "OFF");
         if (manualRpmLocked) telemetry.addData("ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
         telemetry.addData("RPM Target/Actual", "%.0f / %.0f", launcher.targetRpm, launcher.getCurrentRpm());
@@ -780,6 +798,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
             manualLockedRpm = next;
         }
         launcher.setTargetRpm(next);
+    }
+
+    private void toggleReverseDriveMode() {
+        reverseDriveMode = !reverseDriveMode;
+        if (reverseDriveMode) {
+            pulseDouble(gamepad1);
+        } else {
+            pulseSingle(gamepad1);
+        }
     }
 
     private void selectVisionProfile(VisionTuning.Mode mode) {

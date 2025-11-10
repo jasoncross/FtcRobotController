@@ -41,7 +41,7 @@ public final class VisionTuning {
     public static final int P480_FPS = 30;                              // Target frame rate for Performance profile (Control Hub friendly)
     public static final float P480_DECIMATION = 2.8f;                   // AprilTag decimation (higher skips pixels for speed)
     public static final int P480_PROCESS_EVERY_N = 1;                   // Process every frame (no skipping) when in Performance mode
-    public static final double P480_MIN_DECISION_MARGIN = 25.0;         // Reject detections with weaker decision margins than this threshold
+    public static final double P480_MIN_DECISION_MARGIN = 18.0;         // Reject detections with weaker decision margins than this threshold
     public static final int P480_EXPOSURE_MS = 10;                      // Manual exposure in milliseconds tuned for indoor lighting
     public static final int P480_GAIN = 95;                             // Camera-native gain for stable image brightness at 480p
     public static final boolean P480_WHITE_BALANCE_LOCK = true;         // Lock white balance after start to prevent drift
@@ -62,7 +62,7 @@ public final class VisionTuning {
     public static final int P720_FPS = 20;                              // Target frame rate for Sighting profile (720p streaming)
     public static final float P720_DECIMATION = 2.2f;                   // AprilTag decimation tuned for longer range detail
     public static final int P720_PROCESS_EVERY_N = 2;                   // Process every other frame for 720p to balance CPU load
-    public static final double P720_MIN_DECISION_MARGIN = 38.0;         // Minimum AprilTag decision margin accepted at 720p
+    public static final double P720_MIN_DECISION_MARGIN = 24.0;         // Minimum AprilTag decision margin accepted at 720p
     public static final int P720_EXPOSURE_MS = 15;                      // Manual exposure (ms) for 720p long-range lighting
     public static final int P720_GAIN = 110;                            // Camera-native gain for 720p profile brightness
     public static final boolean P720_WHITE_BALANCE_LOCK = true;         // Lock white balance for consistent color at 720p

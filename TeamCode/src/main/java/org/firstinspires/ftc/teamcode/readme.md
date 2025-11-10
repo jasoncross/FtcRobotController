@@ -108,7 +108,8 @@ TeamCode/
     ├── teleop/
     │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists)
     │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
-    │   └── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
+    │   ├── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
+    │   └── TeleOp_Test_CameraStream.java     ← Diagnostics TeleOp for streaming + AprilTag checks
     ├── utils/
     │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
     └── vision/
@@ -175,6 +176,12 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Toggle:** Gamepad 1 **Left Stick Button (LS)**.
 - **Behavior:** Inverts forward/back and strafe commands so the rear behaves as the front while leaving twist control unchanged.
 - **Feedback:** Emits a **double rumble** when enabled and a **single rumble** when disabled to match other mode toggles.
+
+### Camera Stream Diagnostics Mode
+- **OpMode:** `X - Test - Camera Stream` (Test group) – launches a minimal loop that keeps only drivetrain drive/strafe/twist inputs, live AprilTag processing, and the webcam stream active so pits can verify focus and alignment without spinning up other subsystems.
+- **Streaming:** Automatically enables the Driver Station preview on init; telemetry surfaces the active profile, FPS, and latency so crews can gauge pipeline health at a glance.
+- **Resolution swaps:** Gamepad 1 D-pad **left** selects the tuned 640×480 performance profile; D-pad **right** selects the 1280×720 sighting profile. Swaps rebuild the VisionPortal in a background thread while maintaining the live stream.
+- **Telemetry focus:** Displays the nearest detected tag ID, scaled range in inches, and bearing so camera aim tweaks can be confirmed immediately. All other TeleOp automations (feed, launcher, rumble, StopAll) remain idle to minimize Control Hub load during testing.
 
 ---
 
@@ -328,6 +335,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-11** – Added the "X - Test - Camera Stream" diagnostic TeleOp that boots with live streaming enabled, limits control to drivetrain drive/strafe/twist plus AprilTag telemetry, and maps Gamepad 1 D-pad left/right to swap between the tuned 480p performance and 720p sighting profiles; documented the workflow and updated the project layout accordingly.
 - **2025-11-10** – Added a TeleOp Reverse Drive mode toggled by the Gamepad 1 left stick button, inverting forward/strafe vectors while leaving twist intact, hooked the toggle into the shared rumble patterns (double on enable, single on disable), surfaced the mode state in telemetry, and updated the controller layout + Reverse Drive documentation for drivers.
 - **2025-11-07** – Made TeleOp feed/eject routines asynchronous so driver inputs stay live during shots, added intake-assist timers tied to the new Feed state machine, updated BaseAuto to use the shared gating, refreshed docs to note the non-blocking behavior, reworked toggle rumble pulses so double-blip feedback no longer sleeps the TeleOp loop, moved TeleOp vision profile swaps onto a background executor so switching between P480/P720 no longer stalls the drive loop, queued AutoSpeed enable/disable requests so RPM seeding + rumble feedback happen after the control scan without pausing drive input, reworked the FeedStop to home at INIT, auto-scale the servo window for separate hold/release degree targets, ensure StopAll parks at the homed zero, and retire obsolete tunables with updated telemetry/docs, defaulted FeedStop to full-span servo travel with an optional auto-scale toggle, refreshed telemetry strings, cleaned up the docs/tunable listings, and added a two-phase guarded homing routine with soft-limit clamps, safe-open travel caps, auto-scale telemetry, and StopAll/stop-to-home safeguards documented for pit crews.
 - **2025-11-06** – Integrated a FeedStop servo gate across Feed/TeleOp/BaseAuto, added `config/FeedStopConfig.java` tunables (scale, block/release, hold, lead), refreshed telemetry + StopAll handling so the gate re-latches cleanly, and updated docs/Tunable Directory to explain the new feed blocker behavior.

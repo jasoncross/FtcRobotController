@@ -35,6 +35,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | Control | Function |
 |---|---|
 | **Left Stick** | Drive (forward/back & strafe) |
+| **Left Stick Button (LS)** | Toggle **Reverse Drive** (treats rear as front; double rumble when enabled, single when disabled) |
 | **Right Stick X** | Rotation (**disabled while AutoAim is ON**) |
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
@@ -166,9 +167,14 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
   The spool → feed → hold sequence is asynchronous, so drivers can keep steering (or cancel with StopAll) while the timer winds down.
 
 ### Haptics
-- **Double pulse:** feature enabled.  
-- **Single pulse:** feature disabled or AutoAim grace expired.  
-- Aim rumble scales by heading error (only active when AutoAim = OFF).  
+- **Double pulse:** feature enabled.
+- **Single pulse:** feature disabled or AutoAim grace expired.
+- Aim rumble scales by heading error (only active when AutoAim = OFF).
+
+### Reverse Drive Mode
+- **Toggle:** Gamepad 1 **Left Stick Button (LS)**.
+- **Behavior:** Inverts forward/back and strafe commands so the rear behaves as the front while leaving twist control unchanged.
+- **Feedback:** Emits a **double rumble** when enabled and a **single rumble** when disabled to match other mode toggles.
 
 ---
 
@@ -322,6 +328,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-10** – Added a TeleOp Reverse Drive mode toggled by the Gamepad 1 left stick button, inverting forward/strafe vectors while leaving twist intact, hooked the toggle into the shared rumble patterns (double on enable, single on disable), surfaced the mode state in telemetry, and updated the controller layout + Reverse Drive documentation for drivers.
 - **2025-11-07** – Made TeleOp feed/eject routines asynchronous so driver inputs stay live during shots, added intake-assist timers tied to the new Feed state machine, updated BaseAuto to use the shared gating, refreshed docs to note the non-blocking behavior, reworked toggle rumble pulses so double-blip feedback no longer sleeps the TeleOp loop, moved TeleOp vision profile swaps onto a background executor so switching between P480/P720 no longer stalls the drive loop, queued AutoSpeed enable/disable requests so RPM seeding + rumble feedback happen after the control scan without pausing drive input, reworked the FeedStop to home at INIT, auto-scale the servo window for separate hold/release degree targets, ensure StopAll parks at the homed zero, and retire obsolete tunables with updated telemetry/docs, defaulted FeedStop to full-span servo travel with an optional auto-scale toggle, refreshed telemetry strings, cleaned up the docs/tunable listings, and added a two-phase guarded homing routine with soft-limit clamps, safe-open travel caps, auto-scale telemetry, and StopAll/stop-to-home safeguards documented for pit crews.
 - **2025-11-06** – Integrated a FeedStop servo gate across Feed/TeleOp/BaseAuto, added `config/FeedStopConfig.java` tunables (scale, block/release, hold, lead), refreshed telemetry + StopAll handling so the gate re-latches cleanly, and updated docs/Tunable Directory to explain the new feed blocker behavior.
 - **2025-11-05** – Aligned Autonomous range scaling with TeleOp by applying `VisionTuning.RANGE_SCALE` during BaseAuto init, added an `AutoSequence.visionMode(...)` builder step for runtime AprilTag profile swaps, updated both human-side autos to begin in the 720p sighting profile, and refreshed docs/Tunable Directory to describe the shared calibration helper.

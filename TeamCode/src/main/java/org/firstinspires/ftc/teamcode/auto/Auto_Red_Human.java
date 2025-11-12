@@ -10,26 +10,36 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE
- *   - Deliver the RED alliance human-player autonomous (east tile, robot facing
- *     NORTH) as documented in DECODE_Season_Context.md: spot Tag 24, confirm
- *     launcher readiness, fire the preload, and roll toward the classifier lane.
- *   - Provide a mirrored counterpart to Auto_Blue_Human so adjustments made to
- *     shared helpers behave identically on both alliances while showcasing the
- *     AutoSequence flow.
+ *   - Execute the RED alliance human-player start (east tile, robot facing
+ *     NORTH) by charging to the long-range shot box, sweeping for Tag 24,
+ *     unleashing a rapid five-artifact volley, then retreating south to reopen
+ *     the intake lane for the partner robot.
+ *   - Mirror the BLUE alliance long-run routine so cross-alliance tuning stays
+ *     synchronized while documenting the extended AutoSequence pattern of
+ *     vision profile swap, heading capture, aggressive drive, and high-cadence
+ *     firing.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - move(... 2 in, heading 0°, speed 0.35)
- *       • Soft bump off the wall before scanning for Tag 24.
+ *   - visionMode(... Mode.P720)
+ *       • Engages the 720p sighting profile before the long drive so range
+ *         sampling matches TeleOp’s long-shot assumptions.
+ *   - spinToAutoRpmDefault(...)
+ *       • Keeps the launcher warm with the shared AutoSpeed default during the
+ *         long sprint to the firing box.
+ *   - move(... 80 in, heading 0°, speed 0.35)
+ *       • Covers the full upfield sprint to the calibrated firing distance prior
+ *         to scanning for Tag 24.
  *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°)
- *       • Sweeps clockwise up to 90° after the wall-clear, then checks 30°
- *         counter-clockwise while searching for Tag 24. Increase sweep angles
- *         or the speed fraction for wider hunts.
+ *       • Sweeps clockwise to 90° and checks 30° counter-clockwise while
+ *         hunting for Tag 24; widen or shrink the arcs to tune scan coverage.
  *   - readyToLaunch(timeout 3200 ms)
- *       • Waits for LauncherAutoSpeedController to reach the shared RPM window and settle.
- *   - fire(shots = 3, betweenShotsMs = 3000)
- *       • Encodes cadence inline (3000 ms default here).
- *   - move(... 24 in, heading 0°, speed 0.55)
- *       • Drives forward after the volley to open the intake lane.
+ *       • Holds until AutoSpeed reaches the shared RPM window + settle timer so
+ *         every shot leaves at the correct velocity.
+ *   - fire(shots = 5, betweenShotsMs = 1000)
+ *       • Fires a fast five-artifact volley once launcher readiness settles.
+ *   - move(... -36 in, heading 0°, speed 0.85)
+ *       • Drives 36" back toward the launch line to clear space for alliance
+ *         partners immediately after shooting.
  *
  * METHODS
  *   - alliance()
@@ -55,6 +65,7 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
+    // CHANGES (2025-11-13): Updated header to describe long-run volley, five-shot cadence, and post-volley retreat.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation (edit

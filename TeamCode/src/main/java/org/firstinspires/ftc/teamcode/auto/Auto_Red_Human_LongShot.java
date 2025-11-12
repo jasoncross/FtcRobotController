@@ -46,7 +46,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     distance or follow-up task).
  */
 @Autonomous(name="Auto: Red Human", group="Auto", preselectTeleOp="TeleOp - Red")
-public class Auto_Red_Human extends BaseAuto {
+public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear bump, telemetry-guided Tag 24 volley, heading
     //                        reset, and 24" advance mirroring the refreshed Auto flow.
     // CHANGES (2025-10-31): Migrated to AutoSequence builder for declarative steps and

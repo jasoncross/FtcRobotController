@@ -48,7 +48,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     ensure BaseAuto.syncTeleOpOverrides() still mirrors those settings at init.
  */
 @Autonomous(name="Auto: Blue Human Long Shot", group="Auto", preselectTeleOp="TeleOp - Blue")
-public class Auto_Blue_Human extends BaseAuto {
+public class Auto_Blue_Human_LongShot extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear drive, telemetry-guided tag scan, locked volley,
     //                        heading reset, and 24" advance per refreshed Auto steps.
     // CHANGES (2025-10-31): Switched to AutoSequence for clearer movement/aim/fire scripting

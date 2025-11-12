@@ -30,7 +30,7 @@ import java.util.Locale;
  * CHANGES (2025-11-11): Initial camera-stream test mode supporting drivetrain,
  *                       AprilTag telemetry, and 480p/720p swaps on the D-pad.
  */
-@TeleOp(name = "X - Test - Camera Stream", group = "X_Test")
+@TeleOp(name = "X - Test - Camera Stream", group = "TeleOp")
 public final class TeleOp_Test_CameraStream extends OpMode {
 
     private static final double M_TO_IN = 39.37007874015748;

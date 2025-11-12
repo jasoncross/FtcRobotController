@@ -64,7 +64,7 @@ public class Auto_Red_Target extends BaseAuto {
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
                 .rotateToTarget("Scan for Tag 20", ScanDirection.CW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire 3-shot volley", 3, true, 3000)
+                .fire("Fire volley", 5, true, 1000)
                 .waitFor("Hold position", 500)
                 .run();
     }

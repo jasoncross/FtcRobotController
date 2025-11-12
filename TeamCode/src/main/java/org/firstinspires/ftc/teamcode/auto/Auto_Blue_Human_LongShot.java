@@ -47,7 +47,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - If TeleOpAllianceBase overrides AutoAim defaults (e.g., initialAutoDefaultSpeed),
  *     ensure BaseAuto.syncTeleOpOverrides() still mirrors those settings at init.
  */
-@Autonomous(name="Auto: Blue Human", group="Auto", preselectTeleOp="TeleOp - Blue")
+@Autonomous(name="Auto: Blue Human Long Shot", group="Auto", preselectTeleOp="TeleOp - Blue")
 public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear drive, telemetry-guided tag scan, locked volley,
     //                        heading reset, and 24" advance per refreshed Auto steps.
@@ -71,12 +71,12 @@ public class Auto_Blue_Human extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
+                .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 36 in back", -36.0, 0.0, 0.85)
+                .move("Drive 36 in forward", 36.0, 0.0, 0.85)
                 .run();
     }
 }

@@ -63,7 +63,7 @@ public class Auto_Blue_Target extends BaseAuto {
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .rotateToTarget("Scan for Tag 20", ScanDirection.CCW, 0.25, 180, -90) // 180° CCW sweep, CW return to +90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire 3-shot volley", 3, true, 3000)
+                .fire("Fire volley", 5, true, 1000)
                 .waitFor("Hold position", 500)
                 .run();
     }

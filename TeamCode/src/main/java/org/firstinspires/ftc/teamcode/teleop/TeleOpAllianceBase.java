@@ -53,6 +53,9 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-12): StopAll now caches the live intake state so resuming
+ *                       with Start restores the previous ON/OFF setting
+ *                       instead of forcing the intake off until retoggled.
  * CHANGES (2025-11-10): Added a Reverse Drive toggle on Gamepad 1 left stick
  *                       click that inverts forward/strafe commands and emits
  *                       double/single rumble on enable/disable for driver
@@ -195,6 +198,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // ---------------- RPM Test Mode ----------------
     private boolean rpmTestEnabled = false; // Manual RPM sweep test (D-pad adjustments)
     private double  rpmTestTarget  = 0.0;   // Current manual test RPM when enabled
+
+    // ---------------- Intake Resume ----------------
+    private boolean intakeResumeState = DEFAULT_INTAKE_ENABLED; // Stored intake state for StopAll resume
 
     // ---------------- Aim Rumble (Haptics) ----------------
     private RumbleNotifier aimRumbleDriver1;          // Shared notifier handling all rumble envelopes
@@ -457,6 +463,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     public void start() {
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
+        intakeResumeState = DEFAULT_INTAKE_ENABLED;
 
         autoAimEnabled = DEFAULT_AUTOAIM_ENABLED;
         aimLossStartMs = -1;
@@ -513,6 +520,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 stopLatched = true;
                 feed.setIdleHoldActive(false); // keep feed fully stopped while StopAll is latched
                 feed.setBlock();
+                if (intake != null) {
+                    intakeResumeState = intake.isOn();
+                }
                 stopAll();
                 telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
@@ -1134,11 +1144,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (stopLatched) {
             feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
             feed.setBlock();
+            if (intake != null) {
+                intakeResumeState = intake.isOn();
+            }
             stopAll();
             // Optional haptic cue: single pulse to confirm STOP
             pulseSingle(gamepad1);
         } else {
             feed.setIdleHoldActive(true); // restore idle hold once TeleOp control resumes
+            if (intake != null) {
+                intake.set(intakeResumeState);
+            }
             // Optional haptic cue: single pulse to confirm RESUME
             pulseSingle(gamepad1);
         }

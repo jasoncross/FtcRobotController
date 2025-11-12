@@ -69,12 +69,12 @@ public class Auto_Red_Human extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Clear wall (drive 80 in)", 80.0, 0.0, 0.35)
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.25, 90, 30)
+                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
+                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30)
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire 3-shot volley", 3, true, 3000)
+                .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                //.move("Drive 24 in upfield", 24.0, 0.0, 0.55)
+                .move("Drive 36 in back", 36.0, 0.0, 0.85)
                 .run();
     }
 }

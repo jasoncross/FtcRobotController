@@ -53,6 +53,10 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-14): Intake assist restore now re-applies the driver's
+ *                       pre-shot state after the timer instead of latching the
+ *                       intake ON when it was manually disabled before the
+ *                       feed.
  * CHANGES (2025-11-12): StopAll now caches the live intake state so resuming
  *                       with Start restores the previous ON/OFF setting
  *                       instead of forcing the intake off until retoggled.
@@ -1059,11 +1063,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         boolean current = intake.isOn();
         if (current != intakeAssistTargetState) {
-            intakeAssistRestorePending = false; // driver changed the state — respect manual override
-        } else {
             intake.set(intakeAssistTargetState);
-            intakeAssistRestorePending = false;
         }
+        intakeAssistRestorePending = false;
         intakeAssistResumeAtMs = 0L;
         intakeAssistExtraHoldMs = 0L;
         intakeAssistSawFeedActive = false;

@@ -49,6 +49,8 @@ public final class SharedRobotTuning {
 
     // CHANGES (2025-10-30): Moved INTAKE_ASSIST_MS to FeedTuning; kept deprecated alias for compatibility.
     // CHANGES (2025-11-02): Removed autonomous shot spacing tunable; cadence now provided per sequence.
+    // CHANGES (2025-11-14): Added profile-specific lock tolerances so 480p vision can accept
+    //                        higher bearing error without stalling volleys.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -62,6 +64,8 @@ public final class SharedRobotTuning {
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG
+    public static double LOCK_TOLERANCE_DEG_P480    = 1.5;    // Override when running the 640×480 vision profile (looser due to coarser pose output)
+    public static double LOCK_TOLERANCE_DEG_P720    = 1.0;    // Override when running the 1280×720 profile (sharper pose accuracy)
     public static double TURN_TWIST_CAP             = 0.35;   // Twist clamp shared by BaseAuto + AutoAimSpeed unless overridden
     public static double DRIVE_MAX_POWER            = 0.50;   // Max auto drive power; adjust here for global movement speed
 

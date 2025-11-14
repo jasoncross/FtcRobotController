@@ -198,10 +198,11 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
 - **Shared initialization:** TeleOp and BaseAuto both call `vision.setRangeScale(VisionTuning.RANGE_SCALE)` so distance math and AutoSpeed RPM seeds stay consistent between match phases.
 - **Vision profiles** (`config/VisionTuning.java → P480_* / P720_*` constants via `VisionTuning.forMode(...)`):
-  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `25`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
-  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `38`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
+  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `18`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
+  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `24`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
   - **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
   - **Runtime swaps:** TeleOp now queues profile changes on a background executor so the VisionPortal rebuild does not pause drive control when drivers tap D-pad left/right.
+  - **Auto lock tolerance:** BaseAuto automatically swaps to the profile-specific tolerances in `SharedRobotTuning` (`LOCK_TOLERANCE_DEG_P480` defaults to **1.5°**, `LOCK_TOLERANCE_DEG_P720` stays at **1.0°**) so 480p pose noise no longer blocks volley shots while 720p keeps the tighter window.
 - **Streaming toggle:** Gamepad 2 D-pad up/down calls `vision.toggleLiveView(...)` (prefers MJPEG preview when enabled).
 - **Telemetry bundle (≈10 Hz):**
   - `Vision: Profile=<P480|P720> LiveView=<ON|OFF> Res=<WxH>@<FPS> Decim=<x.x> ProcN=<n> MinM=<m>`
@@ -340,7 +341,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-11-14** – Restored intake assist cleanup so TeleOp feeds only borrow the intake when it was manually OFF, letting the timer hand control back without latching it ON; documented the behavior in the intake/feed section above.
+- **2025-11-14** – Restored intake assist cleanup so TeleOp feeds only borrow the intake when it was manually OFF, letting the timer hand control back without latching it ON; documented the behavior in the intake/feed section above. Also added profile-specific autonomous AprilTag lock tolerances (`SharedRobotTuning.LOCK_TOLERANCE_DEG_P480`/`_P720`) so P480 vision can accept a slightly wider bearing window without freezing volleys, updated BaseAuto to honor the overrides automatically, and refreshed the vision/tunable docs with the new calibration details.
 - **2025-11-13** – Refreshed all autonomous header comments to document the new long-run, launch-line long-shot, and 30" safety routes (noting five-shot cadence, retreat/advance plans, and vision swaps) and added the new auto classes to the Project Layout tree for quick discovery.
 - **2025-11-12** – Captured the live intake state before StopAll engages so resuming with Start restores whichever intake mode was active, eliminating the need to re-toggle the motor after manual or timer-triggered stops; documented the behavior in the StopAll section for drive team clarity.
 - **2025-11-11** – Added the "X - Test - Camera Stream" diagnostic TeleOp that boots with live streaming enabled, limits control to drivetrain drive/strafe/twist plus AprilTag telemetry, and maps Gamepad 1 D-pad left/right to swap between the tuned 480p performance and 720p sighting profiles; documented the workflow and updated the project layout accordingly.

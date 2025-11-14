@@ -108,6 +108,8 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-11-07): Surfaced FeedStop homing telemetry so INIT shows when zero is established.
     // CHANGES (2025-11-09): Trimmed FeedStop telemetry to a single summary line with warnings only
     //                        when soft-limit or scaling guards trigger.
+    // CHANGES (2025-11-14): Relaxed AprilTag lock tolerance automatically when the 480p vision
+    //                        profile is active so coarse pose noise no longer stalls volleys.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -158,7 +160,27 @@ public abstract class BaseAuto extends LinearOpMode {
 
     private String autoOpModeName;
 
-    private double lockTolDeg()   { try { return SharedRobotTuning.LOCK_TOLERANCE_DEG; } catch (Throwable t){ return DEF_LOCK_TOL_DEG; } }
+    private double lockTolDeg() {
+        double fallback = DEF_LOCK_TOL_DEG;
+        try { fallback = SharedRobotTuning.LOCK_TOLERANCE_DEG; } catch (Throwable ignored) {}
+
+        if (vision != null) {
+            try {
+                VisionTuning.Mode mode = vision.getActiveMode();
+                if (mode == VisionTuning.Mode.P480) {
+                    try { return SharedRobotTuning.LOCK_TOLERANCE_DEG_P480; }
+                    catch (Throwable ignored) { return fallback; }
+                } else if (mode == VisionTuning.Mode.P720) {
+                    try { return SharedRobotTuning.LOCK_TOLERANCE_DEG_P720; }
+                    catch (Throwable ignored) { return fallback; }
+                }
+            } catch (Throwable ignored) {
+                // fall through to fallback when vision profile unavailable
+            }
+        }
+
+        return fallback;
+    }
     private double turnTwistCap() { try { return SharedRobotTuning.TURN_TWIST_CAP;     } catch (Throwable t){ return DEF_TURN_CAP;     } }
     private double driveCap()     { try { return SharedRobotTuning.DRIVE_MAX_POWER;    } catch (Throwable t){ return DEF_DRIVE_CAP;    } }
     private double rpmTol()       { try { return SharedRobotTuning.RPM_TOLERANCE;      } catch (Throwable t){ return DEF_RPM_TOL;      } }

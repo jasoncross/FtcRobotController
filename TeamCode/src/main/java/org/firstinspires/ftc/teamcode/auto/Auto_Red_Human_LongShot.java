@@ -53,7 +53,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     values only when the RED human strategy changes (e.g., different drive
  *     distance or follow-up task).
  */
-@Autonomous(name="Auto: Red Human", group="Auto", preselectTeleOp="TeleOp - Red")
+@Autonomous(name="Auto: Red Human Long Shot", group="Auto", preselectTeleOp="TeleOp - Red")
 public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear bump, telemetry-guided Tag 24 volley, heading
     //                        reset, and 24" advance mirroring the refreshed Auto flow.

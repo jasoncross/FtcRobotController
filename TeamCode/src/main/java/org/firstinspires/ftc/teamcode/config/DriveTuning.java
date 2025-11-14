@@ -31,7 +31,7 @@ public final class DriveTuning {
     private DriveTuning() {}
 
     // Geometry & encoders
-    public static double WHEEL_DIAMETER_IN = 3.7795; // goBILDA 96 mm wheel ≈ 3.7795"
+    public static double WHEEL_DIAMETER_IN = 4.0295; // goBILDA 96 mm wheel ≈ 3.7795"
     public static double TICKS_PER_REV     = 537.7;  // goBILDA 5202 312 RPM output encoder
     public static double GEAR_RATIO        = 1.0;    // Wheel revs per motor rev (>1 if reduced)
 

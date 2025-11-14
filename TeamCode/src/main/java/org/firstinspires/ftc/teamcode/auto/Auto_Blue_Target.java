@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.auto;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
+import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 /*
  * FILE: Auto_Blue_Target.java
@@ -65,12 +66,14 @@ public class Auto_Blue_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
+                .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .rotateToTarget("Scan for Tag 20", ScanDirection.CCW, 0.25, 180, -90) // 180° CCW sweep, CW return to +90°, repeat
+                .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
+                // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
+                .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
-                .waitFor("Hold position", 500)
+                //.waitFor("Hold position", 500)
                 .run();
     }
 }

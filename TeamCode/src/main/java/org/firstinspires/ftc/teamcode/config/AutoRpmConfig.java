@@ -47,12 +47,12 @@ public final class AutoRpmConfig {
 
     // --- Tunables shared by TeleOp & Auto ---
     // CHANGES (2025-10-31): Updated anchor defaults (65.4 in → 4550 RPM, 114 in → 5000 RPM) and added DEFAULT_NO_TAG_RPM.
-    public static double NEAR_DIST_IN      = 42;  // Authoritative near-shot distance (inches); overrides controller defaults
-    public static double NEAR_RPM          = 3000.0; // RPM paired with NEAR_DIST_IN; adjust together after re-scaling range
+    public static double NEAR_DIST_IN      = 37;  // Authoritative near-shot distance (inches); overrides controller defaults
+    public static double NEAR_RPM          = 2450.0; // RPM paired with NEAR_DIST_IN; adjust together after re-scaling range
     public static double FAR_DIST_IN       = 70.0; // Far-shot anchor distance; align with autonomous standoff distances
-    public static double FAR_RPM           = 3300.0; // RPM for FAR_DIST_IN; still clamped by Launcher.RPM_MAX
+    public static double FAR_RPM           = 2600.0; // RPM for FAR_DIST_IN; still clamped by Launcher.RPM_MAX
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
-    public static double DEFAULT_NO_TAG_RPM = 3100.0; // RPM to hold while AutoSpeed runs without a tag lock
+    public static double DEFAULT_NO_TAG_RPM = 2500.0; // RPM to hold while AutoSpeed runs without a tag lock
 
     /** Apply standard params to a controller. Safe to call repeatedly. */
     public static void apply(LauncherAutoSpeedController ctrl) {

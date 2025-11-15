@@ -68,7 +68,7 @@ public class Auto_Blue_Target extends BaseAuto {
         sequence()
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 36 in to standoff", 36.0, 0.0, 0.55)
+                .move("Drive 40 in to standoff", 40.0, 0.0, 0.55)
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)

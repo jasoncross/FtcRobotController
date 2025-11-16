@@ -150,7 +150,9 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.
 - When **disabled**, right trigger controls RPM directly.
 - **Defaults:**
-  - AutoRPM interpolation between **65.4 in → 4550 RPM** and **114 in → 5000 RPM** (`AutoRpmConfig` anchors)
+  - AutoRPM now reads a config-driven calibration table from `config/AutoRpmConfig.java`
+    (default points: **35 in→2600 RPM**, **37 in→2500 RPM**, **60 in→2550 RPM**, **67 in→2750 RPM**, **82 in→3050 RPM**,
+    **100 in→3800 RPM**). The controller linearly interpolates between entries and clamps outside the range.
   - **Default hold** while no tag is visible = **4450 RPM** (`AutoRpmConfig.DEFAULT_NO_TAG_RPM`)
   - Holds the **last vision-derived RPM** once at least one tag fix has occurred.
 - **Driver toggles:** Gamepad Y buttons queue AutoSpeed enable/disable requests so the TeleOp loop finishes scanning
@@ -341,6 +343,11 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-15** – Replaced the two-point AutoRPM mapping with a config-driven calibration
+table backed by linear interpolation + clamping in `LauncherAutoSpeedController`, added the
+default 35/37/60/67/82/100 in calibration pairs to `AutoRpmConfig`, surfaced the table summary
+in TeleOp telemetry, clarified the `LauncherTuning`/`Launcher` RPM_MAX guardrails, and updated
+the AutoSpeed docs + Tunable Directory to explain how to edit the curve.
 - **2025-11-14** – Restored intake assist cleanup so TeleOp feeds only borrow the intake when it was manually OFF, letting the timer hand control back without latching it ON; documented the behavior in the intake/feed section above. Also added profile-specific autonomous AprilTag lock tolerances (`SharedRobotTuning.LOCK_TOLERANCE_DEG_P480`/`_P720`) so P480 vision can accept a slightly wider bearing window without freezing volleys, updated BaseAuto to honor the overrides automatically, and refreshed the vision/tunable docs with the new calibration details.
 - **2025-11-13** – Refreshed all autonomous header comments to document the new long-run, launch-line long-shot, and 30" safety routes (noting five-shot cadence, retreat/advance plans, and vision swaps) and added the new auto classes to the Project Layout tree for quick discovery.
 - **2025-11-12** – Captured the live intake state before StopAll engages so resuming with Start restores whichever intake mode was active, eliminating the need to re-toggle the motor after manual or timer-triggered stops; documented the behavior in the StopAll section for drive team clarity.

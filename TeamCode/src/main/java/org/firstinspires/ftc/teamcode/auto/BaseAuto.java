@@ -55,8 +55,8 @@ import java.util.Locale;
  *   - SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED
  *       • Seeds launcher RPM before the first goal lock via spinLauncherToAutoRpmDefault().
  *       • Mirrors TeleOp's AutoSpeed warm-up so both modes share the same idle spin.
- *   - AutoRpmConfig (NEAR/FAR anchors + SMOOTH_ALPHA)
- *       • Defines the distance→RPM curve applied to LauncherAutoSpeedController.
+ *   - AutoRpmConfig (calibration table + SMOOTH_ALPHA)
+ *       • Defines the ordered distance→RPM calibration points for LauncherAutoSpeedController.
  *       • Overrides the controller’s internal defaults each time runOpMode() starts.
  *
  * METHODS
@@ -110,6 +110,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        when soft-limit or scaling guards trigger.
     // CHANGES (2025-11-14): Relaxed AprilTag lock tolerance automatically when the 480p vision
     //                        profile is active so coarse pose noise no longer stalls volleys.
+    // CHANGES (2025-11-15): Documented the AutoRpmConfig calibration table so autos follow the
+    //                        same multi-point curve as TeleOp after apply().
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();

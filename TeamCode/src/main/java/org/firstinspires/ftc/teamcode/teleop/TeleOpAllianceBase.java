@@ -53,6 +53,9 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-15): AutoRPM telemetry now summarizes the calibration table
+ *                       (point count + endpoint pairs) so drivers see the
+ *                       config-driven curve without plugging into code.
  * CHANGES (2025-11-14): Intake assist restore now re-applies the driver's
  *                       pre-shot state after the timer instead of latching the
  *                       intake ON when it was manually disabled before the
@@ -679,9 +682,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (autoRpmActive && !rpmTestEnabled) {
             telemetry.addData("AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format("%.1f", autoDistIn));
             telemetry.addData("AutoRPM Out", "%.0f", autoOutRpm);
-            telemetry.addData("AutoRPM Tunables", "Near=%.0f→%.0f  Far=%.0f→%.0f",
-                    autoCtrl.getNearDistanceIn(), autoCtrl.getNearSpeedRpm(),
-                    autoCtrl.getFarDistanceIn(),  autoCtrl.getFarSpeedRpm());
+            double[] calDist = autoCtrl.getCalibrationDistancesIn();
+            double[] calRpm  = autoCtrl.getCalibrationSpeedsRpm();
+            if (calDist.length > 0) {
+                int lastIdx = calDist.length - 1;
+                telemetry.addData("AutoRPM Tunables",
+                        "%d pts %.0f\"→%.0f … %.0f\"→%.0f",
+                        calDist.length,
+                        calDist[0], calRpm[0],
+                        calDist[lastIdx], calRpm[lastIdx]);
+            } else {
+                telemetry.addData("AutoRPM Tunables", "No calibration points loaded");
+            }
             telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
         }
         telemetry.addLine(visionStatusLine);

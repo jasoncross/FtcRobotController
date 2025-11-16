@@ -10,14 +10,10 @@
  *     TeleOpAllianceBase to copy the values into the controller at runtime.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Launcher speed & flywheel control)
- *   - NEAR_DIST_IN / NEAR_RPM
- *       • Inches + RPM pair representing the calibrated "close" shot.
- *       • These override the controller’s defaults on every apply(); adjust both
- *         together after recalibrating VisionAprilTag range scaling.
- *   - FAR_DIST_IN / FAR_RPM
- *       • Anchor point for far-field volleys.
- *       • Move the distance if autos park farther away; tweak RPM to hold arc
- *         consistency. This still respects Launcher.RPM_MAX clamp downstream.
+ *   - CALIBRATION_DISTANCES_IN / CALIBRATION_RPMS (ADDED 2025-11-15)
+ *       • Ordered arrays of inches + RPM pairs that define the entire calibration table.
+ *       • Supports any N ≥ 2 entries. LauncherAutoSpeedController interpolates between
+ *         neighboring points and clamps outside the table bounds.
  *   - SMOOTH_ALPHA
  *       • Exponential smoothing constant (0–1) applied to RPM updates.
  *       • Overrides LauncherAutoSpeedController.smoothingAlpha; match the value
@@ -35,6 +31,7 @@
  * NOTES
  *   - AutoAimSpeed and BaseAuto both read the controller after apply(), so this
  *     file is the single source of truth for curve anchors.
+ *   - Provide at least two calibration points; values do not need to be evenly spaced.
  *   - Launcher.RPM_MIN/RPM_MAX still clamp the final command; adjust those in
  *     subsystems/Launcher.java when hardware changes require broader limits.
  */
@@ -46,11 +43,23 @@ public final class AutoRpmConfig {
     private AutoRpmConfig() {}
 
     // --- Tunables shared by TeleOp & Auto ---
-    // CHANGES (2025-10-31): Updated anchor defaults (65.4 in → 4550 RPM, 114 in → 5000 RPM) and added DEFAULT_NO_TAG_RPM.
-    public static double NEAR_DIST_IN      = 37;  // Authoritative near-shot distance (inches); overrides controller defaults
-    public static double NEAR_RPM          = 2450.0; // RPM paired with NEAR_DIST_IN; adjust together after re-scaling range
-    public static double FAR_DIST_IN       = 70.0; // Far-shot anchor distance; align with autonomous standoff distances
-    public static double FAR_RPM           = 2600.0; // RPM for FAR_DIST_IN; still clamped by Launcher.RPM_MAX
+    // CHANGES (2025-11-15): Replaced fixed near/far anchors with a full calibration table (default 6 points, 35–100 in).
+    public static double[] CALIBRATION_DISTANCES_IN = {
+            35.0,
+            37.0,
+            60.0,
+            67.0,
+            82.0,
+            100.0
+    }; // Inches for the calibration table (must align with CALIBRATION_RPMS)
+    public static double[] CALIBRATION_RPMS = {
+            2600.0,
+            2500.0,
+            2550.0,
+            2750.0,
+            3050.0,
+            3800.0
+    }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
     public static double DEFAULT_NO_TAG_RPM = 2500.0; // RPM to hold while AutoSpeed runs without a tag lock
 
@@ -58,7 +67,7 @@ public final class AutoRpmConfig {
     public static void apply(LauncherAutoSpeedController ctrl) {
         if (ctrl == null) return;
         ctrl.setDefaultRpm(DEFAULT_NO_TAG_RPM);
-        ctrl.setParams(NEAR_DIST_IN, NEAR_RPM, FAR_DIST_IN, FAR_RPM);
+        ctrl.setCalibrationCurve(CALIBRATION_DISTANCES_IN, CALIBRATION_RPMS);
         ctrl.setSmoothingAlpha(SMOOTH_ALPHA);
     }
 }

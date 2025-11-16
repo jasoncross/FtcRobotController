@@ -30,8 +30,8 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
  *         remains accurate.
  *   - RPM_MIN / RPM_MAX
  *       • Software clamps applied to every RPM request.
- *       • Keep RPM_MAX ≥ AutoRpmConfig FAR_RPM and TeleOpAllianceBase.rpmTop so
- *         downstream commands do not saturate.
+ *       • Keep RPM_MAX ≥ the highest AutoRpmConfig calibration RPM and
+ *         TeleOpAllianceBase.rpmTop so downstream commands do not saturate.
  *   - PIDF (RUN_USING_ENCODER)
  *       • Closed-loop gains applied at the hub. Start near TunableDirectory’s
  *         P=10, I=3, D=0, F=12 and adjust for wheel mass or overshoot.
@@ -61,7 +61,8 @@ public class Launcher {
     // === CONFIGURATION CONSTANTS ===
     private static final double FLYWHEEL_TPR = LauncherTuning.FLYWHEEL_TPR; // Encoder ticks per revolution; adjust via config
     private static final double RPM_MIN      = LauncherTuning.RPM_MIN;      // Minimum allowed RPM requested by any caller
-    private static final double RPM_MAX      = LauncherTuning.RPM_MAX;      // Maximum allowed RPM; keep ≥ AutoRpmConfig FAR_RPM & TeleOp rpmTop
+    // CHANGES (2025-11-15): Updated RPM_MAX guidance to follow the new AutoRpmConfig calibration table.
+    private static final double RPM_MAX      = LauncherTuning.RPM_MAX;      // Maximum allowed RPM; keep ≥ highest AutoSpeed calibration RPM & TeleOp rpmTop
 
     // Default closed-loop PIDF values for REV velocity control.
     // Adjust only if behavior indicates overshoot, oscillation, or slow recovery.

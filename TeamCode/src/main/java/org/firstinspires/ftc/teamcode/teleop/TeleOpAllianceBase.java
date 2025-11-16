@@ -548,9 +548,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         now = System.currentTimeMillis();
         updateEjectSequence(now);
         updateIntakeAssist(now);
+        boolean ejectActive = isEjectRoutineActive();
 
         // Honor manual lock in manual mode
-        if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled) {
+        if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled && !ejectActive) {
             launcher.setTargetRpm(manualLockedRpm);
         }
 
@@ -621,7 +622,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         Double autoDistIn = null;
         double autoOutRpm = launcher.targetRpm;
 
-        if (autoRpmActive) {
+        if (autoRpmActive && !ejectActive) {
             ensureAutoCtrl();
             AutoRpmConfig.apply(autoCtrl); // CENTRALIZED params + smoothing
 
@@ -641,7 +642,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 autoOutRpm = (!autoHadTagFix) ? InitialAutoDefaultSpeed : autoCtrl.updateWithVision(null);
             }
             launcher.setTargetRpm(autoOutRpm);
-        } else {
+        } else if (!ejectActive) {
             // Enforce manual floor if applicable
             if (!manualRpmLocked && !rpmTestEnabled) {
                 double currentCmd = launcher.targetRpm;
@@ -1044,6 +1045,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             ejectFeedStarted = false;
             ejectPhaseUntilMs = 0L;
         }
+    }
+
+    private boolean isEjectRoutineActive() {
+        return ejectPhase != EjectPhase.IDLE;
     }
 
     private void updateIntakeAssist(long now) {

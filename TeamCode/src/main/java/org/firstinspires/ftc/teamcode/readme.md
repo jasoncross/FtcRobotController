@@ -170,6 +170,13 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
 - Feed/Eject commands now ride the Feed subsystem's asynchronous cycle, so the TeleOp loop keeps processing drive/aim inputs while the feed motor pulses and the intake assist timer counts down in the background.
 - When drivers have manually toggled the intake OFF before feeding, the assist only borrows it for the configured window and then returns it to OFF automatically instead of leaving it latched ON.
+- Whenever the intake is ON it samples the motor encoder roughly every 50 ms and classifies four flow phases:
+  - **FREE FLOW** – shaft spins freely at `IntakeTuning.FILL_POWER` until the first ball hits the top of the ramp.
+  - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls).
+  - **SATURATED** – once fully packed, the motor runs a pulsed hold using `HOLD_POWER` and `HOLD_PULSE_*` so the column stays under pressure without a continuous stall.
+  - **JAMMED** – if encoder movement is essentially zero for `STALL_DEBOUNCE_SAMPLES` windows after saturation, the intake shuts off for `JAM_RECOVERY_PAUSE_MS` and then retries.
+- Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
+- While `feed.isFeedCycleActive()` the intake automatically drops to the low `FEED_ACTIVE_HOLD_POWER` so launcher volleys do not stack more current draw; once the feed finishes, the state machine resumes normal power automatically.
 - FeedStop servo (`config/FeedStopConfig.java`) now homes in two guarded phases: it first steps open in the release direction to `SAFE_PRESET_OPEN_DEG` (capped by `MAX_HOME_TRAVEL_DEG`) without ever commanding below 0°, then seats against the BLOCK stop, dwells for `HOME_DWELL_MS`, and backs off by `HOME_BACKOFF_DEG` before parking. Every degree request is clamped inside `SOFT_CCW_LIMIT_DEG` (0°) and `SOFT_CW_LIMIT_DEG` (170°), so no runtime command can crash the linkage. After homing it rests at `HOLD_ANGLE_DEG` (~30°) to block the path, swings to `RELEASE_ANGLE_DEG` (~110°) when feeding, and defaults to the servo’s full 300° span (no `scaleRange`). Teams that enable `USE_AUTO_SCALE` let the subsystem compute the narrowest safe window (with `SAFETY_MARGIN_DEG` headroom) and telemetry now surfaces the mode, limits, scale range (or “scale=none”), direction sign, and any clamp/abort warnings. StopAll/stop() always return the gate to the homed 0° position before disabling.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
   The spool → feed → hold sequence is asynchronous, so drivers can keep steering (or cancel with StopAll) while the timer winds down.
@@ -343,6 +350,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-16** – Added the encoder-aware intake jam classifier (FREE FLOW → PACKING → SATURATED → JAMMED), wired TeleOp/Auto loops to keep it updated with Feed-aware load shedding, exposed the state in telemetry/docs, and listed the new IntakeTuning parameters in the tunable directory.
 - **2025-11-15** – Replaced the two-point AutoRPM mapping with a config-driven calibration
 table backed by linear interpolation + clamping in `LauncherAutoSpeedController`, added the
 default 35/37/60/67/82/100 in calibration pairs to `AutoRpmConfig`, surfaced the table summary

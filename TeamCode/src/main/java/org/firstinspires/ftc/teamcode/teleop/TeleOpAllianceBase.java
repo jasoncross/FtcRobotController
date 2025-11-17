@@ -138,6 +138,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     //                       is established before START without blocking the thread.
     // CHANGES (2025-11-09): Condensed FeedStop telemetry to a single summary line plus warnings only
     //                       when clamping or homing guards trigger.
+    // CHANGES (2025-11-16): Integrated the encoder-aware intake flow classifier so TeleOp updates it
+    //                       every loop and surfaces the phase in telemetry.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -504,6 +506,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     public void loop() {
         long now = System.currentTimeMillis();
         if (feed != null) feed.update();
+        updateIntakeFlow();
         updatePendingToggleRumbles(now);
 
         // -------- High-priority Start edge-detect (works even while STOPPED) --------
@@ -659,7 +662,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Telemetry
         telemetry.addData("Alliance", "%s", alliance());
         telemetry.addData("BrakeCap", "%.2f", cap);
-        telemetry.addData("Intake", intake.isOn() ? "ON" : "OFF");
+        telemetry.addData("Intake", intake.getTelemetrySummary());
         telemetry.addData("AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
         telemetry.addData("ReverseMode", reverseDriveMode ? "ON" : "OFF");
         if (manualRpmLocked) telemetry.addData("ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
@@ -1183,7 +1186,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void onStoppedLoopHold() {
         stopAll(); // defensive: keep everything off each frame
         if (feed != null) feed.update();
+        updateIntakeFlow();
         telemetry.addLine("⛔ STOPPED — press START to RESUME");
         telemetry.update();
+    }
+
+    private void updateIntakeFlow() {
+        if (intake == null) {
+            return;
+        }
+        boolean feedActive = (feed != null) && feed.isFeedCycleActive();
+        intake.update(feedActive);
     }
 }

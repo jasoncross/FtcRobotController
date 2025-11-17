@@ -112,6 +112,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        profile is active so coarse pose noise no longer stalls volleys.
     // CHANGES (2025-11-15): Documented the AutoRpmConfig calibration table so autos follow the
     //                        same multi-point curve as TeleOp after apply().
+    // CHANGES (2025-11-16): Wired the encoder-aware intake flow updater into every blocking loop so
+    //                        autos maintain the same jam protection while aiming or waiting.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -311,6 +313,7 @@ public abstract class BaseAuto extends LinearOpMode {
         SweepState state = SweepState.PRIMARY_OUT;
 
         while (opModeIsActive()) {
+            updateIntakeFlowForAuto();
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
             double bearing = Double.NaN;
             boolean lockedNow = false;
@@ -426,6 +429,7 @@ public abstract class BaseAuto extends LinearOpMode {
         long settleStart = -1L;
 
         while (opModeIsActive()) {
+            updateIntakeFlowForAuto();
             long now = System.currentTimeMillis();
             if ((now - start) >= timeoutMs) {
                 break;
@@ -539,6 +543,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             // REQUIRE at-speed
             while (opModeIsActive()) {
+                updateIntakeFlowForAuto();
                 updateStatus(shotPhase + " – wait for RPM", lockedForShot || !requireLock);
                 telemetry.addData("Target RPM", launcher.targetRpm);
                 telemetry.addData("Current RPM", launcher.getCurrentRpm());
@@ -556,11 +561,13 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.update();
             feed.feedOnceBlocking();
             feed.update();
+            updateIntakeFlowForAuto();
             if (!wasOn) {
                 int assist = FeedTuning.INTAKE_ASSIST_MS;
                 sleep(assist);
                 intake.set(false);
                 feed.update();
+                updateIntakeFlowForAuto();
             }
 
             // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
@@ -573,6 +580,7 @@ public abstract class BaseAuto extends LinearOpMode {
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
             sleep((int)delay);
             feed.update();
+            updateIntakeFlowForAuto();
             drive.stopAll();
             updateStatus("Stabilize after volley", lockedForShot || !requireLock);
             telemetry.update();
@@ -603,6 +611,7 @@ public abstract class BaseAuto extends LinearOpMode {
         long lastFlip = start;
 
         while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
+            updateIntakeFlowForAuto();
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
             if (det != null) {
                 double err = det.ftcPose.bearing;
@@ -1076,6 +1085,14 @@ public abstract class BaseAuto extends LinearOpMode {
                 step.run();
             }
         }
+    }
+
+    protected void updateIntakeFlowForAuto() {
+        if (intake == null) {
+            return;
+        }
+        boolean feedActive = (feed != null) && feed.isFeedCycleActive();
+        intake.update(feedActive);
     }
 
     @FunctionalInterface

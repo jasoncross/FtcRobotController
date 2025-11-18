@@ -50,7 +50,7 @@ public final class AutoRpmConfig {
             60.0,
             67.0,
             82.0,
-            100.0
+            98.0
     }; // Inches for the calibration table (must align with CALIBRATION_RPMS)
     public static double[] CALIBRATION_RPMS = {
             2600.0,

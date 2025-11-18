@@ -57,6 +57,9 @@ import org.firstinspires.ftc.teamcode.config.IntakeTuning;
  * CHANGES (2025-11-16): Replaced the simple on/off control with an encoder-aware
  *                       jam classifier (FREE_FLOW, PACKING, SATURATED, JAMMED) plus
  *                       hold-power pulsing and Feed-aware load shedding.
+ * CHANGES (2025-11-17): Allow PACKING state to trigger the jam detection debounce so
+ *                       hard stalls that occur before saturation now flip directly
+ *                       into JAMMED and recover automatically.
  */
 public class Intake {
     private final DcMotorEx motor;
@@ -237,6 +240,8 @@ public class Intake {
                 int travel = Math.abs(currentTicks - packStartTicks);
                 if (travel >= packingTravel) {
                     enterSaturated(now);
+                } else if (stallSampleCount >= stallSamplesNeeded) {
+                    enterJammed(now);
                 } else if (delta >= freeThreshold) {
                     // Column moved freely again—reset to FREE_FLOW so packing restarts from new reference.
                     state = FlowState.FREE_FLOW;

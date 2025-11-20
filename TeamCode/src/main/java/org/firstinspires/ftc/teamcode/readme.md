@@ -145,6 +145,8 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Behavior:** While AutoAim (or grace) is active, **right stick rotation is ignored**.
   AutoAim continuously applies twist correction from `TagAimController` to hold target at 0°.
 - **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
+- **Lock window:** At normal ranges the aim deadband remains symmetric (±`1.5°`, from `TagAimTuning.DEADBAND_DEG`). When the tag distance exceeds `AutoAimTuning.LONG_SHOT_DISTANCE_IN` (default **90 in**), the window biases toward the alliance goal to keep long volleys on the correct side of center—**RED locks between 0..+1.5°**, **BLUE locks between −1.5..0°**—as long as `AutoAimTuning.LONG_SHOT_ENABLED` remains true. Telemetry surfaces `ShotRangeMode=LONG` while the biased window is active, and the bias only engages when a goal AprilTag is currently visible so lock tolerances stay symmetric during vision dropouts. Long-shot detection uses the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`), so recalibration affects when this bias turns on.
+  - TeleOp telemetry keeps the lock context near the top readout, showing AutoAim/AutoSpeed status and the RPM Target/Actual line split into left/right flywheel readings before other details.
 
 ### AutoSpeed
 - When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.
@@ -172,7 +174,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - When drivers have manually toggled the intake OFF before feeding, the assist only borrows it for the configured window and then returns it to OFF automatically instead of leaving it latched ON.
 - Whenever the intake is ON it samples the motor encoder roughly every 50 ms and classifies four flow phases:
   - **FREE FLOW** – shaft spins freely at `IntakeTuning.FILL_POWER` until the first ball hits the top of the ramp.
-  - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls).
+  - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls). If travel stops increasing for multiple samples, the state now flips to JAMMED even when encoder jitter stays just above the stall threshold.
   - **SATURATED** – once fully packed, the motor runs a pulsed hold using `HOLD_POWER` and `HOLD_PULSE_*` so the column stays under pressure without a continuous stall.
   - **JAMMED** – if encoder movement is essentially zero for `STALL_DEBOUNCE_SAMPLES` windows (even before saturation finishes), the intake shuts off for `JAM_RECOVERY_PAUSE_MS` and then retries.
 - Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
@@ -343,13 +345,17 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 - **Architecture:** Mecanum drive + IMU heading control.  
 - **Launcher:** Dual goBILDA 5202 6000 RPM motors, closed-loop PID.  
 - **Vision:** AprilTag ID 20/24 goal targeting.  
-- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading.  
+- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines.
 - **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.  
 - **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.  
 
 ---
 
 ## Revision History
+- **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
+- **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.
+- **2025-11-20** – Require a live AprilTag sighting to enter long-shot lock biasing so asymmetric tolerances only apply to current detections; documented the visibility guard for clarity.
+- **2025-11-18** – Added an alliance-aware long-shot lock window (RED locks 0..+1.5°, BLUE locks −1.5..0° once beyond the new `AutoAimTuning.LONG_SHOT_DISTANCE_IN` cutover) and surfaced the active range mode in TeleOp telemetry; tightened intake jam detection by tracking packing progress so stalls with tiny encoder jitter still flip into JAMMED and recover; reordered TeleOp top-line telemetry (Obelisk, Alliance, Intake, AutoSpeed, AutoAim, Reverse, RPM Target/Actual split L/R with a spacer before other data) and annotated every tunable field with inline comments for quick reference.
 - **2025-11-17** – Hardened the intake jam detection so PACKING state now honors the same stall debounce used after saturation, letting the classifier flip straight into JAMMED (and recover) whenever the column stops early; refreshed the intake section below and the tunable directory to match.
 - **2025-11-16** – Added the encoder-aware intake jam classifier (FREE FLOW → PACKING → SATURATED → JAMMED), wired TeleOp/Auto loops to keep it updated with Feed-aware load shedding, exposed the state in telemetry/docs, and listed the new IntakeTuning parameters in the tunable directory.
 - **2025-11-15** – Replaced the two-point AutoRPM mapping with a config-driven calibration

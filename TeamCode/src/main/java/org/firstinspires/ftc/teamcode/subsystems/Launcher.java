@@ -55,6 +55,8 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
  *     ensure any tuning is validated in both modes.
  *   - The REV hub handles velocity feedback internally, so this class does not
  *     implement its own PID loop.
+ * CHANGES (2025-11-19): Exposed left/right RPM readings for telemetry alongside
+ *                       the averaged speed so drivers can see wheel balance.
  */
 
 public class Launcher {
@@ -161,6 +163,16 @@ public class Launcher {
         double rightTPS = right.getVelocity();  // ticks per second
         double avgTPS   = (leftTPS + rightTPS) / 2.0;
         return ticksPerSecToRpm(avgTPS);
+    }
+
+    /** Returns the measured RPM for the left flywheel only. */
+    public double getLeftRpm() {
+        return ticksPerSecToRpm(left.getVelocity());
+    }
+
+    /** Returns the measured RPM for the right flywheel only. */
+    public double getRightRpm() {
+        return ticksPerSecToRpm(right.getVelocity());
     }
 
     // === HELPER METHODS ===

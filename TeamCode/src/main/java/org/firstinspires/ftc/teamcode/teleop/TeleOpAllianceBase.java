@@ -53,6 +53,17 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-22): Added a tunable master switch for long-shot lock biasing
+ *                       so crews can revert to symmetric windows without code
+ *                       changes.
+ * CHANGES (2025-11-20): Require a live AprilTag sighting to enter long-shot
+ *                       lock biasing so asymmetric tolerances only engage when
+ *                       distance comes from the current detection.
+ * CHANGES (2025-11-19): Reordered top-line telemetry and split left/right RPM
+ *                       readings so drivers can monitor each flywheel.
+ * CHANGES (2025-11-18): Bias AutoAim deadband toward the alliance-correct side
+ *                       when shooting from long range using the new long-shot
+ *                       distance cutover.
  * CHANGES (2025-11-15): AutoRPM telemetry now summarizes the calibration table
  *                       (point count + endpoint pairs) so drivers see the
  *                       config-driven curve without plugging into code.
@@ -116,6 +127,7 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
 import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults; // TeleOp-only workflow + manual ranges
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;    // TeleOp-only eject routine
 import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rumble envelopes
+import org.firstinspires.ftc.teamcode.config.TagAimTuning;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag range calibration
 
 import java.util.Locale;
@@ -587,6 +599,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
+        Double distanceForLockIn = (goalDet != null) ? getGoalDistanceInchesScaled(goalDet) : null;
+        boolean longShotMode = isLongShot(distanceForLockIn);
+        LockWindow lockWindow = computeLockWindow(longShotMode, TagAimTuning.DEADBAND_DEG);
+        aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
+
         // AutoAim + grace handling
         if (autoAimEnabled) {
             appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
@@ -659,17 +676,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
 
-        // Telemetry
+        // Telemetry (top block)
         telemetry.addData("Alliance", "%s", alliance());
-        telemetry.addData("BrakeCap", "%.2f", cap);
         telemetry.addData("Intake", intake.getTelemetrySummary());
         telemetry.addData("AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
-        telemetry.addData("ReverseMode", reverseDriveMode ? "ON" : "OFF");
+        telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
+        telemetry.addData("Reverse", reverseDriveMode ? "ON" : "OFF");
+        telemetry.addData("RPM Target / Actual", "%.0f / L:%.0f R:%.0f", launcher.targetRpm, launcher.getLeftRpm(), launcher.getRightRpm());
+
+        telemetry.addLine();
+
+        telemetry.addData("BrakeCap", "%.2f", cap);
         if (manualRpmLocked) telemetry.addData("ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
-        telemetry.addData("RPM Target/Actual", "%.0f / %.0f", launcher.targetRpm, launcher.getCurrentRpm());
-
-        telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
         if (autoAimEnabled) telemetry.addData("SpeedScale", String.format(Locale.US, "%.2f", appliedAimSpeedScale));
         telemetry.addData("Tag Visible", (goalDet != null) ? "YES" : "NO");
         telemetry.addData("AutoAim Grace (ms)", autoAimLossGraceMs);
@@ -682,6 +701,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateVisionTelemetry(goalDet, rawIn);
         telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
         telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
+        telemetry.addData("ShotRangeMode", longShotMode ? "LONG" : "NORMAL");
 
         if (autoRpmActive && !rpmTestEnabled) {
             telemetry.addData("AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format("%.1f", autoDistIn));
@@ -974,6 +994,33 @@ public abstract class TeleOpAllianceBase extends OpMode {
         doublePulseQueuedG2 = false;
         doublePulseAtMsG1 = 0L;
         doublePulseAtMsG2 = 0L;
+    }
+
+    private static final class LockWindow {
+        final double minDeg;
+        final double maxDeg;
+
+        LockWindow(double minDeg, double maxDeg) {
+            this.minDeg = minDeg;
+            this.maxDeg = maxDeg;
+        }
+    }
+
+    private LockWindow computeLockWindow(boolean longShotMode, double toleranceDeg) {
+        double tol = Math.abs(toleranceDeg);
+        if (!longShotMode) {
+            return new LockWindow(-tol, tol);
+        }
+        return (alliance() == Alliance.RED)
+                ? new LockWindow(0.0, tol)
+                : new LockWindow(-tol, 0.0);
+    }
+
+    private boolean isLongShot(Double distanceIn) {
+        if (!AutoAimTuning.LONG_SHOT_ENABLED) {
+            return false;
+        }
+        return distanceIn != null && distanceIn >= AutoAimTuning.LONG_SHOT_DISTANCE_IN;
     }
 
     /** Returns SCALED distance to goal in inches if a detection is provided, else null. */

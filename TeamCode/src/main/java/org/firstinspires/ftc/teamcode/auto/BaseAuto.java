@@ -14,6 +14,7 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
+import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
@@ -114,6 +115,10 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        same multi-point curve as TeleOp after apply().
     // CHANGES (2025-11-16): Wired the encoder-aware intake flow updater into every blocking loop so
     //                        autos maintain the same jam protection while aiming or waiting.
+    // CHANGES (2025-11-22): Added a tunable master toggle for long-shot biasing to restore symmetric
+    //                        lock windows without changing alliance-specific logic.
+    // CHANGES (2025-11-18): Biased the tag lock window toward alliance-correct angles when
+    //                        the robot is beyond the long-shot distance cutover.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -161,6 +166,7 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double DEF_AUTO_SEED_RPM  = 2500.0;
     private static final long   DEF_RPM_SETTLE_MS  = 150L;
     private static final long   DEFAULT_BETWEEN_MS = 3000; // Default between-shot wait used when callers pass ≤ 0
+    private static final double M_TO_IN            = 39.37007874015748;
 
     private String autoOpModeName;
 
@@ -285,6 +291,9 @@ public abstract class BaseAuto extends LinearOpMode {
         final boolean oppositeStaysSameSide = !disableOpposite && rawOpposite < 0.0;
         final double zeroTol = 1.5; // degrees around the neutral heading treated as "zero"
 
+        LockWindow lockWindow = computeLockWindow(false, tol);
+        aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
+
         ScanDirection resolved = (direction == null) ? ScanDirection.CW : direction;
         double primarySign = resolved.isClockwise() ? -1.0 : +1.0; // CW scanning uses negative twist
         double primaryTarget = primarySign * primaryLimit;
@@ -319,11 +328,14 @@ public abstract class BaseAuto extends LinearOpMode {
             boolean lockedNow = false;
 
             if (det != null) {
+                Double distanceIn = getScaledDistanceInches(det);
+                lockWindow = computeLockWindow(isLongShot(distanceIn), tol);
+                aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
                 double err = det.ftcPose.bearing;
                 bearing = err;
                 double cmd = clamp(aim.turnPower(det), -cap, +cap);
                 drive.drive(0, 0, cmd);
-                lockedNow = Math.abs(err) <= tol;
+                lockedNow = lockWindow.contains(err);
                 if (lockedNow) {
                     drive.stopAll();
                     updateStatus(label + " – lock", true);
@@ -332,6 +344,8 @@ public abstract class BaseAuto extends LinearOpMode {
                     return true;
                 }
             } else {
+                lockWindow = computeLockWindow(false, tol);
+                aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
                 double offset = shortestDiff(drive.heading(), zeroHeading);
                 double command = 0.0;
 
@@ -418,7 +432,6 @@ public abstract class BaseAuto extends LinearOpMode {
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
 
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
-        final double M_TO_IN = 39.37007874015748;
         final long settleMs = rpmSettleMs();
         final double tolerance = rpmTol();
         final double fallbackRpm = autoSeedRpm();
@@ -728,6 +741,48 @@ public abstract class BaseAuto extends LinearOpMode {
         double d = normDeg(target - current); if (d > 180) d -= 360; if (d < -180) d += 360; return d;
     }
     private static double normDeg(double a) { double r = a % 360; if (r < 0) r += 360; return r; }
+
+    private static final class LockWindow {
+        final double minDeg;
+        final double maxDeg;
+
+        LockWindow(double minDeg, double maxDeg) {
+            this.minDeg = minDeg;
+            this.maxDeg = maxDeg;
+        }
+
+        boolean contains(double bearingDeg) {
+            return bearingDeg >= minDeg && bearingDeg <= maxDeg;
+        }
+    }
+
+    private LockWindow computeLockWindow(boolean longShotMode, double toleranceDeg) {
+        double tol = Math.abs(toleranceDeg);
+        if (!longShotMode) {
+            return new LockWindow(-tol, tol);
+        }
+        return (alliance() == Alliance.RED)
+                ? new LockWindow(0.0, tol)
+                : new LockWindow(-tol, 0.0);
+    }
+
+    private boolean isLongShot(Double distanceIn) {
+        if (!AutoAimTuning.LONG_SHOT_ENABLED) {
+            return false;
+        }
+        return distanceIn != null && distanceIn >= AutoAimTuning.LONG_SHOT_DISTANCE_IN;
+    }
+
+    private Double getScaledDistanceInches(AprilTagDetection det) {
+        if (vision == null || det == null) {
+            return null;
+        }
+        double rangeM = vision.getScaledRange(det);
+        if (Double.isNaN(rangeM) || !Double.isFinite(rangeM)) {
+            return null;
+        }
+        return rangeM * M_TO_IN;
+    }
 
     private double clampTranslationSpeed(double requested) {
         double cap = driveCap();

@@ -39,8 +39,8 @@ public final class DriveTuning {
     public static double STRAFE_CORRECTION = 1.15;   // Multiply lateral component by this factor
 
     // IMU turn gains
-    public static double TURN_KP = 0.012;
-    public static double TURN_KD = 0.003;
+    public static double TURN_KP = 0.012;            // Proportional gain for IMU turns
+    public static double TURN_KD = 0.003;            // Derivative gain for IMU turns
 
     // Turn completion requirements
     public static double TURN_TOLERANCE_DEG   = 1.0;  // Acceptable heading error

@@ -18,6 +18,6 @@ package org.firstinspires.ftc.teamcode.config;
 public final class TeleOpEjectTuning {
     private TeleOpEjectTuning() {}
 
-    public static double RPM    = 600.0;
-    public static int    TIME_MS = 1000;
+    public static double RPM    = 600.0;  // Launcher RPM commanded during eject routine
+    public static int    TIME_MS = 1000;  // Duration (ms) to hold eject RPM before restoring prior target
 }

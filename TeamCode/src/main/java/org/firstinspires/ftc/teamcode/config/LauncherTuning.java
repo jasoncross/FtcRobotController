@@ -41,12 +41,12 @@ public final class LauncherTuning {
     public static double RPM_MAX = 5000.0;      // Maximum allowed command (keep ≥ highest AutoRpmConfig calibration RPM)
 
     // REV Hub RUN_USING_ENCODER PIDF coefficients
-    public static double PID_P = 10.0;
-    public static double PID_I = 3.0;
-    public static double PID_D = 0.0;
-    public static double PID_F = 12.0;
+    public static double PID_P = 10.0;              // Proportional gain for REV velocity loop
+    public static double PID_I = 3.0;               // Integral gain for REV velocity loop
+    public static double PID_D = 0.0;               // Derivative gain for REV velocity loop
+    public static double PID_F = 12.0;              // Feedforward coefficient for REV velocity loop
 
     // Default readiness tolerance when callers omit their own
-    public static double AT_SPEED_TOLERANCE_RPM = 100.0;
+    public static double AT_SPEED_TOLERANCE_RPM = 100.0; // RPM error allowed when checking readiness locally
     public static double MANUAL_RPM_STEP = 50.0; // RPM step per D-pad press (AutoSpeed off & manual lock ON)
 }

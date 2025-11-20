@@ -174,7 +174,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
   - **FREE FLOW** – shaft spins freely at `IntakeTuning.FILL_POWER` until the first ball hits the top of the ramp.
   - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls).
   - **SATURATED** – once fully packed, the motor runs a pulsed hold using `HOLD_POWER` and `HOLD_PULSE_*` so the column stays under pressure without a continuous stall.
-  - **JAMMED** – if encoder movement is essentially zero for `STALL_DEBOUNCE_SAMPLES` windows after saturation, the intake shuts off for `JAM_RECOVERY_PAUSE_MS` and then retries.
+  - **JAMMED** – if encoder movement is essentially zero for `STALL_DEBOUNCE_SAMPLES` windows (even before saturation finishes), the intake shuts off for `JAM_RECOVERY_PAUSE_MS` and then retries.
 - Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
 - While `feed.isFeedCycleActive()` the intake automatically drops to the low `FEED_ACTIVE_HOLD_POWER` so launcher volleys do not stack more current draw; once the feed finishes, the state machine resumes normal power automatically.
 - FeedStop servo (`config/FeedStopConfig.java`) now homes in two guarded phases: it first steps open in the release direction to `SAFE_PRESET_OPEN_DEG` (capped by `MAX_HOME_TRAVEL_DEG`) without ever commanding below 0°, then seats against the BLOCK stop, dwells for `HOME_DWELL_MS`, and backs off by `HOME_BACKOFF_DEG` before parking. Every degree request is clamped inside `SOFT_CCW_LIMIT_DEG` (0°) and `SOFT_CW_LIMIT_DEG` (170°), so no runtime command can crash the linkage. After homing it rests at `HOLD_ANGLE_DEG` (~30°) to block the path, swings to `RELEASE_ANGLE_DEG` (~110°) when feeding, and defaults to the servo’s full 300° span (no `scaleRange`). Teams that enable `USE_AUTO_SCALE` let the subsystem compute the narrowest safe window (with `SAFETY_MARGIN_DEG` headroom) and telemetry now surfaces the mode, limits, scale range (or “scale=none”), direction sign, and any clamp/abort warnings. StopAll/stop() always return the gate to the homed 0° position before disabling.
@@ -350,6 +350,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-17** – Hardened the intake jam detection so PACKING state now honors the same stall debounce used after saturation, letting the classifier flip straight into JAMMED (and recover) whenever the column stops early; refreshed the intake section below and the tunable directory to match.
 - **2025-11-16** – Added the encoder-aware intake jam classifier (FREE FLOW → PACKING → SATURATED → JAMMED), wired TeleOp/Auto loops to keep it updated with Feed-aware load shedding, exposed the state in telemetry/docs, and listed the new IntakeTuning parameters in the tunable directory.
 - **2025-11-15** – Replaced the two-point AutoRPM mapping with a config-driven calibration
 table backed by linear interpolation + clamping in `LauncherAutoSpeedController`, added the

@@ -32,7 +32,7 @@ public final class FeedTuning {
     // CHANGES (2025-10-31): Added IDLE_HOLD_POWER to keep the feed counter-rotating while idle.
     // CHANGES (2025-10-31): Increased IDLE_HOLD_POWER magnitude so staged artifacts remain latched.
     // CHANGES (2025-11-02): Updated documentation to reflect per-sequence shot cadence control.
-    public static double FIRE_POWER = 0.9;
+    public static double FIRE_POWER = 0.8;
     public static int FIRE_TIME_MS  = 800;
     public static int MIN_CYCLE_MS  = 1000;
     public static int INTAKE_ASSIST_MS = 250; // Intake assist duration (ms) after a feed when intake was off

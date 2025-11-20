@@ -46,7 +46,7 @@ public final class IntakeTuning {
     public static double FILL_POWER = 0.9; // Motor power used while the intake is freely filling
     public static double PACKING_POWER = 0.75; // Reduced power once first contact occurs to compress the column
     public static double HOLD_POWER = 0.35; // Base power applied during the SATURATED hold pulse
-    public static double FEED_ACTIVE_HOLD_POWER = 0.15; // Alternate hold power while the feed subsystem is cycling
+    public static double FEED_ACTIVE_HOLD_POWER = 0.75; // Alternate hold power while the feed subsystem is cycling
 
     public static int HOLD_PULSE_PERIOD_MS = 400; // Total period (ms) for the SATURATED hold pulse cadence
     public static int HOLD_PULSE_ON_MS = 120; // Portion of the pulse period (ms) spent applying HOLD_POWER

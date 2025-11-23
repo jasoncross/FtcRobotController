@@ -29,16 +29,32 @@ import org.firstinspires.ftc.teamcode.config.TagAimTuning;
  *       • Return twist suggestion in [-0.6, 0.6] based on tag error.
  *   - headingDeg(det) / distanceMeters(det)
  *       • Telemetry helpers returning NaN when no tag is present.
+ *
+ * CHANGES (2025-11-18): Added asymmetric deadband support so callers can bias
+ *                       the lock window for long-distance shots.
  */
 public class TagAimController {
     private double kP = TagAimTuning.KP;        // Proportional gain (twist per degree); align with TunableDirectory AutoAim table
     private double kD = TagAimTuning.KD;        // Derivative gain to damp overshoot; increase slightly when oscillations appear
     private double clampAbs = TagAimTuning.CLAMP_ABS;      // Twist clamp magnitude (±clampAbs)
-    private double deadbandDeg = TagAimTuning.DEADBAND_DEG; // Deadband to stop hunting near center
+    private double deadbandMinDeg = -Math.abs(TagAimTuning.DEADBAND_DEG); // Deadband lower bound (can bias around zero)
+    private double deadbandMaxDeg =  Math.abs(TagAimTuning.DEADBAND_DEG); // Deadband upper bound (can bias around zero)
     private double lastErrorDeg = 0.0; // Stored from previous frame for D term
 
     public void setGains(double kP, double kD) { this.kP = kP; this.kD = kD; }
-    public void setClampAndDeadband(double clampAbs, double deadbandDeg) { this.clampAbs = clampAbs; this.deadbandDeg = deadbandDeg; }
+    public void setClampAndDeadband(double clampAbs, double deadbandDeg) {
+        this.clampAbs = clampAbs;
+        setDeadbandWindow(-Math.abs(deadbandDeg), Math.abs(deadbandDeg));
+    }
+
+    public void setDeadbandWindow(double minDeg, double maxDeg) {
+        deadbandMinDeg = Math.min(minDeg, maxDeg);
+        deadbandMaxDeg = Math.max(minDeg, maxDeg);
+    }
+
+    public void resetDeadband() {
+        setDeadbandWindow(-Math.abs(TagAimTuning.DEADBAND_DEG), Math.abs(TagAimTuning.DEADBAND_DEG));
+    }
 
     /** Returns twist power [-1..1] to align robot to the tag; 0 when det == null or within deadband. */
     public double turnPower(AprilTagDetection det) {
@@ -55,7 +71,7 @@ public class TagAimController {
         if (power < -clamp) power = -clamp;
 
         // Deadband to stop hunting
-        if (Math.abs(errDeg) < Math.abs(deadbandDeg)) power = 0.0;
+        if (errDeg > deadbandMinDeg && errDeg < deadbandMaxDeg) power = 0.0;
 
         return power;
     }

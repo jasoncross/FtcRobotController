@@ -30,8 +30,8 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
  *         remains accurate.
  *   - RPM_MIN / RPM_MAX
  *       • Software clamps applied to every RPM request.
- *       • Keep RPM_MAX ≥ AutoRpmConfig FAR_RPM and TeleOpAllianceBase.rpmTop so
- *         downstream commands do not saturate.
+ *       • Keep RPM_MAX ≥ the highest AutoRpmConfig calibration RPM and
+ *         TeleOpAllianceBase.rpmTop so downstream commands do not saturate.
  *   - PIDF (RUN_USING_ENCODER)
  *       • Closed-loop gains applied at the hub. Start near TunableDirectory’s
  *         P=10, I=3, D=0, F=12 and adjust for wheel mass or overshoot.
@@ -55,13 +55,16 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
  *     ensure any tuning is validated in both modes.
  *   - The REV hub handles velocity feedback internally, so this class does not
  *     implement its own PID loop.
+ * CHANGES (2025-11-19): Exposed left/right RPM readings for telemetry alongside
+ *                       the averaged speed so drivers can see wheel balance.
  */
 
 public class Launcher {
     // === CONFIGURATION CONSTANTS ===
     private static final double FLYWHEEL_TPR = LauncherTuning.FLYWHEEL_TPR; // Encoder ticks per revolution; adjust via config
     private static final double RPM_MIN      = LauncherTuning.RPM_MIN;      // Minimum allowed RPM requested by any caller
-    private static final double RPM_MAX      = LauncherTuning.RPM_MAX;      // Maximum allowed RPM; keep ≥ AutoRpmConfig FAR_RPM & TeleOp rpmTop
+    // CHANGES (2025-11-15): Updated RPM_MAX guidance to follow the new AutoRpmConfig calibration table.
+    private static final double RPM_MAX      = LauncherTuning.RPM_MAX;      // Maximum allowed RPM; keep ≥ highest AutoSpeed calibration RPM & TeleOp rpmTop
 
     // Default closed-loop PIDF values for REV velocity control.
     // Adjust only if behavior indicates overshoot, oscillation, or slow recovery.
@@ -82,6 +85,7 @@ public class Launcher {
 
     // === CONSTRUCTOR ===
     // CHANGES (2025-10-31): Added safeInit to hold zero RPM during INIT.
+    // CHANGES (2025-11-04): Added applyBrakeHold() for StopAll + auto-restoring FLOAT on next command.
 
     public Launcher(HardwareMap hw) {
         // Retrieve motors from configuration
@@ -89,8 +93,8 @@ public class Launcher {
         right = hw.get(DcMotorEx.class, "FlywheelRight");
 
         // Make both flywheels spin the same physical direction
-        left.setDirection(DcMotorSimple.Direction.REVERSE);
-        right.setDirection(DcMotorSimple.Direction.FORWARD);
+        left.setDirection(DcMotorSimple.Direction.FORWARD);
+        right.setDirection(DcMotorSimple.Direction.REVERSE);
 
         // Flywheels should coast when power = 0
         left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -119,6 +123,7 @@ public class Launcher {
      * Converts RPM → ticks/second and uses closed-loop velocity control.
      */
     public void setTargetRpm(double rpm) {
+        ensureCoastMode();
         targetRpm = clamp(rpm, RPM_MIN, RPM_MAX);
         double ticksPerSec = rpmToTicksPerSec(targetRpm);
 
@@ -130,6 +135,15 @@ public class Launcher {
     /** Immediately stops both flywheels (open loop 0 power). */
     public void stop() {
         targetRpm = 0;
+        left.setPower(0);
+        right.setPower(0);
+    }
+
+    /** Engage BRAKE zero-power behavior and hold both flywheels at zero power. */
+    public void applyBrakeHold() {
+        targetRpm = 0;
+        left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        right.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         left.setPower(0);
         right.setPower(0);
     }
@@ -151,6 +165,16 @@ public class Launcher {
         return ticksPerSecToRpm(avgTPS);
     }
 
+    /** Returns the measured RPM for the left flywheel only. */
+    public double getLeftRpm() {
+        return ticksPerSecToRpm(left.getVelocity());
+    }
+
+    /** Returns the measured RPM for the right flywheel only. */
+    public double getRightRpm() {
+        return ticksPerSecToRpm(right.getVelocity());
+    }
+
     // === HELPER METHODS ===
 
     /** Convert RPM → ticks/sec using configured TPR. */
@@ -166,5 +190,15 @@ public class Launcher {
     /** Clamp helper for numeric safety. */
     private static double clamp(double v, double lo, double hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    /** Restore FLOAT zero-power behavior before commanding velocity. */
+    private void ensureCoastMode() {
+        if (left.getZeroPowerBehavior() != DcMotor.ZeroPowerBehavior.FLOAT) {
+            left.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        }
+        if (right.getZeroPowerBehavior() != DcMotor.ZeroPowerBehavior.FLOAT) {
+            right.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        }
     }
 }

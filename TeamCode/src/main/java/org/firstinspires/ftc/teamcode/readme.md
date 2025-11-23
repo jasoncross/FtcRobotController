@@ -35,6 +35,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | Control | Function |
 |---|---|
 | **Left Stick** | Drive (forward/back & strafe) |
+| **Left Stick Button (LS)** | Toggle **Reverse Drive** (treats rear as front; double rumble when enabled, single when disabled) |
 | **Right Stick X** | Rotation (**disabled while AutoAim is ON**) |
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
@@ -74,17 +75,23 @@ TeamCode/
     ├── assist/
     │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
-    │   ├── BaseAuto.java                     ← Shared Auto mode logic
+    │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder
+    │   ├── Auto_Blue_30.java                 ← Blue alliance safety auto (drive 30" and stop)
+    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 long-run volley → retreat)
+    │   ├── Auto_Blue_Human_LongShot.java     ← Blue human-side launch-line volley → drive upfield
     │   ├── Auto_Blue_Target.java             ← Blue depot auto (Tag 20 volley, hold position)
-    │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 volley → drive upfield)
+    │   ├── Auto_Red_30.java                  ← Red alliance safety auto (drive 30" and stop)
+    │   ├── Auto_Red_Human.java               ← Red human-side auto (Tag 24 long-run volley → retreat)
+    │   ├── Auto_Red_Human_LongShot.java      ← Red human-side launch-line volley → drive upfield
     │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
-    │   └── Auto_Red_Human.java               ← Red human-side auto (Tag 24 volley → drive upfield)
+    │   └── AutoSequenceGuide.md              ← Reference + examples for the AutoSequence builder
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
     │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
     │   ├── ControllerTuning.java             ← Trigger thresholds
     │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
     │   ├── FeedTuning.java                   ← Feed power, duration, cooldown
+    │   ├── FeedStopConfig.java               ← Feed gate servo scaling + timing
     │   ├── IntakeTuning.java                 ← Intake motor power
     │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
     │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
@@ -105,7 +112,8 @@ TeamCode/
     ├── teleop/
     │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists)
     │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
-    │   └── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
+    │   ├── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
+    │   └── TeleOp_Test_CameraStream.java     ← Diagnostics TeleOp for streaming + AprilTag checks
     ├── utils/
     │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
     └── vision/
@@ -137,14 +145,20 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Behavior:** While AutoAim (or grace) is active, **right stick rotation is ignored**.
   AutoAim continuously applies twist correction from `TagAimController` to hold target at 0°.
 - **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
+- **Lock window:** At normal ranges the aim deadband remains symmetric (±`1.5°`, from `TagAimTuning.DEADBAND_DEG`). When the tag distance exceeds `AutoAimTuning.LONG_SHOT_DISTANCE_IN` (default **90 in**), the window biases toward the alliance goal to keep long volleys on the correct side of center—**RED locks between 0..+1.5°**, **BLUE locks between −1.5..0°**—as long as `AutoAimTuning.LONG_SHOT_ENABLED` remains true. Telemetry surfaces `ShotRangeMode=LONG` while the biased window is active, and the bias only engages when a goal AprilTag is currently visible so lock tolerances stay symmetric during vision dropouts. Long-shot detection uses the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`), so recalibration affects when this bias turns on.
+  - TeleOp telemetry keeps the lock context near the top readout, showing AutoAim/AutoSpeed status and the RPM Target/Actual line split into left/right flywheel readings before other details.
 
 ### AutoSpeed
-- When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.  
-- When **disabled**, right trigger controls RPM directly.  
-- **Defaults:**  
-  - `InitialAutoDefaultSpeed = 2500 RPM` (used before first tag detection)  
-  - AutoRPM interpolation between `(24 in → 1000 RPM)` and `(120 in → 4500 RPM)`  
-  - Holds last valid RPM when tag not visible after first fix.  
+- When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.
+- When **disabled**, right trigger controls RPM directly.
+- **Defaults:**
+  - AutoRPM now reads a config-driven calibration table from `config/AutoRpmConfig.java`
+    (default points: **35 in→2600 RPM**, **37 in→2500 RPM**, **60 in→2550 RPM**, **67 in→2750 RPM**, **82 in→3050 RPM**,
+    **100 in→3800 RPM**). The controller linearly interpolates between entries and clamps outside the range.
+  - **Default hold** while no tag is visible = **4450 RPM** (`AutoRpmConfig.DEFAULT_NO_TAG_RPM`)
+  - Holds the **last vision-derived RPM** once at least one tag fix has occurred.
+- **Driver toggles:** Gamepad Y buttons queue AutoSpeed enable/disable requests so the TeleOp loop finishes scanning
+  controls before seeding RPM or emitting rumble pulses—drive/aim inputs stay live while the launcher mode flips.
 
 ### Manual Launcher Mode
 - In manual (AutoSpeed = OFF), right trigger scales between `rpmBottom` and `rpmTop`.
@@ -156,12 +170,34 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply.
 - Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
 - Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
+- Feed/Eject commands now ride the Feed subsystem's asynchronous cycle, so the TeleOp loop keeps processing drive/aim inputs while the feed motor pulses and the intake assist timer counts down in the background.
+- When drivers have manually toggled the intake OFF before feeding, the assist only borrows it for the configured window and then returns it to OFF automatically instead of leaving it latched ON.
+- Whenever the intake is ON it samples the motor encoder roughly every 50 ms and classifies four flow phases:
+  - **FREE FLOW** – shaft spins freely at `IntakeTuning.FILL_POWER` until the first ball hits the top of the ramp.
+  - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls). If travel stops increasing for multiple samples, the state now flips to JAMMED even when encoder jitter stays just above the stall threshold.
+  - **SATURATED** – once fully packed, the motor runs a pulsed hold using `HOLD_POWER` and `HOLD_PULSE_*` so the column stays under pressure without a continuous stall.
+  - **JAMMED** – if encoder movement is essentially zero for `STALL_DEBOUNCE_SAMPLES` windows (even before saturation finishes), the intake shuts off for `JAM_RECOVERY_PAUSE_MS` and then retries.
+- Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
+- While `feed.isFeedCycleActive()` the intake automatically drops to the low `FEED_ACTIVE_HOLD_POWER` so launcher volleys do not stack more current draw; once the feed finishes, the state machine resumes normal power automatically.
+- FeedStop servo (`config/FeedStopConfig.java`) now homes in two guarded phases: it first steps open in the release direction to `SAFE_PRESET_OPEN_DEG` (capped by `MAX_HOME_TRAVEL_DEG`) without ever commanding below 0°, then seats against the BLOCK stop, dwells for `HOME_DWELL_MS`, and backs off by `HOME_BACKOFF_DEG` before parking. Every degree request is clamped inside `SOFT_CCW_LIMIT_DEG` (0°) and `SOFT_CW_LIMIT_DEG` (170°), so no runtime command can crash the linkage. After homing it rests at `HOLD_ANGLE_DEG` (~30°) to block the path, swings to `RELEASE_ANGLE_DEG` (~110°) when feeding, and defaults to the servo’s full 300° span (no `scaleRange`). Teams that enable `USE_AUTO_SCALE` let the subsystem compute the narrowest safe window (with `SAFETY_MARGIN_DEG` headroom) and telemetry now surfaces the mode, limits, scale range (or “scale=none”), direction sign, and any clamp/abort warnings. StopAll/stop() always return the gate to the homed 0° position before disabling.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
+  The spool → feed → hold sequence is asynchronous, so drivers can keep steering (or cancel with StopAll) while the timer winds down.
 
 ### Haptics
-- **Double pulse:** feature enabled.  
-- **Single pulse:** feature disabled or AutoAim grace expired.  
-- Aim rumble scales by heading error (only active when AutoAim = OFF).  
+- **Double pulse:** feature enabled.
+- **Single pulse:** feature disabled or AutoAim grace expired.
+- Aim rumble scales by heading error (only active when AutoAim = OFF).
+
+### Reverse Drive Mode
+- **Toggle:** Gamepad 1 **Left Stick Button (LS)**.
+- **Behavior:** Inverts forward/back and strafe commands so the rear behaves as the front while leaving twist control unchanged.
+- **Feedback:** Emits a **double rumble** when enabled and a **single rumble** when disabled to match other mode toggles.
+
+### Camera Stream Diagnostics Mode
+- **OpMode:** `X - Test - Camera Stream` (Test group) – launches a minimal loop that keeps only drivetrain drive/strafe/twist inputs, live AprilTag processing, and the webcam stream active so pits can verify focus and alignment without spinning up other subsystems.
+- **Streaming:** Automatically enables the Driver Station preview on init; telemetry surfaces the active profile, FPS, and latency so crews can gauge pipeline health at a glance.
+- **Resolution swaps:** Gamepad 1 D-pad **left** selects the tuned 640×480 performance profile; D-pad **right** selects the 1280×720 sighting profile. Swaps rebuild the VisionPortal in a background thread while maintaining the live stream.
+- **Telemetry focus:** Displays the nearest detected tag ID, scaled range in inches, and bearing so camera aim tweaks can be confirmed immediately. All other TeleOp automations (feed, launcher, rumble, StopAll) remain idle to minimize Control Hub load during testing.
 
 ---
 
@@ -171,10 +207,13 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Alliance goals:** Blue = Tag 20  |  Red = Tag 24
 - **Distance units:** inches = meters × 39.37
 - **Range scaling:** `vision.setRangeScale(trueMeters / measuredMeters)` adjusts calibration.
+- **Shared initialization:** TeleOp and BaseAuto both call `vision.setRangeScale(VisionTuning.RANGE_SCALE)` so distance math and AutoSpeed RPM seeds stay consistent between match phases.
 - **Vision profiles** (`config/VisionTuning.java → P480_* / P720_*` constants via `VisionTuning.forMode(...)`):
-  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `25`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
-  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `38`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
-- **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
+  - **P480 (Performance):** 640×480 @ 30 FPS, AprilTag decimation = `2.8`, processes every frame, minimum decision margin = `18`, manual exposure = `10 ms`, gain = `95`, white balance lock = `true`, Brown–Conrady intrinsics/distortion for Logitech C270 (fx = fy = 690, cx = 320, cy = 240, k1 = −0.27, k2 = 0.09, p1 = 0.0008, p2 = −0.0006).
+  - **P720 (Sighting):** 1280×720 @ 20 FPS, AprilTag decimation = `2.2`, processes every other frame, minimum decision margin = `24`, manual exposure = `15 ms`, gain = `110`, white balance lock = `true`, calibrated intrinsics/distortion (fx = 1380, fy = 1035, cx = 640, cy = 360, k1 = −0.23, k2 = 0.06, p1 = 0.0005, p2 = −0.0005).
+  - **Startup defaults:** Profile = **P480**, live view **OFF** (no Driver Station preview).
+  - **Runtime swaps:** TeleOp now queues profile changes on a background executor so the VisionPortal rebuild does not pause drive control when drivers tap D-pad left/right.
+  - **Auto lock tolerance:** BaseAuto automatically swaps to the profile-specific tolerances in `SharedRobotTuning` (`LOCK_TOLERANCE_DEG_P480` defaults to **1.5°**, `LOCK_TOLERANCE_DEG_P720` stays at **1.0°**) so 480p pose noise no longer blocks volley shots while 720p keeps the tighter window.
 - **Streaming toggle:** Gamepad 2 D-pad up/down calls `vision.toggleLiveView(...)` (prefers MJPEG preview when enabled).
 - **Telemetry bundle (≈10 Hz):**
   - `Vision: Profile=<P480|P720> LiveView=<ON|OFF> Res=<WxH>@<FPS> Decim=<x.x> ProcN=<n> MinM=<m>`
@@ -189,10 +228,62 @@ twistClamp = ±0.6
 deadband = 1.5°
 ```
 ---
+## Autonomous Routines (2025-11-02 Warm-Up Refresh)
+
+All autonomous modes extend `BaseAuto`, which now surfaces a shared telemetry bundle every loop:
+
+- **Alliance** (BLUE/RED)
+- **Auto** (OpMode display name)
+- **Start Pose** (human-readable staging reminder)
+- **Obelisk** (`ObeliskSignal.getDisplay()` live latch)
+- **AprilTag Lock** (`LOCKED`/`SEARCHING`)
+- **Phase** (current step description from the active helper)
+
+While those lines remain visible, the helper methods continue to enforce **no-shot-without-lock** and **±50 RPM at-speed** gating before the feed motor ever cycles. Each firing step now supplies its own between-shot delay (the stock autos use **3000 ms**) and `spinToAutoRpmDefault(...)` keeps the launcher warm while the robot drives or scans. `stopAll()` plus a `"Auto complete – DS will queue TeleOp."` telemetry banner finish every routine. `VisionAprilTag` keeps the Obelisk AprilTag observer running in the background during all phases so the latched motif carries into TeleOp.
+
+Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the fluent API’s method reference and examples.
+
+### 🔵 Auto_Blue_Target – Depot launch line, facing EAST
+1. **Drive forward 36"** to establish the standoff range.
+2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
+3. **Scan counter-clockwise** until AprilTag 20 centers within ±1°.
+4. **Ready the launcher** with AutoSpeed until the wheels hold within ±50 RPM for the shared settle window.
+5. **Fire three artifacts** with ~3 s spacing.
+6. **Hold position** for the remainder of the autonomous period.
+
+### 🔴 Auto_Red_Target – Depot launch line, facing WEST
+1. **Drive forward 36"** to the calibrated firing spot.
+2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
+3. **Scan clockwise** for AprilTag 24 and settle within ±1°.
+4. **Ready the launcher** to target RPM (±50 RPM tolerance with settle).
+5. **Fire three artifacts** with ~3 s spacing.
+6. **Remain parked** to leave the lane clear for the partner bot.
+
+### 🔵 Auto_Blue_Human – West of south firing triangle, facing NORTH
+1. **Record heading and bump forward 2"** to clear the wall.
+2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
+3. **Scan counter-clockwise** for AprilTag 20 until centered within ±1°.
+4. **Ready the launcher** to target RPM with the shared tolerance + settle window.
+5. **Fire three artifacts** with the 3 s cadence.
+6. **Return to the original heading**, honoring the recorded IMU value.
+7. **Drive forward 24"** toward the classifier lane.
+
+### 🔴 Auto_Red_Human – East of south firing triangle, facing NORTH
+1. **Record heading and bump forward 2"** to clear the wall.
+2. **Pre-spin the launcher** to the AutoSpeed default while holding heading.
+3. **Scan clockwise** for AprilTag 24 until centered within ±1°.
+4. **Ready the launcher** into the ±50 RPM window with the shared settle timer.
+5. **Fire three artifacts** separated by ~3 s.
+6. **Return to the starting heading** using the shared IMU helper.
+7. **Drive forward 24"** upfield toward the classifier.
+
+> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. Feeding never occurs unless both lock and at-speed checks succeed, `readyLauncherUntilReady()` now shares the TeleOp AutoSpeed curve while seeding from `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` and waiting out `SharedRobotTuning.RPM_READY_SETTLE_MS`, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
+
+---
 ## Obelisk AprilTag Signal (DECODE 2025–26)
 
 ### Overview
-The on-field **obelisk** displays one of three AprilTags that determine the **optimal ball order** for bonus points:
+The on-field **obelisk** displays one of three AprilTags that determine the **optimal artifact order** for bonus points:
 
 | Tag ID | Pattern | Meaning |
 |:------:|:--------|:--------|
@@ -229,9 +320,10 @@ or game mode owns each parameter before making adjustments.
 
 ### What is StopAll?
 `StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.
-While STOPPED, TeleOp ignores control outputs, keeps mechanisms at zero power, and temporarily disables the feed motor's idle
-hold so the motor rests at 0.
-Press **Start** again to **RESUME** normal control, which restores the idle hold automatically.
+While STOPPED, TeleOp ignores control outputs, reasserts **BRAKE zero-power behavior on every motor**, keeps mechanisms at zero power,
+and temporarily disables the feed motor's idle hold so the motor rests at 0.
+The launcher automatically returns to FLOAT the next time RPM is commanded so normal spin-up behavior resumes after releasing the latch.
+Press **Start** again to **RESUME** normal control, which restores the idle hold automatically and re-applies the intake's prior ON/OFF state so drivers pick up exactly where they left off.
 
 - Engaged manually any time by pressing **Start** (G1 or G2).  
 - Also executed automatically by the **Auto-Stop timer** when enabled and the countdown reaches zero.  
@@ -253,14 +345,36 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 - **Architecture:** Mecanum drive + IMU heading control.  
 - **Launcher:** Dual goBILDA 5202 6000 RPM motors, closed-loop PID.  
 - **Vision:** AprilTag ID 20/24 goal targeting.  
-- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading.  
+- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines.
 - **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.  
 - **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.  
 
 ---
 
 ## Revision History
-- **2025‑10‑31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, and ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
+- **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
+- **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.
+- **2025-11-20** – Require a live AprilTag sighting to enter long-shot lock biasing so asymmetric tolerances only apply to current detections; documented the visibility guard for clarity.
+- **2025-11-18** – Added an alliance-aware long-shot lock window (RED locks 0..+1.5°, BLUE locks −1.5..0° once beyond the new `AutoAimTuning.LONG_SHOT_DISTANCE_IN` cutover) and surfaced the active range mode in TeleOp telemetry; tightened intake jam detection by tracking packing progress so stalls with tiny encoder jitter still flip into JAMMED and recover; reordered TeleOp top-line telemetry (Obelisk, Alliance, Intake, AutoSpeed, AutoAim, Reverse, RPM Target/Actual split L/R with a spacer before other data) and annotated every tunable field with inline comments for quick reference.
+- **2025-11-17** – Hardened the intake jam detection so PACKING state now honors the same stall debounce used after saturation, letting the classifier flip straight into JAMMED (and recover) whenever the column stops early; refreshed the intake section below and the tunable directory to match.
+- **2025-11-16** – Added the encoder-aware intake jam classifier (FREE FLOW → PACKING → SATURATED → JAMMED), wired TeleOp/Auto loops to keep it updated with Feed-aware load shedding, exposed the state in telemetry/docs, and listed the new IntakeTuning parameters in the tunable directory.
+- **2025-11-15** – Replaced the two-point AutoRPM mapping with a config-driven calibration
+table backed by linear interpolation + clamping in `LauncherAutoSpeedController`, added the
+default 35/37/60/67/82/100 in calibration pairs to `AutoRpmConfig`, surfaced the table summary
+in TeleOp telemetry, clarified the `LauncherTuning`/`Launcher` RPM_MAX guardrails, and updated
+the AutoSpeed docs + Tunable Directory to explain how to edit the curve.
+- **2025-11-14** – Restored intake assist cleanup so TeleOp feeds only borrow the intake when it was manually OFF, letting the timer hand control back without latching it ON; documented the behavior in the intake/feed section above. Also added profile-specific autonomous AprilTag lock tolerances (`SharedRobotTuning.LOCK_TOLERANCE_DEG_P480`/`_P720`) so P480 vision can accept a slightly wider bearing window without freezing volleys, updated BaseAuto to honor the overrides automatically, and refreshed the vision/tunable docs with the new calibration details.
+- **2025-11-13** – Refreshed all autonomous header comments to document the new long-run, launch-line long-shot, and 30" safety routes (noting five-shot cadence, retreat/advance plans, and vision swaps) and added the new auto classes to the Project Layout tree for quick discovery.
+- **2025-11-12** – Captured the live intake state before StopAll engages so resuming with Start restores whichever intake mode was active, eliminating the need to re-toggle the motor after manual or timer-triggered stops; documented the behavior in the StopAll section for drive team clarity.
+- **2025-11-11** – Added the "X - Test - Camera Stream" diagnostic TeleOp that boots with live streaming enabled, limits control to drivetrain drive/strafe/twist plus AprilTag telemetry, and maps Gamepad 1 D-pad left/right to swap between the tuned 480p performance and 720p sighting profiles; documented the workflow and updated the project layout accordingly.
+- **2025-11-10** – Added a TeleOp Reverse Drive mode toggled by the Gamepad 1 left stick button, inverting forward/strafe vectors while leaving twist intact, hooked the toggle into the shared rumble patterns (double on enable, single on disable), surfaced the mode state in telemetry, and updated the controller layout + Reverse Drive documentation for drivers.
+- **2025-11-07** – Made TeleOp feed/eject routines asynchronous so driver inputs stay live during shots, added intake-assist timers tied to the new Feed state machine, updated BaseAuto to use the shared gating, refreshed docs to note the non-blocking behavior, reworked toggle rumble pulses so double-blip feedback no longer sleeps the TeleOp loop, moved TeleOp vision profile swaps onto a background executor so switching between P480/P720 no longer stalls the drive loop, queued AutoSpeed enable/disable requests so RPM seeding + rumble feedback happen after the control scan without pausing drive input, reworked the FeedStop to home at INIT, auto-scale the servo window for separate hold/release degree targets, ensure StopAll parks at the homed zero, and retire obsolete tunables with updated telemetry/docs, defaulted FeedStop to full-span servo travel with an optional auto-scale toggle, refreshed telemetry strings, cleaned up the docs/tunable listings, and added a two-phase guarded homing routine with soft-limit clamps, safe-open travel caps, auto-scale telemetry, and StopAll/stop-to-home safeguards documented for pit crews.
+- **2025-11-06** – Integrated a FeedStop servo gate across Feed/TeleOp/BaseAuto, added `config/FeedStopConfig.java` tunables (scale, block/release, hold, lead), refreshed telemetry + StopAll handling so the gate re-latches cleanly, and updated docs/Tunable Directory to explain the new feed blocker behavior.
+- **2025-11-05** – Aligned Autonomous range scaling with TeleOp by applying `VisionTuning.RANGE_SCALE` during BaseAuto init, added an `AutoSequence.visionMode(...)` builder step for runtime AprilTag profile swaps, updated both human-side autos to begin in the 720p sighting profile, and refreshed docs/Tunable Directory to describe the shared calibration helper.
+- **2025-11-04** – Corrected the Autonomous `move(...)` forward vector so positive distances now drive upfield like TeleOp, added inline telemetry logging for raw/applied vectors to confirm heading math, documented the fix inside `Drivebase.java`, and updated `stopAll()` in TeleOp + Auto to reapply BRAKE mode on every drivetrain/subsystem motor (with the launcher restoring FLOAT on the next command) so endgame holds resist pushes from alliance partners.
+- **2025-11-03** – Elevated AutoSequence telemetry labels so each phase now prints as the first line with a spacer before the shared status bundle, making the active step obvious while additional data (RPM, range, etc.) continues to append underneath. Later in the day we renamed the launcher prep step to `readyToLaunch(...)`, added a shared RPM settle timer (`SharedRobotTuning.RPM_READY_SETTLE_MS`), unified Auto launcher spin-up with the TeleOp AutoSpeed curve, refreshed telemetry (distance/target/actual/tolerance/remaining time) during launcher prep, and updated docs + autos to use `spinToAutoRpmDefault(...)`/`readyToLaunch(...)`.
+- **2025‑11-02** – **Refreshed all four autonomous routines** (Blue/Red Target + Human) to follow the latest match playbook: 36" depot standoffs, 2" wall-clear bumps on human starts, ±1° tag lock + ±50 RPM gating before every shot, 3 s cadence spacing, 24" human-lane pushes, enhanced telemetry (Alliance/Auto/Start Pose/Obelisk/Tag Lock/Phase), persistent Obelisk observation, and a shared "Auto complete – DS will queue TeleOp." banner with `stopAll()` catch-all shutdown, BaseAuto start/stop parity with TeleOp (intake auto-enables at START and feed idle hold releases inside stopAll()), **plus a new `AutoSequence` builder that chains move/rotate/aim/fire steps with adjustable speed caps and optional tag-lock gating—rewriting all four autos with the fluent API resolved the backwards drive regression by standardizing drive power limits and makes future route tweaks a single-line edit. Documented the sequencing workflow in `auto/AutoSequenceGuide.md`, linked it from the README, and captured the expanded builder methods for future route authors.** Extended the builder with `spinToAutoRpm(...)`, updated all autos to pre-spin the launcher before tag scans, parameterized the volley cadence per sequence (removing the shared tunable), reaffirmed that AutoSpeed stays enabled during feeds, and migrated the detailed builder breakdown out of this README in favor of the dedicated guide. Added AutoSpeed hold protection inside `BaseAuto.fireN(...)` so the launcher never sags between artifacts and updated docs/terminology to call the scoring pieces artifacts consistently.
+- **2025‑10-31** – Added Logitech C270 vision profiles (P480 performance + P720 sighting) with per-profile decimation, gating, camera controls, and Brown–Conrady calibration, defaulted TeleOp to P480 with live view off, exposed Gamepad 2 D-pad bindings to swap profiles or toggle the live preview, condensed telemetry into `Vision` + `Perf` status lines, refactored `VisionTuning` into P480/P720 constant blocks with a `forMode(...)` helper while preserving legacy fields, retuned AutoRPM anchors to 65.4 in → 4550 RPM and 114 in → 5000 RPM with a 4450 RPM default hold when tags drop, ensured both TeleOp and Auto seed launcher RPM exclusively through AutoSpeed so BaseAuto now idles at the AutoRpmConfig default before first tag lock, refined AutoSpeed so that default RPM only seeds the first lock before holding the last vision-computed RPM, added subsystem `safeInit()` gating so all motors stay idle through INIT, defaulted TeleOp AutoSpeed + intake to ON, raised the feed idle counter-rotation to −0.5 by default, ensured StopAll disables the feed idle hold until Start resumes TeleOp control.
 - **2025‑10‑30** – Added AutoAim translation speed scaling + telemetry, manual RPM D-pad nudges gated behind Manual Lock, feed motor brake guard, VisionPortal live stream, and moved `INTAKE_ASSIST_MS` into `FeedTuning`.
 - **2025‑10‑26** – Added revision history to the readme.
 - **2025‑10‑25** – All tuning parameters moved into separate config files; major commenting overhaul.

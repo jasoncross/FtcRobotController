@@ -11,11 +11,11 @@
  *   - Offer optional exponential smoothing for vision updates that flicker.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Launcher speed & flywheel control)
- *   - nearDistanceIn / nearSpeedRpm & farDistanceIn / farSpeedRpm
- *       • Anchor points for the linear distance→RPM mapping.
- *       • AutoRpmConfig.apply(...) overwrites these every init; edit that file for
- *         authoritative values. These fields only matter when running isolated
- *         tests without apply().
+ *   - calibrationDistancesIn[] / calibrationSpeedsRpm[] (UPDATED 2025-11-15)
+ *       • Ordered calibration table (distance inches + RPM) used for interpolation.
+ *       • AutoRpmConfig.apply(...) overwrites these arrays every init; provide any
+ *         number of points ≥ 2. The controller clamps outside the range and uses
+ *         linear interpolation inside.
  *   - smoothingAlpha
  *       • 0–1 exponential smoothing factor (0 disables smoothing).
  *       • AutoRpmConfig.apply(...) should set this to SMOOTH_ALPHA so TeleOp lab
@@ -25,8 +25,8 @@
  *         available yet. AutoRpmConfig sets this via DEFAULT_NO_TAG_RPM.
  *
  * METHODS
- *   - setParams(...)
- *       • Updates the anchor points; typically called only from AutoRpmConfig.
+ *   - setCalibrationCurve(...)
+ *       • Updates the calibration table; typically called only from AutoRpmConfig.
  *   - setSmoothingAlpha(...)
  *       • Sets the smoothing factor, clamped to [0,1].
  *   - setAutoEnabled()/isAutoEnabled()
@@ -42,20 +42,20 @@
  * NOTES
  *   - BaseAuto and AutoAimSpeed both call updateWithVision() every loop, so keep
  *     math light to avoid frame drops.
- *   - The mapping extrapolates beyond both anchors; ensure the near/far points
- *     bracket your expected shooting distances to avoid extreme RPM requests.
+ *   - Provide at least two calibration points so interpolation works correctly.
  */
 package org.firstinspires.ftc.teamcode.control;
+
+import java.util.Arrays;
 
 public class LauncherAutoSpeedController {
 
     // === TUNABLES (RPM + inches) ===
     // CHANGES (2025-10-31): Updated default anchors (65.4 in → 4550 RPM, 114 in → 5000 RPM), default hold RPM,
     //                       and now remember the last vision-calculated RPM so the default only seeds pre-lock behavior.
-    private double nearDistanceIn = 65.4;   // Near anchor distance (in); AutoRpmConfig overwrites on init
-    private double nearSpeedRpm   = 4550.0; // RPM at near anchor; matches AutoRpmConfig.NEAR_RPM unless testing locally
-    private double farDistanceIn  = 114.0;  // Far anchor distance (in); overwritten by AutoRpmConfig
-    private double farSpeedRpm    = 5000.0; // RPM at far anchor; still clamped by Launcher.RPM_MAX
+    // CHANGES (2025-11-15): Replaced near/far anchors with a generic calibration table + clamping interpolation.
+    private double[] calibrationDistancesIn = {65.4, 114.0};   // Ordered distance list (in)
+    private double[] calibrationSpeedsRpm   = {4550.0, 5000.0}; // RPM paired with each distance entry
 
     // === MODE / STATE ===
     private boolean autoEnabled   = false; // Tracks if auto mode is currently feeding RPM updates
@@ -69,19 +69,37 @@ public class LauncherAutoSpeedController {
     // -------------------------------------------------------------------------
     // CONFIGURATION
     // -------------------------------------------------------------------------
-    /** Configure the four key tunables (inches + RPM). */
-    public void setParams(double nearDistanceIn, double nearSpeedRpm,
-                          double farDistanceIn,  double farSpeedRpm) {
-        this.nearDistanceIn = nearDistanceIn;
-        this.nearSpeedRpm   = nearSpeedRpm;
-        this.farDistanceIn  = farDistanceIn;
-        this.farSpeedRpm    = farSpeedRpm;
-
-        // Normalize ordering so nearDistance <= farDistance (swap paired values if needed)
-        if (this.farDistanceIn < this.nearDistanceIn) {
-            double td = this.farDistanceIn; this.farDistanceIn = this.nearDistanceIn; this.nearDistanceIn = td;
-            double ts = this.farSpeedRpm;   this.farSpeedRpm   = this.nearSpeedRpm;  this.nearSpeedRpm   = ts;
+    /**
+     * Configure the calibration table used for interpolation.
+     * Arrays must be the same length (≥2). Values are copied and sorted by distance ascending.
+     */
+    public void setCalibrationCurve(double[] distancesIn, double[] rpmValues) {
+        if (distancesIn == null || rpmValues == null) {
+            throw new IllegalArgumentException("Calibration arrays cannot be null");
         }
+        if (distancesIn.length != rpmValues.length || distancesIn.length < 2) {
+            throw new IllegalArgumentException("Calibration arrays must match and contain at least two points");
+        }
+
+        double[] distCopy = Arrays.copyOf(distancesIn, distancesIn.length);
+        double[] rpmCopy  = Arrays.copyOf(rpmValues, rpmValues.length);
+
+        // Insertion sort so distances ascend while keeping RPM pairs aligned.
+        for (int i = 1; i < distCopy.length; i++) {
+            double keyDist = distCopy[i];
+            double keyRpm  = rpmCopy[i];
+            int j = i - 1;
+            while (j >= 0 && distCopy[j] > keyDist) {
+                distCopy[j + 1] = distCopy[j];
+                rpmCopy[j + 1]  = rpmCopy[j];
+                j--;
+            }
+            distCopy[j + 1] = keyDist;
+            rpmCopy[j + 1]  = keyRpm;
+        }
+
+        this.calibrationDistancesIn = distCopy;
+        this.calibrationSpeedsRpm   = rpmCopy;
     }
 
     /** Set smoothing alpha in [0,1]. 0 = no smoothing. */
@@ -115,8 +133,8 @@ public class LauncherAutoSpeedController {
      * Behavior:
      *  - If auto disabled: returns last auto RPM (no change).
      *  - If distance null: holds last auto RPM (tag lost).
-     *  - Else: computes LINEAR mapping with EXTRAPOLATION, applies optional smoothing,
-     *          records and returns lastAutoRpm.
+     *  - Else: maps the distance through the calibration table (clamped + interpolated),
+     *          applies optional smoothing, records, and returns lastAutoRpm.
      */
     public double updateWithVision(Double distanceInchesOrNull) {
         if (!autoEnabled) {
@@ -130,7 +148,7 @@ public class LauncherAutoSpeedController {
         }
 
         double dIn = distanceInchesOrNull;
-        double rpm = mapDistanceToRpmLinearExtrapolate(dIn);
+        double rpm = mapDistanceToRpmTable(dIn);
 
         if (smoothingAlpha > 0.0) {
             rpm = lastAutoRpm + smoothingAlpha * (rpm - lastAutoRpm);
@@ -154,30 +172,45 @@ public class LauncherAutoSpeedController {
     // TELEMETRY GETTERS
     // -------------------------------------------------------------------------
     public double getLastAutoRpm()    { return lastAutoRpm; }
-    public double getNearDistanceIn() { return nearDistanceIn; }
-    public double getNearSpeedRpm()   { return nearSpeedRpm; }
-    public double getFarDistanceIn()  { return farDistanceIn; }
-    public double getFarSpeedRpm()    { return farSpeedRpm; }
+    public double[] getCalibrationDistancesIn() { return Arrays.copyOf(calibrationDistancesIn, calibrationDistancesIn.length); }
+    public double[] getCalibrationSpeedsRpm()   { return Arrays.copyOf(calibrationSpeedsRpm, calibrationSpeedsRpm.length); }
     public double getSmoothingAlpha() { return smoothingAlpha; }
     public double getDefaultRpm()     { return defaultRpm; }
 
     // -------------------------------------------------------------------------
     // INTERNALS
     // -------------------------------------------------------------------------
-    /**
-     * LINEAR interpolation with EXTRAPOLATION.
-     *   slope = (farRPM - nearRPM) / (farDist - nearDist)
-     *   rpm(d) = nearRPM + slope * (d - nearDist)
-     * Continues past both anchors (no clamping).
-     */
-    private double mapDistanceToRpmLinearExtrapolate(double distanceInches) {
-        double span = (farDistanceIn - nearDistanceIn);
-        if (Math.abs(span) < 1e-9) {
-            // Degenerate: distances equal; return near RPM.
-            return nearSpeedRpm;
+    /** Map distance to RPM using the calibration table with clamping and interpolation. */
+    private double mapDistanceToRpmTable(double distanceInches) {
+        double[] dist = calibrationDistancesIn;
+        double[] rpm  = calibrationSpeedsRpm;
+        if (dist.length == 0) {
+            return defaultRpm;
         }
-        double slope = (farSpeedRpm - nearSpeedRpm) / span;
-        return nearSpeedRpm + slope * (distanceInches - nearDistanceIn);
+        if (distanceInches <= dist[0]) {
+            return rpm[0];
+        }
+        int lastIdx = dist.length - 1;
+        if (distanceInches >= dist[lastIdx]) {
+            return rpm[lastIdx];
+        }
+
+        for (int i = 1; i < dist.length; i++) {
+            double nextDist = dist[i];
+            if (distanceInches <= nextDist) {
+                double prevDist = dist[i - 1];
+                double prevRpm  = rpm[i - 1];
+                double nextRpm  = rpm[i];
+                double span = nextDist - prevDist;
+                if (Math.abs(span) < 1e-9) {
+                    return nextRpm;
+                }
+                double t = (distanceInches - prevDist) / span;
+                return prevRpm + t * (nextRpm - prevRpm);
+            }
+        }
+
+        return rpm[lastIdx];
     }
 
     private static double clamp01(double v) {

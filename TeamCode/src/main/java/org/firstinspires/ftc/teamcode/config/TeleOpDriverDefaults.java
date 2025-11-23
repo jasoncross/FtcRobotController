@@ -41,29 +41,29 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2025-10-30): Point intake assist mirror at FeedTuning after tunable move.
     // CHANGES (2025-10-31): Default AutoSpeed + Intake to ON per driver request.
     // Startup toggles
-    public static boolean AUTO_SPEED_ENABLED = true;
-    public static boolean AUTO_AIM_ENABLED   = false;
-    public static boolean INTAKE_ENABLED     = true;
+    public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
+    public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
+    public static boolean INTAKE_ENABLED     = true;  // TeleOp init default for intake run state
 
     // Drive brake floor
-    public static double SLOWEST_SPEED = 0.25;
+    public static double SLOWEST_SPEED = 0.25;        // Minimum drive power while brake trigger held
 
     // Manual RPM slider bounds
-    public static double RPM_BOTTOM = 0.0;
-    public static double RPM_TOP    = 6000.0;
+    public static double RPM_BOTTOM = 0.0;            // Manual RPM floor when AutoSpeed is off
+    public static double RPM_TOP    = 6000.0;         // Manual RPM ceiling when AutoSpeed is off
 
     // AutoAim grace + telemetry smoothing
-    public static int    AUTO_AIM_LOSS_GRACE_MS = 4000;
-    public static double TELEMETRY_SMOOTH_A     = 0.25;
+    public static int    AUTO_AIM_LOSS_GRACE_MS = 4000; // Grace window (ms) before AutoAim disables after tag loss
+    public static double TELEMETRY_SMOOTH_A     = 0.25;  // Smoothing alpha for range/heading telemetry
 
     // RPM test adjustments (D-pad)
-    public static double RPM_TEST_STEP = 50.0;
+    public static double RPM_TEST_STEP = 50.0;         // RPM delta per D-pad press while RPM test mode is active
 
     // Intake assist + auto-speed seed (TeleOp overrides of shared values)
-    public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS;
-    public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED;
+    public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS;           // TeleOp copy of post-feed intake assist duration (ms)
+    public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // TeleOp seed RPM before first tag lock
 
     // Auto-stop timer preferences
-    public static boolean AUTO_STOP_TIMER_ENABLED = false;
-    public static int     AUTO_STOP_TIMER_TIME_SEC = 119;
+    public static boolean AUTO_STOP_TIMER_ENABLED = false; // Whether the optional end-of-match timer is active
+    public static int     AUTO_STOP_TIMER_TIME_SEC = 119;   // Seconds before AutoStop engages when enabled
 }

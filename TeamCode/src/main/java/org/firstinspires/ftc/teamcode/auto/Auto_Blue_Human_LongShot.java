@@ -6,39 +6,40 @@ import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 /*
- * FILE: Auto_Blue_Human.java
+ * FILE: Auto_Blue_Human_LongShot.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE
- *   - Execute the BLUE alliance human-player start (west tile, robot facing
- *     NORTH) by sprinting upfield to the long-range launch point, sweeping for
- *     Tag 20, firing a five-artifact volley, then backpedaling to the south to
- *     reopen the alliance lane for partner cycles.
- *   - Demonstrate the extended AutoSequence pattern that pairs a vision profile
- *     swap, heading capture, aggressive upfield drive, and rapid-fire cadence
- *     so students can tune long-range routes without rewriting helpers.
+ *   - Execute the BLUE alliance human-player start with a stationary long-shot
+ *     focus: bump 3" off the wall, sweep for Tag 20 from the launch line,
+ *     unleash a five-artifact volley, then push 36" upfield toward the
+ *     classifier lane for teleop pickup.
+ *   - Provide a contrast to the full-field sprint auto by documenting the
+ *     minimal-movement variant that clears the wall, fires immediately, and then
+ *     drives forward for cycle staging.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
  *   - visionMode(... Mode.P720)
- *       • Switches the camera into the 720p sighting pipeline before leaving
- *         the wall so range sampling matches TeleOp long-shot tuning.
- *   - spinToAutoRpmDefault(...)
- *       • Keeps the launcher warm with the shared AutoSpeed default during the
- *         long drive to the firing spot.
- *   - move(... 80 in, heading 0°, speed 0.35)
- *       • Drives the full length to the calibrated long-shot standoff before
- *         beginning the tag sweep.
+ *       • Swaps into the 720p sighting profile before aiming to maximize range
+ *         resolution from the launch line.
+ *   - move(... 3 in, heading 0°, speed 0.35)
+ *       • Slides off the wall just enough to remove bumper pressure before the
+ *         tag scan.
  *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°)
- *       • Sweeps counter-clockwise to 90° then checks 30° clockwise while
- *         hunting for Tag 20; adjust angles/speed for alternate scan envelopes.
+ *       • Maintains the standard CCW sweep envelope while aiming from the launch
+ *         line; tune angles or speed for alternate search coverage.
+ *   - spinToAutoRpmDefault(...)
+ *       • Keeps the launcher warm with the shared AutoSpeed standby RPM while
+ *         the robot remains near the wall.
  *   - readyToLaunch(timeout 3200 ms)
- *       • Waits for AutoSpeed to hit the shared RPM window + settle timer before
- *         allowing the volley to start.
+ *       • Holds until AutoSpeed reaches the shared RPM window and settle timer,
+ *         guaranteeing consistency before the long volley.
  *   - fire(shots = 5, betweenShotsMs = 1000)
- *       • Commands a rapid five-artifact volley once RPM readiness is confirmed.
- *   - move(... -36 in, heading 0°, speed 0.85)
- *       • Retreats 36" toward the launch line to clear space for alliance
- *         partners after the long volley.
+ *       • Fires the same five-artifact volley used in the long-run auto, holding
+ *         1 s between shots for recovery.
+ *   - move(... 36 in, heading 0°, speed 0.85)
+ *       • Drives 36" upfield after shooting to stage closer to the classifier
+ *         lane for rapid TeleOp cycles.
  *
  * METHODS
  *   - alliance()
@@ -56,8 +57,8 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - If TeleOpAllianceBase overrides AutoAim defaults (e.g., initialAutoDefaultSpeed),
  *     ensure BaseAuto.syncTeleOpOverrides() still mirrors those settings at init.
  */
-@Autonomous(name="Auto: Blue Human", group="Auto", preselectTeleOp="TeleOp - Blue")
-public class Auto_Blue_Human extends BaseAuto {
+@Autonomous(name="Auto: Blue Human Long Shot", group="Auto", preselectTeleOp="TeleOp - Blue")
+public class Auto_Blue_Human_LongShot extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear drive, telemetry-guided tag scan, locked volley,
     //                        heading reset, and 24" advance per refreshed Auto steps.
     // CHANGES (2025-10-31): Switched to AutoSequence for clearer movement/aim/fire scripting
@@ -66,7 +67,7 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
-    // CHANGES (2025-11-13): Updated header to match long-range drive/return plan and document five-shot cadence + retreat.
+    // CHANGES (2025-11-13): Corrected header for long-shot variant (3" bump, five-shot volley, 36" advance).
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -81,12 +82,12 @@ public class Auto_Blue_Human extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
+                .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 36 in back", -36.0, 0.0, 0.85)
+                .move("Drive 36 in forward", 36.0, 0.0, 0.85)
                 .run();
     }
 }

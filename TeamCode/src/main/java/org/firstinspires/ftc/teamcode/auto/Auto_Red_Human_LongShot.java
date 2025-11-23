@@ -6,40 +6,38 @@ import org.firstinspires.ftc.teamcode.auto.BaseAuto.ScanDirection;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;
 
 /*
- * FILE: Auto_Red_Human.java
+ * FILE: Auto_Red_Human_LongShot.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/auto/
  *
  * PURPOSE
- *   - Execute the RED alliance human-player start (east tile, robot facing
- *     NORTH) by charging to the long-range shot box, sweeping for Tag 24,
- *     unleashing a rapid five-artifact volley, then retreating south to reopen
- *     the intake lane for the partner robot.
- *   - Mirror the BLUE alliance long-run routine so cross-alliance tuning stays
- *     synchronized while documenting the extended AutoSequence pattern of
- *     vision profile swap, heading capture, aggressive drive, and high-cadence
- *     firing.
+ *   - Execute the RED alliance human-player start with a launch-line long shot:
+ *     slide 3" off the wall, scan for Tag 24 without leaving the launch tile,
+ *     fire a five-artifact volley, then drive 36" forward to stage for TeleOp
+ *     cycles.
+ *   - Mirror the BLUE long-shot variant so both alliances document the minimal
+ *     movement route alongside the full-field sprint option.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
  *   - visionMode(... Mode.P720)
- *       • Engages the 720p sighting profile before the long drive so range
- *         sampling matches TeleOp’s long-shot assumptions.
- *   - spinToAutoRpmDefault(...)
- *       • Keeps the launcher warm with the shared AutoSpeed default during the
- *         long sprint to the firing box.
- *   - move(... 80 in, heading 0°, speed 0.35)
- *       • Covers the full upfield sprint to the calibrated firing distance prior
- *         to scanning for Tag 24.
+ *       • Enables the 720p sighting profile before the aim so range sampling
+ *         mirrors TeleOp’s long-shot configuration.
+ *   - move(... 3 in, heading 0°, speed 0.35)
+ *       • Clears the wall contact before aiming to avoid rubbing during the
+ *         stationary volley.
  *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°)
- *       • Sweeps clockwise to 90° and checks 30° counter-clockwise while
- *         hunting for Tag 24; widen or shrink the arcs to tune scan coverage.
+ *       • Uses the mirrored clockwise sweep envelope to hunt Tag 24 while
+ *         staying on the launch tile.
+ *   - spinToAutoRpmDefault(...)
+ *       • Keeps the launcher at the AutoSpeed standby RPM while staged on the
+ *         launch tile.
  *   - readyToLaunch(timeout 3200 ms)
- *       • Holds until AutoSpeed reaches the shared RPM window + settle timer so
- *         every shot leaves at the correct velocity.
+ *       • Waits for AutoSpeed to satisfy the shared RPM window + settle timer
+ *         so every shot leaves at target velocity.
  *   - fire(shots = 5, betweenShotsMs = 1000)
- *       • Fires a fast five-artifact volley once launcher readiness settles.
- *   - move(... -36 in, heading 0°, speed 0.85)
- *       • Drives 36" back toward the launch line to clear space for alliance
- *         partners immediately after shooting.
+ *       • Matches the five-artifact volley timing used on BLUE for parity across
+ *         alliances.
+ *   - move(... 36 in, heading 0°, speed 0.85)
+ *       • Drives 36" upfield post-volley to open the teleop lane immediately.
  *
  * METHODS
  *   - alliance()
@@ -55,8 +53,8 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     values only when the RED human strategy changes (e.g., different drive
  *     distance or follow-up task).
  */
-@Autonomous(name="Auto: Red Human", group="Auto", preselectTeleOp="TeleOp - Red")
-public class Auto_Red_Human extends BaseAuto {
+@Autonomous(name="Auto: Red Human Long Shot", group="Auto", preselectTeleOp="TeleOp - Red")
+public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-10-31): Added wall-clear bump, telemetry-guided Tag 24 volley, heading
     //                        reset, and 24" advance mirroring the refreshed Auto flow.
     // CHANGES (2025-10-31): Migrated to AutoSequence builder for declarative steps and
@@ -65,7 +63,7 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
-    // CHANGES (2025-11-13): Updated header to describe long-run volley, five-shot cadence, and post-volley retreat.
+    // CHANGES (2025-11-13): Corrected header for long-shot variant (3" slide, five-shot volley, 36" advance).
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
@@ -77,15 +75,15 @@ public class Auto_Red_Human extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
-                .rememberHeading("Record start heading")
-                .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
-                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30)
-                .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 5, true, 1000)
-                .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 36 in back", -36.0, 0.0, 0.85)
-                .run();
+          .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
+          .rememberHeading("Record start heading")
+          .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
+          .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
+          .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30)
+          .readyToLaunch("Ready launcher for volley", 3200)
+          .fire("Fire volley", 5, true, 1000)
+          .returnToStoredHeading("Return to start heading", 0.45)
+          .move("Drive 36 in forward", 36.0, 0.0, 0.85)
+          .run();
     }
 }

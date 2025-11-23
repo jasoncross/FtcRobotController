@@ -6,5 +6,6 @@ The primary developer documentation for TeamCode lives alongside the Java source
 - [`CodexContextBackground.md`](../src/main/java/org/firstinspires/ftc/teamcode/CodexContextBackground.md) – Codex context, subsystem overview, and rules background for the DECODE season codebase.
 - [`DECODE_Season_Context.md`](../src/main/java/org/firstinspires/ftc/teamcode/DECODE_Season_Context.md) – Season briefing and on-field strategy notes.
 - [`TunableDirectory.md`](../src/main/java/org/firstinspires/ftc/teamcode/TunableDirectory.md) – Authoritative list of configurable values.
+- [`auto/AutoSequenceGuide.md`](../src/main/java/org/firstinspires/ftc/teamcode/auto/AutoSequenceGuide.md) – Step-by-step reference and examples for building autonomous routes with the fluent sequence API.
 
 Add new documentation alongside these files so future contributors can discover it quickly from the source tree.

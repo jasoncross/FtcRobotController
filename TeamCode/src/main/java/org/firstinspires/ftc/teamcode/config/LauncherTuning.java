@@ -14,8 +14,8 @@
  *       • Encoder ticks per revolution at the wheel shaft. Multiply the motor’s
  *         ticks by any external gear ratio so RPM math stays correct.
  *   - RPM_MIN / RPM_MAX
- *       • Software clamps applied to every RPM request. Keep RPM_MAX ≥ far-shot
- *         demands from AutoRpmConfig and manual TeleOp ranges.
+ *       • Software clamps applied to every RPM request. Keep RPM_MAX ≥ the
+ *         highest AutoRpmConfig calibration RPM and manual TeleOp ranges.
  *   - PID_P / PID_I / PID_D / PID_F
  *       • REV Hub velocity loop coefficients. Adjust after hardware changes or
  *         when you see overshoot/undershoot in telemetry.
@@ -36,16 +36,17 @@ public final class LauncherTuning {
     public static double FLYWHEEL_TPR = 28.0;   // Ticks per revolution at the wheel shaft
 
     // Software RPM clamps
-    public static double RPM_MIN = 0.0;         // Minimum allowed command
-    public static double RPM_MAX = 6000.0;      // Maximum allowed command (keep ≥ AutoRpmConfig.FAR_RPM)
+    // CHANGES (2025-11-15): Clarified RPM_MAX guidance now that AutoRpmConfig exposes a full calibration table.
+    public static double RPM_MIN = 2000.0;         // Minimum allowed command
+    public static double RPM_MAX = 5000.0;      // Maximum allowed command (keep ≥ highest AutoRpmConfig calibration RPM)
 
     // REV Hub RUN_USING_ENCODER PIDF coefficients
-    public static double PID_P = 10.0;
-    public static double PID_I = 3.0;
-    public static double PID_D = 0.0;
-    public static double PID_F = 12.0;
+    public static double PID_P = 10.0;              // Proportional gain for REV velocity loop
+    public static double PID_I = 3.0;               // Integral gain for REV velocity loop
+    public static double PID_D = 0.0;               // Derivative gain for REV velocity loop
+    public static double PID_F = 12.0;              // Feedforward coefficient for REV velocity loop
 
     // Default readiness tolerance when callers omit their own
-    public static double AT_SPEED_TOLERANCE_RPM = 100.0;
+    public static double AT_SPEED_TOLERANCE_RPM = 100.0; // RPM error allowed when checking readiness locally
     public static double MANUAL_RPM_STEP = 50.0; // RPM step per D-pad press (AutoSpeed off & manual lock ON)
 }

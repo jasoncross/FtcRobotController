@@ -9,14 +9,16 @@
  *     TeleOpAllianceBase and BaseAuto.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md for ranges & examples)
- *   - SHOT_BETWEEN_MS
- *       • Minimum delay between autonomous shots enforced by BaseAuto.fireN().
- *       • Coordinate with Feed.minCycleMs to prevent overlapping feed cycles.
  *   - RPM_TOLERANCE
  *       • Shared ±RPM window considered "at speed" by BaseAuto, AutoAimSpeed,
  *         and TeleOpAllianceBase when no override is provided.
  *       • Keep aligned with Launcher.atSpeedToleranceRPM if you tighten or loosen
  *         precision expectations.
+ *   - RPM_READY_SETTLE_MS (ADDED 2025-11-03)
+ *       • Minimum time the launcher must remain inside the RPM window before
+ *         BaseAuto/TeleOp declare it "ready".
+ *       • Keep modest so volleys remain responsive while filtering transient
+ *         noise after large RPM adjustments.
  *   - LOCK_TOLERANCE_DEG
  *       • Bearing tolerance used when declaring an AprilTag lock.
  *       • Ensure Drivebase.TURN_TOLERANCE_DEG and TagAimController gains support
@@ -46,6 +48,9 @@ public final class SharedRobotTuning {
     private SharedRobotTuning() {}
 
     // CHANGES (2025-10-30): Moved INTAKE_ASSIST_MS to FeedTuning; kept deprecated alias for compatibility.
+    // CHANGES (2025-11-02): Removed autonomous shot spacing tunable; cadence now provided per sequence.
+    // CHANGES (2025-11-14): Added profile-specific lock tolerances so 480p vision can accept
+    //                        higher bearing error without stalling volleys.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -53,14 +58,14 @@ public final class SharedRobotTuning {
     public static RevHubOrientationOnRobot.UsbFacingDirection USB_DIRECTION =
             RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
 
-    // --- Shot timing ---
-    public static long   SHOT_BETWEEN_MS            = 3000;   // BaseAuto.fireN() delay (ms); coordinate with Feed.minCycleMs
-
     // --- Launcher speed gate ---
     public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
+    public static long   RPM_READY_SETTLE_MS        = 150L;   // Time launcher must remain inside tolerance before declaring ready
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG
+    public static double LOCK_TOLERANCE_DEG_P480    = 1.5;    // Override when running the 640×480 vision profile (looser due to coarser pose output)
+    public static double LOCK_TOLERANCE_DEG_P720    = 1.5;    // Override when running the 1280×720 profile (sharper pose accuracy)
     public static double TURN_TWIST_CAP             = 0.35;   // Twist clamp shared by BaseAuto + AutoAimSpeed unless overridden
     public static double DRIVE_MAX_POWER            = 0.50;   // Max auto drive power; adjust here for global movement speed
 

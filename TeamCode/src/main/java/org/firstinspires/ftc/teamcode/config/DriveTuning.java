@@ -31,7 +31,7 @@ public final class DriveTuning {
     private DriveTuning() {}
 
     // Geometry & encoders
-    public static double WHEEL_DIAMETER_IN = 3.7795; // goBILDA 96 mm wheel ≈ 3.7795"
+    public static double WHEEL_DIAMETER_IN = 4.0295; // goBILDA 96 mm wheel ≈ 3.7795"
     public static double TICKS_PER_REV     = 537.7;  // goBILDA 5202 312 RPM output encoder
     public static double GEAR_RATIO        = 1.0;    // Wheel revs per motor rev (>1 if reduced)
 
@@ -39,8 +39,8 @@ public final class DriveTuning {
     public static double STRAFE_CORRECTION = 1.15;   // Multiply lateral component by this factor
 
     // IMU turn gains
-    public static double TURN_KP = 0.012;
-    public static double TURN_KD = 0.003;
+    public static double TURN_KP = 0.012;            // Proportional gain for IMU turns
+    public static double TURN_KD = 0.003;            // Derivative gain for IMU turns
 
     // Turn completion requirements
     public static double TURN_TOLERANCE_DEG   = 1.0;  // Acceptable heading error

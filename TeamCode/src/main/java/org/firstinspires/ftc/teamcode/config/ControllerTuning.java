@@ -18,5 +18,5 @@ package org.firstinspires.ftc.teamcode.config;
 public final class ControllerTuning {
     private ControllerTuning() {}
 
-    public static double TRIGGER_EDGE_THRESH = 0.5;
+    public static double TRIGGER_EDGE_THRESH = 0.5; // Trigger value treated as a press when edge-detected
 }

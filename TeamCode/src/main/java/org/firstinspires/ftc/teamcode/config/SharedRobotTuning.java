@@ -68,8 +68,8 @@ public final class SharedRobotTuning {
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG
     public static double LOCK_TOLERANCE_DEG_P480    = 1.5;    // Override when running the 640×480 vision profile (looser due to coarser pose output)
     public static double LOCK_TOLERANCE_DEG_P720    = 1.5;    // Override when running the 1280×720 profile (sharper pose accuracy)
-    public static double TURN_TWIST_CAP             = 0.35;   // Twist clamp shared by BaseAuto + AutoAimSpeed unless overridden
-    public static double DRIVE_MAX_POWER            = 0.50;   // Max auto drive power; adjust here for global movement speed
+    public static double TURN_TWIST_CAP             = 0.8;   // Twist clamp shared by BaseAuto + AutoAimSpeed unless overridden
+    public static double DRIVE_MAX_POWER            = 1.0;   // Max auto drive power; adjust here for global movement speed
 
     // --- Assist behaviors shared across modes ---
     @Deprecated

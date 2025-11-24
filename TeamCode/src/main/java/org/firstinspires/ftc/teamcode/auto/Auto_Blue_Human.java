@@ -25,9 +25,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - spinToAutoRpmDefault(...)
  *       • Keeps the launcher warm with the shared AutoSpeed default during the
  *         long drive to the firing spot.
- *   - move(... 80 in, heading 0°, speed 0.35)
- *       • Drives the full length to the calibrated long-shot standoff before
- *         beginning the tag sweep.
+ *   - move(... 80 in, heading 0°, twist 0°, speed 0.35)
+ *       • Drives the full length to the calibrated long-shot standoff while
+ *         holding the starting orientation before beginning the tag sweep.
  *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Sweeps counter-clockwise to 90° then checks 30° clockwise while
  *         hunting for Tag 20; adjust angles/speed for alternate scan envelopes and
@@ -37,7 +37,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *         allowing the volley to start.
  *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Commands a rapid five-artifact volley once RPM readiness is confirmed.
- *   - move(... -36 in, heading 0°, speed 0.85)
+ *   - move(... -36 in, heading 0°, twist 0°, speed 0.85)
  *       • Retreats 36" toward the launch line to clear space for alliance
  *         partners after the long volley.
  *
@@ -70,6 +70,7 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-11-13): Updated header to match long-range drive/return plan and document five-shot cadence + retreat.
     // CHANGES (2025-11-25): Inlined the 10 s rotate-to-target timeout directly on the scan step instead of using BaseAuto's default.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
+    // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -84,12 +85,12 @@ public class Auto_Blue_Human extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
+                .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 0.35)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 36 in back", -36.0, 0.0, 0.85)
+                .move("Drive 36 in back", -36.0, 0.0, 0.0, 0.85)
                 .run();
     }
 }

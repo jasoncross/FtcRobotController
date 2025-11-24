@@ -19,9 +19,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     steps without rewriting the existing scaffold.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - move(... 36.0 in, heading 0°, speed 0.55)
- *       • Sets the initial standoff before aiming. Power clamps via
- *         SharedRobotTuning.DRIVE_MAX_POWER for global speed changes.
+ *   - move(... 36.0 in, heading 0°, twist 0°, speed 0.55)
+ *       • Sets the initial standoff before aiming while holding the starting
+ *         heading. Power clamps via SharedRobotTuning.DRIVE_MAX_POWER for global
+ *         speed changes.
  *   - spinToAutoRpmDefault(...)
  *       • Pre-spins the launcher with the shared AutoSpeed standby RPM so it’s
  *         ready before the tag sweep begins.
@@ -60,6 +61,7 @@ public class Auto_Blue_Target extends BaseAuto {
     // CHANGES (2025-11-13): Documented five-shot cadence + hold behavior in header for the refreshed depot plan.
     // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
+    // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
     // BaseAuto needs the declared alliance to load the correct AprilTag IDs.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry annotation so setup crew knows correct orientation (edit to
@@ -71,7 +73,7 @@ public class Auto_Blue_Target extends BaseAuto {
         sequence()
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.55)
+                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.55)
                 // Telemetry label mirrors the shared driver callout; BaseAuto targets the BLUE goal (ID 20).
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.25, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)

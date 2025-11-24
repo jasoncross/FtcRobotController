@@ -19,9 +19,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     RED side.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - move(... 36 in, heading 0°, speed 0.55)
- *       • Sets the standoff distance before aiming. Power clamps through
- *         SharedRobotTuning.DRIVE_MAX_POWER for global tweaks.
+ *   - move(... 36 in, heading 0°, twist 0°, speed 0.55)
+ *       • Sets the standoff distance before aiming while holding the starting
+ *         heading. Power clamps through SharedRobotTuning.DRIVE_MAX_POWER for
+ *         global tweaks.
  *   - spinToAutoRpmDefault(...)
  *       • Pre-spins the launcher so Tag 24 sweeps start with the wheels already
  *         at the standby AutoSpeed RPM.
@@ -61,6 +62,7 @@ public class Auto_Red_Target extends BaseAuto {
     // CHANGES (2025-11-13): Updated header to capture five-shot volley and depot hold notes for RED side.
     // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
+    // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew (edit to refresh the Start Pose
@@ -72,7 +74,7 @@ public class Auto_Red_Target extends BaseAuto {
         sequence()
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.55)
+                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.55)
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.25, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)

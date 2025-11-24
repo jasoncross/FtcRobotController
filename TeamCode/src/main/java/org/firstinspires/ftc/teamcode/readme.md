@@ -352,6 +352,8 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-27** – Updated AutoSequence moves to steer toward their twist target during translation instead of turning afterward, enabling simultaneous heading changes along the path and documenting the behavior in the AutoSequence guide.
+- **2025-11-24** – Extended the AutoSequence `move(...)` step to include a twist offset so moves can finish at a heading relative to their start, refreshed the guide/examples to show the new signature, and updated every autonomous route to pass an explicit `0°` twist while preserving current behavior.
 - **2025-11-23** – Added AutoRPM tweak scaling from the D-pad while AutoSpeed is active (2% per press, configurable), enabled continuous-feed holds that keep the gate open and intake assist running, and added per-call rotate-to-target timeouts (10 s default applied directly in each auto call, now expressed as `10000` ms literals) so AutoSequence scans bail out cleanly; documented the controls and tunables.
 - **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
 - **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.

@@ -21,9 +21,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - visionMode(... Mode.P720)
  *       • Enables the 720p sighting profile before the aim so range sampling
  *         mirrors TeleOp’s long-shot configuration.
- *   - move(... 3 in, heading 0°, speed 0.35)
+ *   - move(... 3 in, heading 0°, twist 0°, speed 0.35)
  *       • Clears the wall contact before aiming to avoid rubbing during the
- *         stationary volley.
+ *         stationary volley while holding the starting orientation.
  *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Uses the mirrored clockwise sweep envelope to hunt Tag 24 while
  *         staying on the launch tile; adjust timeout/angles as strategy changes.
@@ -36,7 +36,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Matches the five-artifact volley timing used on BLUE for parity across
  *         alliances.
- *   - move(... 36 in, heading 0°, speed 0.85)
+ *   - move(... 36 in, heading 0°, twist 0°, speed 0.85)
  *       • Drives 36" upfield post-volley to open the teleop lane immediately.
  *
  * METHODS
@@ -66,6 +66,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-13): Corrected header for long-shot variant (3" slide, five-shot volley, 36" advance).
     // CHANGES (2025-11-25): rotateToTarget scan now uses an inline 10 s timeout instead of the BaseAuto default field.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
+    // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
@@ -80,12 +81,12 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
           .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
           .rememberHeading("Record start heading")
           .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-          .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
+          .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 0.35)
           .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
           .readyToLaunch("Ready launcher for volley", 3200)
           .fire("Fire volley", 5, true, 1000)
           .returnToStoredHeading("Return to start heading", 0.45)
-          .move("Drive 36 in forward", 36.0, 0.0, 0.85)
+          .move("Drive 36 in forward", 36.0, 0.0, 0.0, 0.85)
           .run();
     }
 }

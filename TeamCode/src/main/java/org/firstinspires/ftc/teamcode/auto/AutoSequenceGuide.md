@@ -53,7 +53,7 @@ telemetry as the active **Phase** string while that step runs.
 | Call | Description | Notes |
 | --- | --- | --- |
 | `rememberHeading(label)` | Captures the current IMU heading for later reuse. | Call before you plan to return to the same orientation. |
-| `move(label, distanceIn, headingDeg, speedCap)` | Drives a straight line while holding the requested heading. | Distance is signed; heading is absolute (field-centric, 0° = upfield). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`. |
+| `move(label, distanceIn, headingDeg, twistDeg, speedCap)` | Drives a straight line while steering toward the requested heading change so the robot ends the move at the starting heading plus `twistDeg`. | Distance is signed; heading is absolute (field-centric, 0° = upfield). `twistDeg` is relative to the heading at the start of the step (0° to maintain orientation). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`; the twist controller shares the same cap while blending rotation during the translation. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpmDefault(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
@@ -78,7 +78,7 @@ telemetry as the active **Phase** string while that step runs.
 
 ```java
 sequence()
-    .move("Drive to standoff", 36.0, 0.0, 0.55)
+    .move("Drive to standoff", 36.0, 0.0, 0.0, 0.55)
     .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
@@ -102,13 +102,13 @@ the goal tag.
 ```java
 sequence()
     .rememberHeading("Capture start heading")
-    .move("Bump off wall", 2.0, 0.0, 0.35)
+    .move("Bump off wall", 2.0, 0.0, 0.0, 0.35)
     .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .returnToStoredHeading("Face upfield", 0.40)
-    .move("Drive to classifier", 24.0, 0.0, 0.55)
+    .move("Drive to classifier", 24.0, 0.0, 0.0, 0.55)
     .run();
 ```
 
@@ -143,7 +143,7 @@ feeds once with intake assist, and then restores the prior RPM.
 ```java
 sequence()
     .custom("Enable intake", () -> intake.set(true))
-    .move("Drive to pickup", 18.0, 0.0, 0.30)
+    .move("Drive to pickup", 18.0, 0.0, 0.0, 0.30)
     .waitFor("Let artifacts settle", 750)
     .fire("Test feed", 1, false, 2500)
     .custom("Disable intake", () -> intake.set(false))

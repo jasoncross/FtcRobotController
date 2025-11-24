@@ -26,9 +26,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - spinToAutoRpmDefault(...)
  *       • Keeps the launcher warm with the shared AutoSpeed default during the
  *         long sprint to the firing box.
- *   - move(... 80 in, heading 0°, speed 0.35)
- *       • Covers the full upfield sprint to the calibrated firing distance prior
- *         to scanning for Tag 24.
+ *   - move(... 80 in, heading 0°, twist 0°, speed 0.35)
+ *       • Covers the full upfield sprint to the calibrated firing distance while
+ *         holding the starting orientation prior to scanning for Tag 24.
  *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Sweeps clockwise to 90° and checks 30° counter-clockwise while
  *         hunting for Tag 24; widen or shrink the arcs to tune scan coverage and
@@ -38,7 +38,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *         every shot leaves at the correct velocity.
  *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Fires a fast five-artifact volley once launcher readiness settles.
- *   - move(... -36 in, heading 0°, speed 0.85)
+ *   - move(... -36 in, heading 0°, twist 0°, speed 0.85)
  *       • Drives 36" back toward the launch line to clear space for alliance
  *         partners immediately after shooting.
  *
@@ -69,6 +69,7 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-11-13): Updated header to describe long-run volley, five-shot cadence, and post-volley retreat.
     // CHANGES (2025-11-25): Inlined the 10 s rotate-to-target timeout directly on the scan step instead of using BaseAuto's default field.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
+    // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
@@ -83,12 +84,12 @@ public class Auto_Red_Human extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
+                .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 0.35)
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 36 in back", -36.0, 0.0, 0.85)
+                .move("Drive 36 in back", -36.0, 0.0, 0.0, 0.85)
                 .run();
     }
 }

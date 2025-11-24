@@ -13,7 +13,7 @@ import org.firstinspires.ftc.teamcode.Alliance;
  *     and stop.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Autonomous pacing)
- *   - move(... 30 in, heading 0°, speed 0.35)
+ *   - move(... 30 in, heading 0°, twist 0°, speed 0.35)
  *
  * METHODS
  *   - alliance()
@@ -38,10 +38,11 @@ public class Auto_Red_30 extends BaseAuto {
 
     // Main autonomous path: drive 30" and stop.
     // CHANGES (2025-11-13): Updated header to describe pure-movement plan and removed unused imports.
+    // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .move("Clear wall (drive 30 in)", 30.0, 0.0, 0.35)
+                .move("Clear wall (drive 30 in)", 30.0, 0.0, 0.0, 0.35)
                 .run();
     }
 }

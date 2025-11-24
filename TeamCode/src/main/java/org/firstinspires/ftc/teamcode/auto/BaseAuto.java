@@ -121,6 +121,10 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        the robot is beyond the long-shot distance cutover.
     // CHANGES (2025-11-25): rotateToTarget steps still require explicit timeouts per sequence,
     //                        and autos now inline their own 10 s default instead of using a shared constant.
+    // CHANGES (2025-11-24): AutoSequence.move(...) can now twist to a caller-selected heading relative
+    //                        to the move start before finishing the step.
+    // CHANGES (2025-11-27): AutoSequence.move(...) now steers toward the twist target during the
+    //                        translation instead of turning afterward.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -860,18 +864,24 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence move(String phase, double distanceInches, double headingDeg, double speedCap) {
+        public AutoSequence move(String phase, double distanceInches, double headingDeg, double twistDeg, double speedCap) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Move");
                 lastLock = false;
                 lastAimReady = false;
                 double speed = clampTranslationSpeed(speedCap);
+                double startHeading = drive.heading();
+                double targetHeading = normDeg(startHeading + twistDeg);
+                double turnSpeed = clampTurnSpeed(speedCap);
                 updateStatus(label, false);
                 telemetry.addData("Distance (in)", distanceInches);
                 telemetry.addData("Heading (deg)", headingDeg);
+                telemetry.addData("Twist target (deg)", targetHeading);
+                telemetry.addData("Start heading (deg)", startHeading);
                 telemetry.addData("Speed cap", speed);
+                telemetry.addData("Twist speed cap", turnSpeed);
                 telemetry.update();
-                drive.move(distanceInches, headingDeg, speed);
+                drive.moveWithTwist(distanceInches, headingDeg, targetHeading, speed, turnSpeed);
                 drive.stopAll();
                 updateStatus(label + " complete", false);
                 telemetry.update();

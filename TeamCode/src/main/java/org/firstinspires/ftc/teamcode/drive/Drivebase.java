@@ -96,6 +96,8 @@ public class Drivebase {
     // CHANGES (2025-11-04): Aligned Auto move() forward sign with TeleOp + added vector telemetry.
     // CHANGES (2025-11-04): stopAll() now reapplies BRAKE zero-power behavior before zeroing power.
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
+    // CHANGES (2025-11-27): Added moveWithTwist(...) to blend translation + heading change concurrently
+    //                        for AutoSequence twist-enabled moves.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -243,6 +245,101 @@ public class Drivebase {
             idle(); // yield to SDK
         }
         restoreBaseRunMode(); // back to RUN_USING_ENCODER
+    }
+
+    /**
+     * Field-centric translation while steering to a target heading.
+     *
+     * @param distanceInches     distance to move (inches)
+     * @param degrees            heading of translation: 0=forward, +90=right, 180=back, -90=left
+     * @param targetHeadingDeg   absolute heading to hold by the end of the move
+     * @param translationSpeed   translation power cap (0..1)
+     * @param twistSpeed         twist power cap (0..1)
+     */
+    public void moveWithTwist(double distanceInches,
+                              double degrees,
+                              double targetHeadingDeg,
+                              double translationSpeed,
+                              double twistSpeed) {
+        if (!isActive()) return; // TeleOp: don't block
+
+        translationSpeed = clamp(translationSpeed, 0.1, 1.0);
+        twistSpeed = clamp(twistSpeed, 0.1, 1.0);
+
+        double rad = toRadians(degrees);
+        double forwardRaw = cos(rad);
+        double lateralRaw = sin(rad);
+        double forward = -forwardRaw;
+
+        // Normalize the translation vector so the speed cap applies uniformly.
+        double maxVec = max(1.0, max(abs(forward), abs(lateralRaw)));
+        forward /= maxVec;
+        lateralRaw /= maxVec;
+
+        // Compute expected per-wheel scaling for progress tracking (mirrors move()).
+        double xAdj = lateralRaw * STRAFE_CORRECTION;
+        double yAdj = forward;
+        double flMult = yAdj + xAdj;
+        double frMult = yAdj - xAdj;
+        double blMult = yAdj - xAdj;
+        double brMult = yAdj + xAdj;
+        double norm = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
+        flMult /= norm; frMult /= norm; blMult /= norm; brMult /= norm;
+
+        double baseTicks = distanceInches * TICKS_PER_IN;
+        double absTargetMean = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * abs(baseTicks);
+
+        int flStart = fl.getCurrentPosition();
+        int frStart = fr.getCurrentPosition();
+        int blStart = bl.getCurrentPosition();
+        int brStart = br.getCurrentPosition();
+
+        ElapsedTime dt = new ElapsedTime();
+        double lastErr = shortestDiff(targetHeadingDeg, heading());
+
+        while (isActive()) {
+            double curHeading = heading();
+            double err = shortestDiff(targetHeadingDeg, curHeading);
+            double derr = (err - lastErr) / max(1e-3, dt.seconds());
+            lastErr = err; dt.reset();
+
+            double twistCmd = TURN_KP * err + TURN_KD * derr;
+            twistCmd = clamp(twistCmd, -twistSpeed, twistSpeed);
+
+            double driveCmd = translationSpeed * forward;
+            double strafeCmd = translationSpeed * lateralRaw;
+
+            double flP = driveCmd + strafeCmd + twistCmd;
+            double frP = driveCmd - strafeCmd - twistCmd;
+            double blP = driveCmd - strafeCmd + twistCmd;
+            double brP = driveCmd + strafeCmd - twistCmd;
+
+            double maxMag = max(1.0, max(abs(flP), max(abs(frP), max(abs(blP), abs(brP)))));
+            fl.setPower(flP / maxMag);
+            fr.setPower(frP / maxMag);
+            bl.setPower(blP / maxMag);
+            br.setPower(brP / maxMag);
+
+            double flDelta = abs(fl.getCurrentPosition() - flStart);
+            double frDelta = abs(fr.getCurrentPosition() - frStart);
+            double blDelta = abs(bl.getCurrentPosition() - blStart);
+            double brDelta = abs(br.getCurrentPosition() - brStart);
+            double absMeanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
+
+            if (absTargetMean <= 1e-3 || absMeanDelta >= absTargetMean) {
+                break;
+            }
+
+            idle();
+        }
+
+        stopAll();
+
+        // Finalize heading with the standard turn helper in case residual error remains.
+        double residual = shortestDiff(targetHeadingDeg, heading());
+        if (abs(residual) > TURN_TOLERANCE_DEG) {
+            turn(residual, twistSpeed);
+        }
     }
 
     /**

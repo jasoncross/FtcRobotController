@@ -25,9 +25,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - spinToAutoRpmDefault(...)
  *       • Pre-spins the launcher so Tag 24 sweeps start with the wheels already
  *         at the standby AutoSpeed RPM.
- *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 180°/-90°)
+ *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 180°/-90°, timeout 10000 ms)
  *       • Sweeps clockwise up to 180°, then backs counter-clockwise to 90° shy of
- *         center before heading clockwise again while searching for Tag 24.
+ *         center before heading clockwise again while searching for Tag 24; adjust
+ *         the timeout per route when changing search strategy.
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for AutoSpeed to reach the shared RPM window + settle time defined in
  *         SharedRobotTuning.
@@ -58,6 +59,8 @@ public class Auto_Red_Target extends BaseAuto {
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-13): Updated header to capture five-shot volley and depot hold notes for RED side.
+    // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
+    // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew (edit to refresh the Start Pose
@@ -71,7 +74,7 @@ public class Auto_Red_Target extends BaseAuto {
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive 40 in to standoff", 40.0, 0.0, 0.55)
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
+                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.25, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 //.waitFor("Hold position", 500)

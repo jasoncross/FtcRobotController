@@ -24,9 +24,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - move(... 3 in, heading 0°, speed 0.35)
  *       • Clears the wall contact before aiming to avoid rubbing during the
  *         stationary volley.
- *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°)
+ *   - rotateToTarget(label, ScanDirection.CW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Uses the mirrored clockwise sweep envelope to hunt Tag 24 while
- *         staying on the launch tile.
+ *         staying on the launch tile; adjust timeout/angles as strategy changes.
  *   - spinToAutoRpmDefault(...)
  *       • Keeps the launcher at the AutoSpeed standby RPM while staged on the
  *         launch tile.
@@ -64,6 +64,8 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
     // CHANGES (2025-11-13): Corrected header for long-shot variant (3" slide, five-shot volley, 36" advance).
+    // CHANGES (2025-11-25): rotateToTarget scan now uses an inline 10 s timeout instead of the BaseAuto default field.
+    // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
@@ -79,7 +81,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
           .rememberHeading("Record start heading")
           .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
           .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
-          .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30)
+          .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
           .readyToLaunch("Ready launcher for volley", 3200)
           .fire("Fire volley", 5, true, 1000)
           .returnToStoredHeading("Return to start heading", 0.45)

@@ -25,9 +25,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - move(... 3 in, heading 0°, speed 0.35)
  *       • Slides off the wall just enough to remove bumper pressure before the
  *         tag scan.
- *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°)
+ *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Maintains the standard CCW sweep envelope while aiming from the launch
- *         line; tune angles or speed for alternate search coverage.
+ *         line; tune angles or speed for alternate search coverage and adjust the
+ *         timeout as routes change.
  *   - spinToAutoRpmDefault(...)
  *       • Keeps the launcher warm with the shared AutoSpeed standby RPM while
  *         the robot remains near the wall.
@@ -68,6 +69,8 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
     // CHANGES (2025-11-13): Corrected header for long-shot variant (3" bump, five-shot volley, 36" advance).
+    // CHANGES (2025-11-25): rotateToTarget scan now uses an inline 10 s timeout instead of the BaseAuto default field.
+    // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -83,7 +86,7 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.35)
-                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30)
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)

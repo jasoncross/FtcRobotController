@@ -70,6 +70,8 @@ public class Feed {
     //                       homing aborts and clamped requests.
     // CHANGES (2025-11-09): Condensed FeedStop telemetry helpers into a single summary line with
     //                       warnings surfaced only when limits or homing guards trigger.
+    // CHANGES (2025-11-23): Added continuous-feed mode for fire-button holds so TeleOp can stream
+    //                       artifacts without rearming the state machine between shots.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -101,6 +103,7 @@ public class Feed {
     private long fireLeadMs = 0L;
     private long releaseUntilMs = 0L;
     private long feedAllowedAfterMs = 0L;
+    private boolean continuousFeedActive = false;
 
     private boolean useAutoScale = false;
     private boolean autoScaleApplied = false;
@@ -176,6 +179,7 @@ public class Feed {
         releasePosition = Double.NaN;
         releaseUntilMs = 0L;
         feedAllowedAfterMs = 0L;
+        continuousFeedActive = false;
         scaleTelemetryEmitted = false;
         windowLimitReached = false;
         angleClamped = false;
@@ -267,6 +271,19 @@ public class Feed {
     public void update() {
         long now = System.currentTimeMillis();
         updateHoming(now);
+
+        if (continuousFeedActive) {
+            applySafetyConfig();
+            if (feedStopReady && feedStop != null) {
+                commandAngleImmediate(releaseAngleDeg);
+                feedStopState = FeedStopState.RELEASE;
+            }
+            releaseUntilMs = 0L;
+            feedAllowedAfterMs = now;
+            motor.setPower(firePower);
+            return;
+        }
+
         updateFeedStop(now);
         updateFeedCycle(now);
     }
@@ -444,6 +461,7 @@ public class Feed {
     /** Begin a non-blocking feed cycle that respects FeedStop release/hold timing. */
     public boolean beginFeedCycle() {
         if (cycleState != FeedCycleState.IDLE) return false;
+        if (continuousFeedActive) return false;
         if (!canFire()) return false;
         requestReleaseHold();
         lastFire = System.currentTimeMillis();
@@ -461,9 +479,37 @@ public class Feed {
         return cycleState != FeedCycleState.IDLE;
     }
 
+    /** Run the feed motor and hold the gate open continuously (used for fire-button holds). */
+    public void startContinuousFeed() {
+        if (continuousFeedActive) return;
+        continuousFeedActive = true;
+        lastFire = System.currentTimeMillis();
+        feedAllowedAfterMs = lastFire;
+        releaseUntilMs = 0L;
+        cycleState = FeedCycleState.IDLE;
+        applySafetyConfig();
+        setRelease();
+        motor.setPower(firePower);
+    }
+
+    /** Stop continuous-feed mode and return the gate to HOLD. */
+    public void stopContinuousFeed() {
+        if (!continuousFeedActive) return;
+        continuousFeedActive = false;
+        applyIdleHoldPower();
+        setHold();
+        cycleState = FeedCycleState.IDLE;
+    }
+
+    /** True when the continuous-feed stream is active. */
+    public boolean isContinuousFeedActive() {
+        return continuousFeedActive;
+    }
+
     /** Immediately stops the feed motor. */
     public void stop() {
         applySafetyConfig();
+        continuousFeedActive = false;
         applyIdleHoldPower();
         setHome();
         cycleState = FeedCycleState.IDLE;
@@ -473,6 +519,7 @@ public class Feed {
     public void applyBrakeHold() {
         idleHoldActive = false;
         applySafetyConfig();
+        continuousFeedActive = false;
         motor.setPower(0.0);
         setHome();
         cycleState = FeedCycleState.IDLE;

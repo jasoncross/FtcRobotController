@@ -39,14 +39,14 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Right Stick X** | Rotation (**disabled while AutoAim is ON**) |
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
-| **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
+| **Left Bumper (LB)** | **Tap:** feed once (with **Intake Assist** if Intake is OFF). **Hold:** continuous feed with FeedStop held open and intake assist latched if it was off. |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** |
 | **Right Stick Button (RS)** | **Toggle AutoAim** *(only ENABLES if a goal AprilTag is visible; auto-DISABLES if tag remains lost beyond grace window)* |
 | **Y / Triangle** | **Toggle AutoSpeed** *(double-pulse on ENABLE, single-pulse on DISABLE)* |
 | **X / Square** | **Toggle Manual RPM LOCK** *(only when AutoSpeed = OFF; holds current RPM)* |
 | **B / Circle** | **Eject** *(temporary RPM = `EjectRPM`, feeds once with Intake Assist, then restores prior RPM)* |
 | **D-pad Up** | **Enable RPM TEST MODE** |
-| **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled; when **AutoSpeed = OFF** **and Manual Lock = ON**, nudges manual RPM by `LauncherTuning.MANUAL_RPM_STEP` (default 50) |
+| **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled; when **AutoSpeed = OFF** **and Manual Lock = ON**, nudges manual RPM by `LauncherTuning.MANUAL_RPM_STEP` (default 50); when **AutoSpeed = ON**, applies ±`TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE` (2%) to the AutoRPM output per press |
 | **D-pad Down** | **Disable TEST MODE** and **STOP** launcher |
 | **Start** | **StopAll toggle** — latches an all-systems stop; press again to resume |
 
@@ -352,6 +352,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-23** – Added AutoRPM tweak scaling from the D-pad while AutoSpeed is active (2% per press, configurable), enabled continuous-feed holds that keep the gate open and intake assist running, and added per-call rotate-to-target timeouts (10 s default applied directly in each auto call, now expressed as `10000` ms literals) so AutoSequence scans bail out cleanly; documented the controls and tunables.
 - **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
 - **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.
 - **2025-11-20** – Require a live AprilTag sighting to enter long-shot lock biasing so asymmetric tolerances only apply to current detections; documented the visibility guard for clarity.

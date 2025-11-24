@@ -51,6 +51,8 @@ public final class SharedRobotTuning {
     // CHANGES (2025-11-02): Removed autonomous shot spacing tunable; cadence now provided per sequence.
     // CHANGES (2025-11-14): Added profile-specific lock tolerances so 480p vision can accept
     //                        higher bearing error without stalling volleys.
+    // CHANGES (2025-11-24): Removed rotate-to-target timeout tuning; AutoSequence now passes
+    //                        explicit per-step limits.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted

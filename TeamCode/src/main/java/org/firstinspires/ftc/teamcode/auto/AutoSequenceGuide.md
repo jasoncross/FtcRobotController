@@ -57,7 +57,7 @@ telemetry as the active **Phase** string while that step runs.
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpmDefault(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
-| `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied. | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. |
+| `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, timeoutMs)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied (or the timeout elapses). | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. Provide `timeoutMs` per call (autos currently pass **10 000 ms** = **10 s**) to abort the scan if no tag lock is found. |
 | `visionMode(label, mode)` | Swaps the AprilTag vision profile mid-sequence. | Calls `VisionAprilTag.applyProfile(...)`, reapplies `VisionTuning.RANGE_SCALE`, and logs the active resolution so you can flip between `P480` and `P720` before aim steps. |
 | `readyToLaunch(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window + settle timer. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher stays inside the tolerance band for `SharedRobotTuning.RPM_READY_SETTLE_MS` or the timeout hits. |
 | `fire(label, shots, requireLock, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireLock` is false, skips the AprilTag lock check but still enforces RPM readiness. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
@@ -80,7 +80,7 @@ telemetry as the active **Phase** string while that step runs.
 sequence()
     .move("Drive to standoff", 36.0, 0.0, 0.55)
     .spinToAutoRpmDefault("Pre-spin launcher")
-    .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30)
+    .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .waitFor("Stabilize", 500)
@@ -104,7 +104,7 @@ sequence()
     .rememberHeading("Capture start heading")
     .move("Bump off wall", 2.0, 0.0, 0.35)
     .spinToAutoRpmDefault("Pre-spin launcher")
-    .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30)
+    .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
     .fire("Volley", 3, true, 3000)
     .returnToStoredHeading("Face upfield", 0.40)

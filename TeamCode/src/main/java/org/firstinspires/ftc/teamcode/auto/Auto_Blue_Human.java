@@ -28,9 +28,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - move(... 80 in, heading 0°, speed 0.35)
  *       • Drives the full length to the calibrated long-shot standoff before
  *         beginning the tag sweep.
- *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°)
+ *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 90°/30°, timeout 10000 ms)
  *       • Sweeps counter-clockwise to 90° then checks 30° clockwise while
- *         hunting for Tag 20; adjust angles/speed for alternate scan envelopes.
+ *         hunting for Tag 20; adjust angles/speed for alternate scan envelopes and
+ *         raise/lower the timeout per route.
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for AutoSpeed to hit the shared RPM window + settle timer before
  *         allowing the volley to start.
@@ -67,6 +68,8 @@ public class Auto_Blue_Human extends BaseAuto {
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-05): Added 720p vision profile swap at sequence start to mirror TeleOp testing.
     // CHANGES (2025-11-13): Updated header to match long-range drive/return plan and document five-shot cadence + retreat.
+    // CHANGES (2025-11-25): Inlined the 10 s rotate-to-target timeout directly on the scan step instead of using BaseAuto's default.
+    // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry label describing the expected robot orientation at init (edit
@@ -82,7 +85,7 @@ public class Auto_Blue_Human extends BaseAuto {
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive forward to target firing zone", 80.0, 0.0, 0.35)
-                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30)
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 .returnToStoredHeading("Return to start heading", 0.45)

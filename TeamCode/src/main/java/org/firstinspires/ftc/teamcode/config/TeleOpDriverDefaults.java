@@ -40,6 +40,7 @@ public final class TeleOpDriverDefaults {
 
     // CHANGES (2025-10-30): Point intake assist mirror at FeedTuning after tunable move.
     // CHANGES (2025-10-31): Default AutoSpeed + Intake to ON per driver request.
+    // CHANGES (2025-11-23): Added AutoRPM tweak scale for on-the-fly AutoSpeed adjustments via D-pad left/right.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -51,6 +52,7 @@ public final class TeleOpDriverDefaults {
     // Manual RPM slider bounds
     public static double RPM_BOTTOM = 0.0;            // Manual RPM floor when AutoSpeed is off
     public static double RPM_TOP    = 6000.0;         // Manual RPM ceiling when AutoSpeed is off
+    public static double AUTORPM_TWEAK_SCALE = 0.02;  // Fractional AutoRPM nudge applied per D-pad press while AutoSpeed is on
 
     // AutoAim grace + telemetry smoothing
     public static int    AUTO_AIM_LOSS_GRACE_MS = 4000; // Grace window (ms) before AutoAim disables after tag loss

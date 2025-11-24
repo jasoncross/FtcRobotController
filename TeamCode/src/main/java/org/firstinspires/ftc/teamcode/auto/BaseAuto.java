@@ -77,8 +77,8 @@ import java.util.Locale;
  * NOTES
  *   - Derived classes must override alliance(), startPoseDescription(), and
  *     runSequence(). Sequence steps can request clockwise or counter-clockwise
- *     sweeps explicitly via {@link AutoSequence#rotateToTarget(String, ScanDirection, double, double, double)}
- *     or the overloads that omit the counter sweep.
+ *     sweeps explicitly via {@link AutoSequence#rotateToTarget(String, ScanDirection, double, double, double, long)}
+ *     or the overloads that omit the counter sweep while still requiring a timeout.
  *   - ObeliskSignal captures motif tags during init so autos know which pattern
  *     they are starting in without extra hardware.
  */
@@ -119,6 +119,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        lock windows without changing alliance-specific logic.
     // CHANGES (2025-11-18): Biased the tag lock window toward alliance-correct angles when
     //                        the robot is beyond the long-shot distance cutover.
+    // CHANGES (2025-11-25): rotateToTarget steps still require explicit timeouts per sequence,
+    //                        and autos now inline their own 10 s default instead of using a shared constant.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -270,12 +272,14 @@ public abstract class BaseAuto extends LinearOpMode {
      *                           before reaching zero by the requested magnitude (relative to the opening side).
      *                           Pass {@code 0} to return to center before repeating, or {@code null} / {@link Double#NaN}
      *                           to hold at the primary sweep limit with no counter pass.
+     * @param timeoutMs          Maximum time to spend sweeping before abandoning the scan and continuing.
      */
     protected final boolean turnToGoalTag(String phase,
                                            ScanDirection direction,
                                            double turnSpeedFraction,
                                            double primarySweepDeg,
-                                           Double oppositeSweepDeg) {
+                                           Double oppositeSweepDeg,
+                                           long timeoutMs) {
         final int goalId = (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
         final double tol = lockTolDeg();
         final double cap = turnTwistCap();
@@ -320,8 +324,21 @@ public abstract class BaseAuto extends LinearOpMode {
         }
 
         SweepState state = SweepState.PRIMARY_OUT;
+        long startMs = System.currentTimeMillis();
 
         while (opModeIsActive()) {
+            long now = System.currentTimeMillis();
+            if (timeoutMs > 0 && (now - startMs) >= timeoutMs) {
+                drive.stopAll();
+                updateStatus(label + " – timeout", false);
+                telemetry.addData("Bearing (deg)", "---");
+                telemetry.addData("Turn speed (|twist|)", twist);
+                telemetry.addData("Sweep offsets (deg)", sweepSummary);
+                telemetry.addData("Time remaining (ms)", 0);
+                telemetry.update();
+                return false;
+            }
+
             updateIntakeFlowForAuto();
             AprilTagDetection det = (vision != null) ? vision.getDetectionFor(goalId) : null;
             double bearing = Double.NaN;
@@ -408,6 +425,9 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addData("Bearing (deg)", bearing);
             telemetry.addData("Turn speed (|twist|)", twist);
             telemetry.addData("Sweep offsets (deg)", sweepSummary);
+            if (timeoutMs > 0) {
+                telemetry.addData("Time remaining (ms)", Math.max(0, timeoutMs - (now - startMs)));
+            }
             telemetry.update();
             idle();
         }
@@ -909,10 +929,26 @@ public abstract class BaseAuto extends LinearOpMode {
                                            ScanDirection direction,
                                            double turnSpeedFraction,
                                            double primarySweepDeg,
-                                           double oppositeSweepDeg) {
+                                           double oppositeSweepDeg,
+                                           long timeoutMs) {
             return addStep(() -> {
                 lastAimReady = false;
-                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg);
+                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs);
+                if (!lastLock) {
+                    telemetry.addLine("⚠️ No tag lock – continuing sequence");
+                    telemetry.update();
+                }
+            });
+        }
+
+        public AutoSequence rotateToTarget(String phase,
+                                           ScanDirection direction,
+                                           double turnSpeedFraction,
+                                           double primarySweepDeg,
+                                           long timeoutMs) {
+            return addStep(() -> {
+                lastAimReady = false;
+                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, null, timeoutMs);
                 if (!lastLock) {
                     telemetry.addLine("⚠️ No tag lock – continuing sequence");
                     telemetry.update();
@@ -923,28 +959,16 @@ public abstract class BaseAuto extends LinearOpMode {
         public AutoSequence rotateToTarget(String phase,
                                            double turnSpeedFraction,
                                            double primarySweepDeg,
-                                           double oppositeSweepDeg) {
-            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg);
-        }
-
-        public AutoSequence rotateToTarget(String phase,
-                                           ScanDirection direction,
-                                           double turnSpeedFraction,
-                                           double primarySweepDeg) {
-            return addStep(() -> {
-                lastAimReady = false;
-                lastLock = turnToGoalTag(phase, direction, turnSpeedFraction, primarySweepDeg, null);
-                if (!lastLock) {
-                    telemetry.addLine("⚠️ No tag lock – continuing sequence");
-                    telemetry.update();
-                }
-            });
+                                           double oppositeSweepDeg,
+                                           long timeoutMs) {
+            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs);
         }
 
         public AutoSequence rotateToTarget(String phase,
                                            double turnSpeedFraction,
-                                           double primarySweepDeg) {
-            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg);
+                                           double primarySweepDeg,
+                                           long timeoutMs) {
+            return rotateToTarget(phase, null, turnSpeedFraction, primarySweepDeg, timeoutMs);
         }
 
         public AutoSequence visionMode(String phase, VisionTuning.Mode mode) {

@@ -152,6 +152,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     //                       when clamping or homing guards trigger.
     // CHANGES (2025-11-16): Integrated the encoder-aware intake flow classifier so TeleOp updates it
     //                       every loop and surfaces the phase in telemetry.
+    // CHANGES (2025-11-23): Added AutoRPM tweak scaling (D-pad left/right while AutoSpeed enabled) and
+    //                       continuous-feed hold behavior on the fire button.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -182,6 +184,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private Gamepad autoSpeedTogglePad = null;
     private AutoSpeedRumble autoSpeedToggleRumble = AutoSpeedRumble.NONE;
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
+
+    // AutoRPM tweak (per-press percentage scaling while AutoSpeed is enabled)
+    private double autoRpmTweakScale  = TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE;
+    private double autoRpmTweakFactor = 1.0; // Multiplier applied to AutoSpeed outputs (x1.00 default)
 
     // Manual RPM Lock (Square/X) — only when AutoSpeed == false
     private boolean manualRpmLocked = false; // Manual RPM hold toggle (Square/X) when AutoSpeed disabled
@@ -266,6 +272,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private long intakeAssistExtraHoldMs = 0L;
     private boolean intakeAssistSawFeedActive = false;
 
+    private boolean continuousFireHeld = false;   // True while LB is held for continuous feed
+    private boolean continuousFireActive = false; // Latched once continuous feed has been enabled
+
     private enum EjectPhase { IDLE, SPOOL, FEED, HOLD }
     private EjectPhase ejectPhase = EjectPhase.IDLE;
     private long ejectPhaseUntilMs = 0L;
@@ -339,6 +348,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // -------- Gamepad 1 (Driver) --------
         // Feed / Intake
         controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
+        controls.bindHold(Pad.G1, Btn.LB, () -> continuousFireHeld = true);
         controls.bindPress(Pad.G1, Btn.RB, () -> intake.toggle());
 
         // Reverse Drive toggle
@@ -398,6 +408,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
                 rpmTestTarget = clamp(rpmTestTarget - TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
                 launcher.setTargetRpm(rpmTestTarget);
+            } else if (autoSpeedEnabled && !rpmTestEnabled) {
+                adjustAutoRpmTweak(-1);
             } else if (!autoSpeedEnabled && manualRpmLocked) {
                 adjustManualRpm(-manualRpmStep);
             }
@@ -408,6 +420,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 double hi = Math.min(Math.max(rpmBottom, rpmTop), LauncherTuning.RPM_MAX);
                 rpmTestTarget = clamp(rpmTestTarget + TeleOpDriverDefaults.RPM_TEST_STEP, lo, hi);
                 launcher.setTargetRpm(rpmTestTarget);
+            } else if (autoSpeedEnabled && !rpmTestEnabled) {
+                adjustAutoRpmTweak(+1);
             } else if (!autoSpeedEnabled && manualRpmLocked) {
                 adjustManualRpm(manualRpmStep);
             }
@@ -424,6 +438,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Gamepad 2 (Co-driver) --------
         controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
+        controls.bindHold(Pad.G2, Btn.LB, () -> continuousFireHeld = true);
         controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             boolean enable = !autoSpeedEnabled;
@@ -509,6 +524,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionProfileSwapMode = null;
         visionProfileError = null;
 
+        continuousFireHeld = false;
+        continuousFireActive = false;
+        resetAutoRpmTweak();
+
         applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
 
         teleopInitMillis = System.currentTimeMillis();
@@ -557,6 +576,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         // -------- Normal controls (only run when NOT STOPPED) --------
+        continuousFireHeld = false; // will be set true by hold bindings during this update
         controls.update(gamepad1, gamepad2);
         drainAutoSpeedQueue();
 
@@ -564,6 +584,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateEjectSequence(now);
         updateIntakeAssist(now);
         boolean ejectActive = isEjectRoutineActive();
+
+        handleContinuousFire(ejectActive);
 
         // Honor manual lock in manual mode
         if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled && !ejectActive) {
@@ -641,6 +663,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean autoRpmActive = (autoSpeedEnabled && !rpmTestEnabled);
         Double autoDistIn = null;
         double autoOutRpm = launcher.targetRpm;
+        double autoOutRpmCommanded = launcher.targetRpm;
 
         if (autoRpmActive && !ejectActive) {
             ensureAutoCtrl();
@@ -661,7 +684,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             } else {
                 autoOutRpm = (!autoHadTagFix) ? InitialAutoDefaultSpeed : autoCtrl.updateWithVision(null);
             }
-            launcher.setTargetRpm(autoOutRpm);
+            double scaledAutoOut = autoOutRpm * autoRpmTweakFactor;
+            autoOutRpmCommanded = clamp(scaledAutoOut, LauncherTuning.RPM_MIN, LauncherTuning.RPM_MAX);
+            launcher.setTargetRpm(autoOutRpmCommanded);
         } else if (!ejectActive) {
             // Enforce manual floor if applicable
             if (!manualRpmLocked && !rpmTestEnabled) {
@@ -705,7 +730,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         if (autoRpmActive && !rpmTestEnabled) {
             telemetry.addData("AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format("%.1f", autoDistIn));
-            telemetry.addData("AutoRPM Out", "%.0f", autoOutRpm);
+            telemetry.addData("AutoRPM Out", "%.0f (x%.3f → %.0f)", autoOutRpm, autoRpmTweakFactor, autoOutRpmCommanded);
             double[] calDist = autoCtrl.getCalibrationDistancesIn();
             double[] calRpm  = autoCtrl.getCalibrationSpeedsRpm();
             if (calDist.length > 0) {
@@ -1023,6 +1048,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         return distanceIn != null && distanceIn >= AutoAimTuning.LONG_SHOT_DISTANCE_IN;
     }
 
+    private void adjustAutoRpmTweak(int directionSign) {
+        double boundedSign = Math.signum(directionSign);
+        if (boundedSign == 0.0) return;
+        double candidate = autoRpmTweakFactor * (1.0 + boundedSign * autoRpmTweakScale);
+        autoRpmTweakFactor = clamp(candidate, 0.50, 1.50);
+    }
+
+    private void resetAutoRpmTweak() {
+        autoRpmTweakFactor = 1.0;
+    }
+
     /** Returns SCALED distance to goal in inches if a detection is provided, else null. */
     private Double getGoalDistanceInchesScaled(AprilTagDetection det) {
         if (det == null) return null;
@@ -1033,7 +1069,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
-        if (ejectPhase != EjectPhase.IDLE) return;
+        if (ejectPhase != EjectPhase.IDLE || continuousFireActive || continuousFireHeld) return;
         boolean wasOn = intake.isOn();
         if (feed.beginFeedCycle()) {
             startIntakeAssist(wasOn, 0L);
@@ -1112,7 +1148,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         if (intakeAssistWaitingForFeed) {
-            if (feed.isFeedCycleActive()) {
+            if (feed.isFeedCycleActive() || feed.isContinuousFeedActive()) {
                 intakeAssistSawFeedActive = true;
                 return;
             }
@@ -1154,6 +1190,24 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intakeAssistExtraHoldMs = Math.max(0L, extraHoldMs);
     }
 
+    private void handleContinuousFire(boolean ejectActive) {
+        if (feed == null || intake == null) {
+            return;
+        }
+
+        if (continuousFireHeld && !ejectActive) {
+            if (!continuousFireActive) {
+                continuousFireActive = true;
+                boolean wasOn = intake.isOn();
+                feed.startContinuousFeed();
+                startIntakeAssist(wasOn, 0L);
+            }
+        } else if (continuousFireActive) {
+            feed.stopContinuousFeed();
+            continuousFireActive = false;
+        }
+    }
+
     private void resetIntakeAssistState() {
         intakeAssistRestorePending = false;
         intakeAssistWaitingForFeed = false;
@@ -1177,6 +1231,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     protected void stopAll() {
         cancelEjectSequence();
         resetIntakeAssistState();
+        continuousFireHeld = false;
+        continuousFireActive = false;
+        resetAutoRpmTweak();
 
         // DRIVE
         try {
@@ -1194,6 +1251,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // FEED
         try {
+            feed.stopContinuousFeed();
             feed.applyBrakeHold();
         } catch (Throwable t) {
             try { feed.stop(); } catch (Throwable ignored) {}

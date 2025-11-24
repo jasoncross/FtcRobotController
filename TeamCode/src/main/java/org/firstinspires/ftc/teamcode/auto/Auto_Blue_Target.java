@@ -25,9 +25,10 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - spinToAutoRpmDefault(...)
  *       • Pre-spins the launcher with the shared AutoSpeed standby RPM so it’s
  *         ready before the tag sweep begins.
- *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 180°/-90°)
+ *   - rotateToTarget(label, ScanDirection.CCW, turnSpeed 0.25, sweep 180°/-90°, timeout 10000 ms)
  *       • Sweeps counter-clockwise up to 180°, then backs clockwise to 90° shy of
- *         center before heading counter-clockwise again while searching for Tag 20.
+ *         center before heading counter-clockwise again while searching for Tag 20;
+ *         adjust timeout alongside sweep envelope changes.
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for LauncherAutoSpeedController to reach the shared RPM window with settle gating.
  *   - fire(shots = 5, betweenShotsMs = 1000)
@@ -57,6 +58,8 @@ public class Auto_Blue_Target extends BaseAuto {
     // CHANGES (2025-11-03): Renamed launcher prep steps to readyToLaunch()/spinToAutoRpmDefault() and
     //                        adopted the shared AutoSpeed settle behavior.
     // CHANGES (2025-11-13): Documented five-shot cadence + hold behavior in header for the refreshed depot plan.
+    // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
+    // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // BaseAuto needs the declared alliance to load the correct AprilTag IDs.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry annotation so setup crew knows correct orientation (edit to
@@ -69,8 +72,8 @@ public class Auto_Blue_Target extends BaseAuto {
                 .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive 40 in to standoff", 40.0, 0.0, 0.55)
-                // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.25, 180, -90) // 180° CW sweep, CCW return to -90°, repeat
+                // Telemetry label mirrors the shared driver callout; BaseAuto targets the BLUE goal (ID 20).
+                .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.25, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 //.waitFor("Hold position", 500)

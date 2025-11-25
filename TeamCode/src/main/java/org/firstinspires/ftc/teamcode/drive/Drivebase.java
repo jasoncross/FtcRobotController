@@ -98,6 +98,8 @@ public class Drivebase {
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
     // CHANGES (2025-11-27): Added moveWithTwist(...) to blend translation + heading change concurrently
     //                        for AutoSequence twist-enabled moves.
+    // CHANGES (2025-12-01): Exposed wheel encoder helpers for odometry consumers while
+    //                        keeping TeleOp safe-init guarantees.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -390,6 +392,27 @@ public class Drivebase {
     /** Current yaw in DEGREES, CCW positive. */
     public double heading() {
         return imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+    }
+
+    /** Current encoder counts for FL/FR/BL/BR in ticks (order matches motor names). */
+    public int[] getWheelPositionsTicks() {
+        return new int[]{
+                fl.getCurrentPosition(),
+                fr.getCurrentPosition(),
+                bl.getCurrentPosition(),
+                br.getCurrentPosition()
+        };
+    }
+
+    /** Current wheel travel estimates in inches derived from encoder counts. */
+    public double[] getWheelPositionsInches() {
+        int[] ticks = getWheelPositionsTicks();
+        return new double[]{
+                ticks[0] / TICKS_PER_IN,
+                ticks[1] / TICKS_PER_IN,
+                ticks[2] / TICKS_PER_IN,
+                ticks[3] / TICKS_PER_IN
+        };
     }
 
     /** Immediately sets all four powers. */

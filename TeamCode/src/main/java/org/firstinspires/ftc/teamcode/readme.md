@@ -72,6 +72,11 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 TeamCode/
 └── src/main/java/org/firstinspires/ftc/teamcode/
     Alliance.java                        ← Alliance enum for selecting RED/BLUE behaviors
+    ├── odometry/
+    │   ├── DecodeFieldDrawing.java          ← FTC Dashboard field renderer using odometry coords
+    │   ├── FieldPose.java                   ← Simple pose container used across TeleOp/Auto
+    │   ├── Odometry.java                    ← Fused wheel/IMU/AprilTag odometry helper
+    │   └── PoseStore.java                   ← Shared Auto→TeleOp pose handoff container
     ├── assist/
     │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
@@ -95,6 +100,7 @@ TeamCode/
     │   ├── IntakeTuning.java                 ← Intake motor power
     │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
     │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
+    │   ├── OdometryConfig.java               ← Field geometry + odometry fusion tunables
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
@@ -352,6 +358,17 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-01** – Added fused odometry backed by wheel encoders, IMU heading, and goal-tag
+  corrections, introduced a dedicated odometry/field layout config and Dashboard drawing helper,
+  exposed a reusable move-to-position sequence plus intake artifact alignment, and enabled FTC
+  Dashboard dependency for both TeleOp and Auto use.
+- **2025-11-25** – Tuned odometry to use configurable goal-tag poses (XYZ+yaw) with camera
+  offsets for AprilTag fusion, added a PoseStore handoff so Autonomous writes its final pose for
+  TeleOp to reuse, enabled TeleOp INIT AprilTag re-localization plus live fused-pose telemetry,
+  documented the new Auto/TeleOp pose seeding flow and tag tunables, clarified that `setStartingPose(...)`
+  is invoked from the auto class (not the sequence builder) while Auto/TeleOp continue to blend goal-tag
+  fixes whenever visible, and seeded the human-side autos with default starting poses (-12, 0, 0) on BLUE
+  and (+12, 0, 0) on RED so odometry INIT telemetry matches staging.
 - **2025-11-23** – Added AutoRPM tweak scaling from the D-pad while AutoSpeed is active (2% per press, configurable), enabled continuous-feed holds that keep the gate open and intake assist running, and added per-call rotate-to-target timeouts (10 s default applied directly in each auto call, now expressed as `10000` ms literals) so AutoSequence scans bail out cleanly; documented the controls and tunables. Extended the AutoSequence `move(...)` step to include a twist offset so moves can finish at a heading relative to their start, refreshed the guide/examples to show the new signature, and updated every autonomous route to pass an explicit `0°` twist while preserving current behavior. Updated AutoSequence moves to steer toward their twist target during translation instead of turning afterward, enabling simultaneous heading changes along the path and documenting the behavior in the AutoSequence guide.
 - **2025-11-22** – Added a tunable master switch (`AutoAimTuning.LONG_SHOT_ENABLED`) for the alliance-biased long-shot window so crews can revert to symmetric tolerances without code edits; documented the toggle alongside the existing long-shot guidance.
 - **2025-11-21** – Verified that long-shot detection relies on the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`) and documented how calibration influences the bias cutover.

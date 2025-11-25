@@ -67,6 +67,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *     tuned decimation, frame skipping, margin gating, camera controls,
  *     calibration, and streaming toggles so TeleOp + Auto stay in sync.
  *   - Bearing/pose values come from AprilTagDetection.ftcPose (meters + degrees).
+ *
+ * CHANGES (2025-11-25): Added helper to fetch the nearest visible goal tag so
+ *                        odometry can blend AprilTag poses regardless of alliance.
  */
 public class VisionAprilTag {
 
@@ -723,6 +726,27 @@ public class VisionAprilTag {
         for (AprilTagDetection d : getDetectionsCompat()) {
             if (d.id == desiredId) {
                 if (best == null || d.ftcPose.range < best.ftcPose.range) best = d;
+            }
+        }
+        updateLatencyFromDetection(best);
+        return best;
+    }
+
+    /** Return the closest visible goal tag (red or blue). */
+    public AprilTagDetection getClosestGoalDetection() {
+        AprilTagDetection best = null;
+        double bestRange = Double.NaN;
+        for (AprilTagDetection d : getDetectionsCompat()) {
+            if (d.id == TAG_BLUE_GOAL || d.id == TAG_RED_GOAL) {
+                double range = getScaledRange(d);
+                if (Double.isNaN(range) && d.ftcPose != null) {
+                    range = d.ftcPose.range;
+                }
+                if (Double.isNaN(range)) continue;
+                if (best == null || range < bestRange) {
+                    best = d;
+                    bestRange = range;
+                }
             }
         }
         updateLatencyFromDetection(best);

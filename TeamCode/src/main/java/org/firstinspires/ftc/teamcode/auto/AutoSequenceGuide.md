@@ -28,6 +28,12 @@ behavior consistent across all autos.
 2. Chain the desired steps in the order they should execute.
 3. Finish with `.run()` to execute the scripted actions.
 
+### Start pose seeding & TeleOp handoff
+
+- Use `setStartingPose(x, y, headingDeg)` inside your auto class (constructor or field initializer) to seed the fused odometry pose during INIT. This is a BaseAuto helper, **not** a chained AutoSequence step, so it fires once up front rather than inside `sequence()`.
+- BaseAuto attempts an AprilTag re-localization during INIT whenever either goal tag is visible to refine the seed before START, and continues to blend goal-tag observations into odometry throughout the auto run.
+- At the end of each Auto, the fused pose is written to the shared `odometry/PoseStore`, and TeleOp reads it during INIT (or re-localizes from tags) so field-aware telemetry and Dashboard drawings remain continuous between phases. TeleOp keeps applying tag corrections whenever a goal tag is visible.
+
 ---
 
 ### Updating the Start Pose Telemetry Line
@@ -48,12 +54,19 @@ from launching a route from the wrong tile after code changes.
 ## Reference: Builder Methods
 
 Each method returns the builder, so you can chain calls. Labels appear in
-telemetry as the active **Phase** string while that step runs.
+telemetry as the active **Phase** string while that step runs. The newest
+field-aware helpers to know about are:
+
+- `moveToPosition(...)` – field-centric drive to a target odometry coordinate.
+- `intakeFieldArtifacts(...)` – alliance/obelisk-aware artifact pickup using the intake offset + odometry tunables.
+
+> **Note:** `setStartingPose(...)` is a BaseAuto INIT helper, not a chained builder call. See the "Start pose seeding" section above for usage.
 
 | Call | Description | Notes |
 | --- | --- | --- |
 | `rememberHeading(label)` | Captures the current IMU heading for later reuse. | Call before you plan to return to the same orientation. |
 | `move(label, distanceIn, headingDeg, twistDeg, speedCap)` | Drives a straight line while steering toward the requested heading change so the robot ends the move at the starting heading plus `twistDeg`. | Distance is signed; heading is absolute (field-centric, 0° = upfield). `twistDeg` is relative to the heading at the start of the step (0° to maintain orientation). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`; the twist controller shares the same cap while blending rotation during the translation. |
+| `moveToPosition(label, targetX, targetY, headingDeg, speedCap)` | Field-centric drive to a specific odometry coordinate using fused odometry (drive encoders + IMU + AprilTags) so the robot center arrives at `targetX, targetY` and finishes at `headingDeg`. | Uses `BaseAuto.moveToPosition(...)` helper; clamps speed to `SharedRobotTuning.DRIVE_MAX_POWER` and reuses turn tolerances from drive helpers. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
 | `spinToAutoRpmDefault(label)` | Pre-spins the launcher using AutoSpeed's default RPM. | Commands `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` so the wheels stay warm until a later step refreshes the target. |
@@ -64,8 +77,10 @@ telemetry as the active **Phase** string while that step runs.
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
 | `eject(label)` | Runs the TeleOp eject routine mid-auto. | Temporarily overrides AutoSpeed, spins to `TeleOpEjectTuning.RPM`, feeds once with intake assist, then restores the previous RPM/AutoSpeed state. |
 | `intake(label, enabled)` | Toggles the floor intake on or off. | Adds telemetry showing the requested state before calling `intake.set(enabled)`. Useful for pickup experiments without writing custom steps. |
+| `intakeFieldArtifacts(label, reverseSpeed)` | Alliance-aware intake run that aligns the intake mouth to the correct artifact row based on Vision/Obelisk ID (GPP/PGP/PPG) and odometry tunables, then backs into the row while running the intake at `reverseSpeed`. | Uses `BaseAuto.intakeFieldArtifacts(...)` to compute the target pose from odometry + intake offset; honors existing intake state machine without blocking beyond allowed BaseAuto waits. |
 | `stop(label)` | Stops drive, launcher, feed, intake, and AutoSpeed. | Calls `stopAll()` so you can insert a hard safety stop mid-sequence. |
 | `returnToStoredHeading(label, speedCap)` | Turns back to the most recent stored heading. | No-op if `rememberHeading()` was never called. Honors the same twist caps as other turn helpers. |
+| `setStartingPose(x, y, headingDeg)` *(INIT helper)* | Seeds the fused odometry pose during INIT before the OpMode starts. | Call inside your auto class (outside the `sequence()` chain) to declare the expected robot-center pose on the field; BaseAuto and TeleOp also use this hook when re-localizing from goal tags so Auto→TeleOp pose handoff stays continuous. |
 | `custom(action)` / `custom(label, action)` | Runs arbitrary code. | `action` is an `AutoStep` executed synchronously; use for bespoke logic such as toggling vision pipelines or adjusting subsystem states. |
 
 > **Scan sweep primer:** `rotateToTarget(...)` multiplies `SharedRobotTuning.TURN_TWIST_CAP` by the provided `turnSpeedFraction` to compute the twist command while scanning. When the goal tag is not visible, the helper drives the robot to the requested `primarySweepDeg`, then follows the counter-sweep rule you provide before repeating (unless you omit the counter sweep entirely). Passing a **positive** `oppositeSweepDeg` pushes through zero into the other direction (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 90, 30)` visits +90°, returns to 0°, checks -30°, and comes back to center). Passing a **negative** value stops short of zero by that magnitude so the scan bounces on the same side (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 180, -90)` swings 180° counter-clockwise, returns clockwise to +90°—still on the counter-clockwise side of center—and heads back toward 180°). Passing **zero** returns to center before re-running the primary sweep, and omitting `oppositeSweepDeg` holds at the primary sweep limit with no return leg. Choose larger sweep angles when you need to search a wider arc; tweak `TURN_TWIST_CAP` to globally change the underlying twist cap.

@@ -104,6 +104,13 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Scales translation while AutoAim is active and exposes manual RPM D-pad nudges whenever AutoSpeed is disabled **and manual lock is engaged**.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
 
+### 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
+- **Role:** Provides a fused field pose for Auto and TeleOp using drive wheel deltas, IMU heading, and AprilTag goal detections.
+- **Coordinate system:** (0, 0) at the human wall center with +X right and +Y toward the goals; offsets for the intake, launcher, and camera come from [`config/OdometryConfig`](./config/OdometryConfig.java).
+- **Vision use:** AprilTag corrections are blended with configurable weight/step limits whenever the red or blue goal tags are visible (tag poses live in `OdometryConfig.TAG_*_GOAL_*` and include XYZ+yaw); `computeVisionPose(...)` lets Auto/TeleOp seed from a tag during INIT, and `update(...)` keeps applying tag fixes during loops.
+- **Pose seeding:** Autos call `setStartingPose(x, y, headingDeg)` during INIT (outside the builder chain) to declare the expected robot-center pose; BaseAuto also attempts a tag-based seed when a goal tag is visible before START.
+- **Pose handoff:** `PoseStore` captures the fused pose at Auto stop so TeleOp can resume from the same origin if no tag is visible; both modes still prefer live tag corrections when available and continue to blend goal-tag sightings during TeleOp driving.
+
 ### 🤖 Autonomous Framework ([`auto/BaseAuto.java`](./auto/BaseAuto.java), [`auto/Auto_*`](./auto))
 - **Role:** Linear OpMode base plus alliance-specific routes (Human vs. Target starting positions).
 - **Highlights:**

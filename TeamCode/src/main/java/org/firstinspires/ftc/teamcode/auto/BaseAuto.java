@@ -12,6 +12,10 @@ import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.teamcode.odometry.FieldPose;
+import org.firstinspires.ftc.teamcode.odometry.Odometry;
+import org.firstinspires.ftc.teamcode.odometry.PoseStore;
+import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
@@ -125,6 +129,11 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        to the move start before finishing the step.
     // CHANGES (2025-11-27): AutoSequence.move(...) now steers toward the twist target during the
     //                        translation instead of turning afterward.
+// CHANGES (2025-12-01): Added odometry fusion + reusable move helpers for field-aware autos and
+//                        exposed start-pose seeding so AprilTag corrections blend cleanly.
+// CHANGES (2025-11-25): Blend goal-tag poses using tuned tag locations, seed odometry from
+//                        visible tags during INIT, and persist the final auto pose for TeleOp
+//                        to reuse at startup.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -163,6 +172,9 @@ public abstract class BaseAuto extends LinearOpMode {
     // Controllers supporting aiming and RPM automation.
     protected final TagAimController aim = new TagAimController();
     protected final LauncherAutoSpeedController autoCtrl = new LauncherAutoSpeedController();
+    protected Odometry odometry;                     // Fused drive + IMU + AprilTag pose
+    protected FieldPose startPose = new FieldPose(); // Staging pose seeded by derived autos
+    private boolean visionSeededStart = false;
 
     // Local defaults if config fails (protects against missing SharedRobotTuning definitions).
     private static final double DEF_LOCK_TOL_DEG   = 1.0;
@@ -222,6 +234,7 @@ public abstract class BaseAuto extends LinearOpMode {
             vision.init(hardwareMap, "Webcam 1");
             try { vision.setRangeScale(VisionTuning.RANGE_SCALE); } catch (Throwable ignored) {}
         } catch (Exception ex) { vision = null; }
+        odometry = new Odometry(drive, vision);
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
         intake   = new Intake(hardwareMap);     // Floor intake
@@ -232,11 +245,13 @@ public abstract class BaseAuto extends LinearOpMode {
         feed.safeInit();
         intake.safeInit();
         feed.initFeedStop(hardwareMap, telemetry);
+        odometry.setPose(startPose.x, startPose.y, startPose.headingDeg);
 
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {} // Sync AutoSpeed curve
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
 
         while (!isStarted() && !isStopRequested()) {
+            maybeSeedStartPoseFromVision();
             updateStatus("INIT", false);
             onPreStartLoop();
             telemetry.update();
@@ -249,6 +264,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         try { runSequence(); }
         finally {
+            try { PoseStore.save((odometry != null) ? odometry.getPose() : startPose); } catch (Throwable ignored) {}
             stopAll();
             stopVisionIfAny();
             updateStatus("COMPLETE", false);
@@ -700,6 +716,68 @@ public abstract class BaseAuto extends LinearOpMode {
         double cur = drive.heading();
         double delta = shortestDiff(headingDeg, cur);
         drive.turn(delta, clampTurnSpeed(speedCap));
+    }
+
+    /** Seed odometry before the match begins so INIT telemetry reflects the staging pose. */
+    protected final void setStartingPose(double x, double y, double headingDeg) {
+        startPose = new FieldPose(x, y, headingDeg);
+        if (odometry != null) {
+            odometry.setPose(x, y, headingDeg);
+        }
+    }
+
+    /** Refresh odometry and return the latest fused pose. */
+    protected final FieldPose updateOdometryPose() {
+        AprilTagDetection det = null;
+        if (vision != null) {
+            det = vision.getClosestGoalDetection();
+        }
+        if (odometry == null) return new FieldPose();
+        return odometry.update(det);
+    }
+
+    private void maybeSeedStartPoseFromVision() {
+        if (visionSeededStart || odometry == null || vision == null) return;
+        AprilTagDetection det = vision.getClosestGoalDetection();
+        FieldPose guess = odometry.computeVisionPose(det, drive.heading());
+        if (guess != null) {
+            startPose = guess;
+            odometry.setPose(guess.x, guess.y, guess.headingDeg);
+            visionSeededStart = true;
+        }
+    }
+
+    /** Move to a field position using odometry, ending at the desired heading. */
+    protected final void moveToPosition(String label, double targetX, double targetY, double speedCap, double finalHeadingDeg) {
+        FieldPose cur = updateOdometryPose();
+        double dx = targetX - cur.x;
+        double dy = targetY - cur.y;
+        double distance = Math.hypot(dx, dy);
+        if (distance < 1e-3) return;
+        double headingDeg = Math.toDegrees(Math.atan2(dx, dy));
+        drive.moveWithTwist(distance, headingDeg, finalHeadingDeg, clampTranslationSpeed(speedCap), clampTurnSpeed(speedCap));
+        updateStatus(label, true);
+        telemetry.update();
+        updateOdometryPose();
+    }
+
+    /** Alliance-aware helper to align the intake with the correct artifact row and collect while reversing. */
+    protected final void intakeFieldArtifacts(double approachSpeed, double reverseSpeed) {
+        ObeliskSignal.Order order = ObeliskSignal.get();
+        double rowCenterX;
+        switch (order) {
+            case GPP: rowCenterX = OdometryConfig.GPP_CENTER_X; break;
+            case PPG: rowCenterX = OdometryConfig.PPG_CENTER_X; break;
+            case PGP:
+            default: rowCenterX = OdometryConfig.PGP_CENTER_X; break;
+        }
+        double alignX = rowCenterX - OdometryConfig.INTAKE_OFFSET_X;
+        double alignY = OdometryConfig.ARTIFACT_ROW_Y;
+        moveToPosition("Align artifacts", alignX, alignY, approachSpeed, 0.0);
+        intake.set(true);
+        drive.moveWithTwist(-OdometryConfig.ARTIFACT_SPACING * 3.0, 0.0, 0.0,
+                clampTranslationSpeed(reverseSpeed), clampTurnSpeed(reverseSpeed));
+        updateOdometryPose();
     }
 
     /** Stop all active subsystems (safety catch-all). */

@@ -53,6 +53,10 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-25): Added odometry carryover via PoseStore plus AprilTag
+ *                       re-localization during INIT so TeleOp starts with a
+ *                       continuous fused pose for dashboard overlays.
+ *
  * CHANGES (2025-11-22): Added a tunable master switch for long-shot lock biasing
  *                       so crews can revert to symmetric windows without code
  *                       changes.
@@ -95,6 +99,9 @@ import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.subsystems.Feed;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
+import org.firstinspires.ftc.teamcode.odometry.FieldPose;
+import org.firstinspires.ftc.teamcode.odometry.Odometry;
+import org.firstinspires.ftc.teamcode.odometry.PoseStore;
 
 // === VISION IMPORTS ===
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
@@ -192,6 +199,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // Manual RPM Lock (Square/X) — only when AutoSpeed == false
     private boolean manualRpmLocked = false; // Manual RPM hold toggle (Square/X) when AutoSpeed disabled
     private double  manualLockedRpm = 0.0;   // Stored RPM when manualRpmLocked is true
+
+    // ---------------- Odometry ----------------
+    private Odometry odometry;
+    private FieldPose fusedPose = new FieldPose();
+    private boolean poseSeeded = false;
 
     // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
@@ -336,6 +348,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
         visionPerfLine = "Perf: FPS=--- LatMs=---";
 
+        odometry = new Odometry(drive, vision);
+        FieldPose storedPose = PoseStore.consume();
+        if (storedPose != null) {
+            fusedPose = storedPose;
+            odometry.setPose(storedPose.x, storedPose.y, storedPose.headingDeg);
+            poseSeeded = true;
+        } else {
+            odometry.setPose(fusedPose.x, fusedPose.y, fusedPose.headingDeg);
+        }
+
         resetTogglePulseQueue();
 
         // ---- Controller Bindings Setup ----
@@ -477,6 +499,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void init_loop() {
+        maybeSeedPoseFromVision();
         if (feed != null) {
             feed.update();
             if (feed.wasWindowLimitReached()) {
@@ -539,6 +562,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (feed != null) feed.update();
         updateIntakeFlow();
         updatePendingToggleRumbles(now);
+
+        if (!poseSeeded) {
+            maybeSeedPoseFromVision();
+        }
 
         // -------- High-priority Start edge-detect (works even while STOPPED) --------
         boolean start1 = gamepad1.start, start2 = gamepad2.start;
@@ -611,10 +638,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // Vision
         AprilTagDetection goalDet = vision.getDetectionFor(targetId);
+        AprilTagDetection poseDet = vision.getClosestGoalDetection();
+        AprilTagDetection telemetryDet = (goalDet != null) ? goalDet : poseDet;
 
-        if (goalDet != null) {
-            double hDeg  = goalDet.ftcPose.bearing;
-            double rM_sc = vision.getScaledRange(goalDet);
+        if (telemetryDet != null) {
+            double hDeg  = telemetryDet.ftcPose.bearing;
+            double rM_sc = vision.getScaledRange(telemetryDet);
             smHeadingDeg = (smHeadingDeg == null) ? hDeg : (smoothA * hDeg + (1 - smoothA) * smHeadingDeg);
             if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) {
                 smRangeMeters = (smRangeMeters == null) ? rM_sc : (smoothA * rM_sc + (1 - smoothA) * smRangeMeters);
@@ -658,6 +687,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // Drive it
         drive.drive(driveY, strafeX, twist);
+
+        if (odometry != null) {
+            AprilTagDetection odomDet = (poseDet != null) ? poseDet : goalDet;
+            fusedPose = odometry.update(odomDet);
+        }
 
         // AutoSpeed update
         boolean autoRpmActive = (autoSpeedEnabled && !rpmTestEnabled);
@@ -708,6 +742,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
         telemetry.addData("Reverse", reverseDriveMode ? "ON" : "OFF");
         telemetry.addData("RPM Target / Actual", "%.0f / L:%.0f R:%.0f", launcher.targetRpm, launcher.getLeftRpm(), launcher.getRightRpm());
+        telemetry.addData("Pose (X,Y,H)", "%.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg);
 
         telemetry.addLine();
 
@@ -788,6 +823,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     // HELPERS
     // =========================================================================
+    private void maybeSeedPoseFromVision() {
+        if (poseSeeded || odometry == null || vision == null) return;
+        AprilTagDetection det = vision.getClosestGoalDetection();
+        FieldPose guess = odometry.computeVisionPose(det, drive.heading());
+        if (guess != null) {
+            fusedPose = guess;
+            odometry.setPose(guess.x, guess.y, guess.headingDeg);
+            poseSeeded = true;
+        }
+    }
+
     private void updateVisionTelemetry(AprilTagDetection goalDet, Double rawDistanceIn) {
         if (vision == null) return;
         long now = System.currentTimeMillis();

@@ -67,8 +67,10 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-25): rotateToTarget scan now uses an inline 10 s timeout instead of the BaseAuto default field.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
+    // CHANGES (2025-11-25): Seeded odometry start pose to (+12, 0, 0) so INIT telemetry matches human-side staging.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
+    public Auto_Red_Human_LongShot() { setStartingPose(12.0, 0.0, 0.0); }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
     // this whenever start staging changes so the Start Pose telemetry stays
     // correct).

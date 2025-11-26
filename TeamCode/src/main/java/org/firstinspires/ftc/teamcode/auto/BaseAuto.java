@@ -123,6 +123,9 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        lock windows without changing alliance-specific logic.
     // CHANGES (2025-11-18): Biased the tag lock window toward alliance-correct angles when
     //                        the robot is beyond the long-shot distance cutover.
+    // CHANGES (2025-11-26): Persist the final fused odometry pose with explicit status-aware
+    //                        pose store helpers so TeleOp can resume from the last Auto pose
+    //                        when no AprilTag seed is available at INIT.
     // CHANGES (2025-11-25): rotateToTarget steps still require explicit timeouts per sequence,
     //                        and autos now inline their own 10 s default instead of using a shared constant.
     // CHANGES (2025-11-24): AutoSequence.move(...) can now twist to a caller-selected heading relative
@@ -269,7 +272,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         try { runSequence(); }
         finally {
-            try { PoseStore.save((odometry != null) ? odometry.getPose() : startPose); } catch (Throwable ignored) {}
+            try { PoseStore.setLastKnownPose((odometry != null) ? odometry.getPose() : startPose); } catch (Throwable ignored) {}
             stopAll();
             stopVisionIfAny();
             updateStatus("COMPLETE", false);

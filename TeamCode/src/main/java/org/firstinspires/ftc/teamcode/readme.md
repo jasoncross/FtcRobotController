@@ -40,7 +40,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
 | **Left Bumper (LB)** | **Tap:** feed once (with **Intake Assist** if Intake is OFF). **Hold:** continuous feed with FeedStop held open and intake assist latched if it was off. |
-| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** *(triple-tap quickly to latch reverse until the next tap)* |
 | **Right Stick Button (RS)** | **Toggle AutoAim** *(only ENABLES if a goal AprilTag is visible; auto-DISABLES if tag remains lost beyond grace window)* |
 | **Y / Triangle** | **Toggle AutoSpeed** *(double-pulse on ENABLE, single-pulse on DISABLE)* |
 | **X / Square** | **Toggle Manual RPM LOCK** *(only when AutoSpeed = OFF; holds current RPM)* |
@@ -54,7 +54,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | Control | Function |
 |---|---|
 | **Left Bumper (LB)** | **Feed once** (with **Intake Assist** if Intake is OFF) |
-| **Right Bumper (RB)** | **Toggle Intake On/Off** |
+| **Right Bumper (RB)** | **Toggle Intake On/Off** *(triple-tap quickly to latch reverse until the next tap)* |
 | **Y / Triangle** | **Toggle AutoSpeed** (mirrors G1) |
 | **D-pad Left** | **Select vision P480 profile** (640×480@30 performance stream) |
 | **D-pad Right** | **Select vision P720 profile** (1280×720@20 sighting stream) |
@@ -358,6 +358,11 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-25** – Latched the triple-tap RB gesture so the intake now runs in reverse until
+  the next tap restores the saved intake state, refreshed intake tuning/docs to drop the
+  timed pulse duration, retained the `fireContinuous(label, time, requireLock)` AutoSequence
+  helper with a corrected builder call into the BaseAuto helper, and updated controller
+  layout/help text to match the new reverse workflow.
 - **2025-12-01** – Added fused odometry backed by wheel encoders, IMU heading, and goal-tag
   corrections, introduced a dedicated odometry/field layout config and Dashboard drawing helper,
   exposed a reusable move-to-position sequence plus intake artifact alignment, and enabled FTC

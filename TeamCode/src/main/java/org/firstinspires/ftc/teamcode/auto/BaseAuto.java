@@ -129,11 +129,16 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        to the move start before finishing the step.
     // CHANGES (2025-11-27): AutoSequence.move(...) now steers toward the twist target during the
     //                        translation instead of turning afterward.
-// CHANGES (2025-12-01): Added odometry fusion + reusable move helpers for field-aware autos and
-//                        exposed start-pose seeding so AprilTag corrections blend cleanly.
-// CHANGES (2025-11-25): Blend goal-tag poses using tuned tag locations, seed odometry from
-//                        visible tags during INIT, and persist the final auto pose for TeleOp
-//                        to reuse at startup.
+    // CHANGES (2025-11-25): Added odometry fusion + reusable move helpers for field-aware autos and
+    //                        exposed start-pose seeding so AprilTag corrections blend cleanly; aligned
+    //                        changelog with the 2025-11-25 release.
+    // CHANGES (2025-11-25): Blend goal-tag poses using tuned tag locations, seed odometry from
+    //                        visible tags during INIT, and persist the final auto pose for TeleOp
+    //                        to reuse at startup.
+    // CHANGES (2025-11-25): Added AutoSequence.fireContinuous(...) for timed continuous-feed volleys
+    //                        that hold the gate open while sustaining launcher RPM.
+    // CHANGES (2025-11-25): Corrected AutoSequence.fireContinuous(...) to call the BaseAuto helper
+    //                        with the proper scope and parameter order so continuous feeds compile and run.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -638,6 +643,69 @@ public abstract class BaseAuto extends LinearOpMode {
             updateStatus("Stabilize after volley", lockedForShot || !requireLock);
             telemetry.update();
         }
+    }
+
+    /** Run a continuous feed stream for the requested duration, optionally requiring a tag lock first. */
+    protected final void fireContinuous(long durationMs, boolean requireLock, String label) throws InterruptedException {
+        long runMs = Math.max(0L, durationMs);
+        if (runMs <= 0L) {
+            return;
+        }
+
+        boolean lockedForRun = !requireLock;
+        if (requireLock) {
+            lockedForRun = requireLockOrTimeOut(1200, label + " – acquire lock");
+            if (!lockedForRun) {
+                updateStatus(label + " – skipped (no lock)", false);
+                telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
+                telemetry.update();
+                return;
+            }
+        }
+
+        autoCtrl.setAutoEnabled(true);
+        double holdTarget = autoCtrl.hold();
+        if (holdTarget <= 0) {
+            holdTarget = launcher.targetRpm;
+            if (holdTarget <= 0) {
+                holdTarget = autoSeedRpm();
+            }
+        }
+        launcher.setTargetRpm(holdTarget);
+
+        boolean intakeWasOn = intake.isOn();
+        if (!intakeWasOn) intake.set(true);
+        feed.startContinuousFeed();
+
+        long start = System.currentTimeMillis();
+        while (opModeIsActive() && (System.currentTimeMillis() - start) < runMs) {
+            double sustainTarget = autoCtrl.hold();
+            if (sustainTarget > 0) {
+                launcher.setTargetRpm(sustainTarget);
+            }
+
+            feed.update();
+            updateIntakeFlowForAuto();
+
+            updateStatus(label, lockedForRun || !requireLock);
+            telemetry.addData("Target RPM", launcher.targetRpm);
+            telemetry.addData("Current RPM", launcher.getCurrentRpm());
+            telemetry.addData("Time remaining (ms)", Math.max(0L, runMs - (System.currentTimeMillis() - start)));
+            telemetry.update();
+            idle();
+        }
+
+        feed.stopContinuousFeed();
+        feed.update();
+        updateIntakeFlowForAuto();
+
+        if (!intakeWasOn) {
+            sleep(FeedTuning.INTAKE_ASSIST_MS);
+            intake.set(false);
+            feed.update();
+        }
+
+        drive.stopAll();
     }
 
     /** Wait up to guardMs to achieve a tag lock (|bearing| ≤ tol). Returns true if locked. */
@@ -1159,6 +1227,25 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.addData("Between shots (ms)", betweenShotsMs);
                 telemetry.update();
                 fireN(shots, requireLock, betweenShotsMs);
+                lastAimReady = false;
+                lastLock = requireLock && lastLock;
+            });
+        }
+
+        public AutoSequence fireContinuous(String phase, long durationMs, boolean requireLock) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Continuous fire");
+                if (requireLock && !lastLock) {
+                    updateStatus(label + " – skipped (no lock)", false);
+                    telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
+                    telemetry.update();
+                    return;
+                }
+                updateStatus(label, !requireLock || lastLock);
+                telemetry.addData("Duration (ms)", durationMs);
+                telemetry.addData("Lock required", requireLock);
+                telemetry.update();
+                BaseAuto.this.fireContinuous(durationMs, requireLock, label);
                 lastAimReady = false;
                 lastLock = requireLock && lastLock;
             });

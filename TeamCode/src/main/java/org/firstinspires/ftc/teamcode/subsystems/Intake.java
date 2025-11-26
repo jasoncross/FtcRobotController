@@ -63,6 +63,12 @@ import org.firstinspires.ftc.teamcode.config.IntakeTuning;
  * CHANGES (2025-11-18): Track packing progress so long pauses with no encoder
  *                       movement now register as JAMMED even when the motor jitters
  *                       just above the stall threshold.
+ * CHANGES (2025-11-25): Added reverse pulse support for a triple-tap RB gesture in
+ *                       TeleOp to clear jams without reconfiguring tunables.
+ * CHANGES (2025-11-25): Converted the reverse pulse into a latched reverse mode
+ *                       that runs until the intake toggle is tapped again, then
+ *                       restores the previous on/off state and aligned changelog
+ *                       dates with the 2025-11-25 release.
  */
 public class Intake {
     private final DcMotorEx motor;
@@ -79,6 +85,8 @@ public class Intake {
     private long jamRecoverUntilMs = 0L;
     private long holdPulseAnchorMs = 0L;
     private double lastCommandedPower = 0.0;
+    private boolean reversing = false;
+    private boolean reverseResumeOn = false;
 
     private static final double EPS = 1e-6;
 
@@ -88,7 +96,8 @@ public class Intake {
         FREE_FLOW,
         PACKING,
         SATURATED,
-        JAMMED
+        JAMMED,
+        REVERSE
     }
 
     public Intake(HardwareMap hw) {
@@ -120,6 +129,8 @@ public class Intake {
         lastPackingTravelTicks = 0;
         holdPulseAnchorMs = System.currentTimeMillis();
         lastCommandedPower = 0.0;
+        reversing = false;
+        reverseResumeOn = false;
     }
 
     /** Toggle intake state (useful for button bindings). */
@@ -128,6 +139,7 @@ public class Intake {
     /** Set intake to run or stop at the configured power (reset classifier on enable). */
     public void set(boolean enable) {
         on = enable;
+        reversing = false;
         if (enable) {
             state = FlowState.FREE_FLOW;
             jamRecoverUntilMs = 0L;
@@ -151,6 +163,49 @@ public class Intake {
         }
     }
 
+    /** Begin a latched reverse run that continues until resumeFromReverse(...) is called. */
+    public void startReverse(boolean resumeOn) {
+        reversing = true;
+        reverseResumeOn = resumeOn;
+        on = true;
+        state = FlowState.REVERSE;
+        jamRecoverUntilMs = 0L;
+        stallSampleCount = 0;
+        contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastSampleTicks = motor.getCurrentPosition();
+        packStartTicks = lastSampleTicks;
+        lastPackingTravelTicks = 0;
+        lastSampleTimeMs = System.currentTimeMillis();
+        holdPulseAnchorMs = lastSampleTimeMs;
+        applyPower(-Math.abs(IntakeTuning.REVERSE_POWER));
+    }
+
+    /** Exit reverse mode and restore the intake to its saved on/off state. */
+    public void resumeFromReverse() {
+        if (!reversing) {
+            return;
+        }
+        reversing = false;
+        on = reverseResumeOn;
+        if (!on) {
+            state = FlowState.OFF;
+            applyPower(0.0);
+            return;
+        }
+        state = FlowState.FREE_FLOW;
+        jamRecoverUntilMs = 0L;
+        stallSampleCount = 0;
+        contactSampleCount = 0;
+        packingNoProgressSamples = 0;
+        lastSampleTicks = motor.getCurrentPosition();
+        packStartTicks = lastSampleTicks;
+        lastPackingTravelTicks = 0;
+        lastSampleTimeMs = System.currentTimeMillis();
+        holdPulseAnchorMs = lastSampleTimeMs;
+        update(false);
+    }
+
     /** Advance the encoder-based classifier and apply motor power. */
     public void update() { update(false); }
 
@@ -160,6 +215,13 @@ public class Intake {
      */
     public void update(boolean feedCycleActive) {
         long now = System.currentTimeMillis();
+
+        if (reversing) {
+            state = FlowState.REVERSE;
+            applyPower(-Math.abs(IntakeTuning.REVERSE_POWER));
+            return;
+        }
+
         if (!on) {
             state = FlowState.OFF;
             applyPower(0.0);
@@ -186,6 +248,9 @@ public class Intake {
 
     /** @return true when intake motor is currently running. */
     public boolean isOn() { return on; }
+
+    /** @return true when the intake is latched in reverse mode. */
+    public boolean isReversing() { return reversing; }
 
     /** @return current state for telemetry. */
     public FlowState getState() { return state; }
@@ -339,6 +404,9 @@ public class Intake {
                     break;
                 case JAMMED:
                     power = (now >= jamRecoverUntilMs) ? IntakeTuning.FILL_POWER : 0.0;
+                    break;
+                case REVERSE:
+                    power = -Math.abs(IntakeTuning.REVERSE_POWER);
                     break;
                 case OFF:
                 default:

@@ -42,11 +42,16 @@ public final class IntakeTuning {
     private IntakeTuning() {}
 
     // CHANGES (2025-11-16): Added inline comments for each tunable constant.
+    // CHANGES (2025-11-25): Added reverse pulse power/duration for the triple-tap RB gesture.
+    // CHANGES (2025-11-25): Removed the timed reverse duration in favor of a latched
+    //                       reverse mode that exits on the next intake toggle tap and aligned
+    //                       changelog dates with the 2025-11-25 release.
 
     public static double FILL_POWER = 0.9; // Motor power used while the intake is freely filling
     public static double PACKING_POWER = 0.75; // Reduced power once first contact occurs to compress the column
     public static double HOLD_POWER = 0.35; // Base power applied during the SATURATED hold pulse
     public static double FEED_ACTIVE_HOLD_POWER = 0.75; // Alternate hold power while the feed subsystem is cycling
+    public static double REVERSE_POWER = 0.6; // Power applied during the latched reverse run to clear jams
 
     public static int HOLD_PULSE_PERIOD_MS = 400; // Total period (ms) for the SATURATED hold pulse cadence
     public static int HOLD_PULSE_ON_MS = 120; // Portion of the pulse period (ms) spent applying HOLD_POWER

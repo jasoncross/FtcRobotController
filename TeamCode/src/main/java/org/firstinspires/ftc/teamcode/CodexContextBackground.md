@@ -102,6 +102,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Handles AutoAim/AutoSpeed toggles, rumble notifications, StopAll latch, and auto-stop timer logic.
   - Initializes shared subsystems and config classes, ensuring `config/*` overrides propagate at runtime.
   - Scales translation while AutoAim is active and exposes manual RPM D-pad nudges whenever AutoSpeed is disabled **and manual lock is engaged**.
+  - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
 
 ### 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
@@ -117,6 +118,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Reuses the same subsystems as TeleOp, including AutoAim/AutoSpeed, to reduce divergence.
   - Honors shared tunables from [`config/SharedRobotTuning`](./config/SharedRobotTuning.java) for drive caps, turn tolerances, and RPM readiness.
   - Calls `VisionAprilTag.observeObelisk()` during pre-start to cache Obelisk patterns before the buzzer, mirroring the workflow documented in [`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java).
+  - AutoSequence now includes `fireContinuous(label, timeMs, requireLock)` for timed continuous volleys that hold the FeedStop open and sustain launcher RPM.
 
 ### 🛑 StopAll System (Cross-cutting)
 - **Role:** Ensures all actuators halt instantly when drivers press **Start** or when the optional timer expires.

@@ -71,6 +71,12 @@
  * CHANGES (2025-11-15): AutoRPM telemetry now summarizes the calibration table
  *                       (point count + endpoint pairs) so drivers see the
  *                       config-driven curve without plugging into code.
+ * CHANGES (2025-11-25): Added a triple-tap RB gesture that runs an intake reverse
+ *                       pulse without disrupting the existing intake toggle.
+ * CHANGES (2025-11-25): Latched the triple-tap RB gesture into a continuous reverse
+ *                       run that ends on the next tap, restoring the saved intake
+ *                       toggle state when released and aligned changelog dates
+ *                       with the 2025-11-25 release.
  * CHANGES (2025-11-14): Intake assist restore now re-applies the driver's
  *                       pre-shot state after the timer instead of latching the
  *                       intake ON when it was manually disabled before the
@@ -283,6 +289,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private long intakeAssistResumeAtMs = 0L;
     private long intakeAssistExtraHoldMs = 0L;
     private boolean intakeAssistSawFeedActive = false;
+    private int intakeReverseTapWindowMs = TeleOpDriverDefaults.INTAKE_REVERSE_TAP_WINDOW_MS;
+    private int intakeReverseTapCount = 0;
+    private long intakeReverseWindowStartMs = 0L;
+    private boolean intakeReverseStartState = false;
 
     private boolean continuousFireHeld = false;   // True while LB is held for continuous feed
     private boolean continuousFireActive = false; // Latched once continuous feed has been enabled
@@ -371,7 +381,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Feed / Intake
         controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
         controls.bindHold(Pad.G1, Btn.LB, () -> continuousFireHeld = true);
-        controls.bindPress(Pad.G1, Btn.RB, () -> intake.toggle());
+        controls.bindPress(Pad.G1, Btn.RB, this::handleIntakeButtonPress);
 
         // Reverse Drive toggle
         controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
@@ -461,7 +471,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // -------- Gamepad 2 (Co-driver) --------
         controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
         controls.bindHold(Pad.G2, Btn.LB, () -> continuousFireHeld = true);
-        controls.bindPress(Pad.G2, Btn.RB, () -> intake.toggle());
+        controls.bindPress(Pad.G2, Btn.RB, this::handleIntakeButtonPress);
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             boolean enable = !autoSpeedEnabled;
             queueAutoSpeedEnablement(enable, /*stopOnDisable=*/false, gamepad1,
@@ -523,6 +533,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
         intakeResumeState = DEFAULT_INTAKE_ENABLED;
+        resetIntakeReverseGesture();
 
         autoAimEnabled = DEFAULT_AUTOAIM_ENABLED;
         aimLossStartMs = -1;
@@ -1122,6 +1133,34 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
+    private void handleIntakeButtonPress() {
+        if (intake == null) {
+            return;
+        }
+
+        if (intake.isReversing()) {
+            intake.resumeFromReverse();
+            resetIntakeReverseGesture();
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (intakeReverseTapCount == 0 || (now - intakeReverseWindowStartMs) > intakeReverseTapWindowMs) {
+            intakeReverseTapCount = 0;
+            intakeReverseWindowStartMs = now;
+            intakeReverseStartState = intake.isOn();
+        }
+
+        intakeReverseTapCount++;
+        if (intakeReverseTapCount >= 3 && (now - intakeReverseWindowStartMs) <= intakeReverseTapWindowMs) {
+            intake.startReverse(intakeReverseStartState);
+            resetIntakeReverseGesture();
+            return;
+        }
+
+        intake.toggle();
+    }
+
     /** Eject one ball asynchronously: spool, feed, hold, then restore previous RPM. */
     private void ejectOnce() {
         if (ejectPhase != EjectPhase.IDLE) return;
@@ -1263,6 +1302,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intakeAssistSawFeedActive = false;
     }
 
+    private void resetIntakeReverseGesture() {
+        intakeReverseTapCount = 0;
+        intakeReverseWindowStartMs = 0L;
+        intakeReverseStartState = (intake != null) && intake.isOn();
+    }
+
     private void cancelEjectSequence() {
         ejectPhase = EjectPhase.IDLE;
         ejectFeedStarted = false;
@@ -1277,6 +1322,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     protected void stopAll() {
         cancelEjectSequence();
         resetIntakeAssistState();
+        resetIntakeReverseGesture();
         continuousFireHeld = false;
         continuousFireActive = false;
         resetAutoRpmTweak();

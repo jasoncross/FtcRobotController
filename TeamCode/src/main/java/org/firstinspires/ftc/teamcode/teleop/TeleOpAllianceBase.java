@@ -53,6 +53,11 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-26): Seed odometry from the last Auto pose when available
+ *                       via the pose store, emit telemetry confirming the
+ *                       handoff, and leave the stored pose untouched when
+ *                       absent so TeleOp can still rely on AprilTag seeding
+ *                       during INIT.
  * CHANGES (2025-11-25): Added odometry carryover via PoseStore plus AprilTag
  *                       re-localization during INIT so TeleOp starts with a
  *                       continuous fused pose for dashboard overlays.
@@ -359,11 +364,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionPerfLine = "Perf: FPS=--- LatMs=---";
 
         odometry = new Odometry(drive, vision);
-        FieldPose storedPose = PoseStore.consume();
+        FieldPose storedPose = PoseStore.consumeLastKnownPose();
         if (storedPose != null) {
             fusedPose = storedPose;
             odometry.setPose(storedPose.x, storedPose.y, storedPose.headingDeg);
             poseSeeded = true;
+            telemetry.addLine(String.format("INIT pose from Auto: x=%.1f y=%.1f hdg=%.1f", storedPose.x, storedPose.y, storedPose.headingDeg));
         } else {
             odometry.setPose(fusedPose.x, fusedPose.y, fusedPose.headingDeg);
         }

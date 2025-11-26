@@ -41,6 +41,7 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2025-10-30): Point intake assist mirror at FeedTuning after tunable move.
     // CHANGES (2025-10-31): Default AutoSpeed + Intake to ON per driver request.
     // CHANGES (2025-11-23): Added AutoRPM tweak scale for on-the-fly AutoSpeed adjustments via D-pad left/right.
+    // CHANGES (2025-11-25): Added triple-tap intake reverse gesture window for RB and aligned changelog dates.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -64,6 +65,7 @@ public final class TeleOpDriverDefaults {
     // Intake assist + auto-speed seed (TeleOp overrides of shared values)
     public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS;           // TeleOp copy of post-feed intake assist duration (ms)
     public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // TeleOp seed RPM before first tag lock
+    public static int    INTAKE_REVERSE_TAP_WINDOW_MS = 750; // Max window (ms) for detecting three fast RB taps to trigger reverse
 
     // Auto-stop timer preferences
     public static boolean AUTO_STOP_TIMER_ENABLED = false; // Whether the optional end-of-match timer is active

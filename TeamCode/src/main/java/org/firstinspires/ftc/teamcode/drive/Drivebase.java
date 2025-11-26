@@ -98,8 +98,8 @@ public class Drivebase {
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
     // CHANGES (2025-11-27): Added moveWithTwist(...) to blend translation + heading change concurrently
     //                        for AutoSequence twist-enabled moves.
-    // CHANGES (2025-12-01): Exposed wheel encoder helpers for odometry consumers while
-    //                        keeping TeleOp safe-init guarantees.
+    // CHANGES (2025-11-25): Exposed wheel encoder helpers for odometry consumers while
+    //                        keeping TeleOp safe-init guarantees; refreshed changelog dates to match release.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;

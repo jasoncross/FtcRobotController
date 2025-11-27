@@ -1,5 +1,8 @@
 package org.firstinspires.ftc.teamcode.auto;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
+
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
@@ -12,6 +15,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.teamcode.odometry.DecodeFieldDrawing;
 import org.firstinspires.ftc.teamcode.odometry.FieldPose;
 import org.firstinspires.ftc.teamcode.odometry.Odometry;
 import org.firstinspires.ftc.teamcode.odometry.PoseStore;
@@ -132,6 +136,9 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        to the move start before finishing the step.
     // CHANGES (2025-11-27): AutoSequence.move(...) now steers toward the twist target during the
     //                        translation instead of turning afterward.
+    // CHANGES (2025-11-26): Routed FTC Dashboard telemetry through DecodeFieldDrawing each init/run
+    //                        loop with corrected artifact rows and launch triangles so Auto motion
+    //                        renders on the Dashboard alongside phone telemetry.
     // CHANGES (2025-11-25): Added odometry fusion + reusable move helpers for field-aware autos and
     //                        exposed start-pose seeding so AprilTag corrections blend cleanly; aligned
     //                        changelog with the 2025-11-25 release.
@@ -183,6 +190,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected Odometry odometry;                     // Fused drive + IMU + AprilTag pose
     protected FieldPose startPose = new FieldPose(); // Staging pose seeded by derived autos
     private boolean visionSeededStart = false;
+    protected FtcDashboard dashboard;               // Shared FTC Dashboard instance
 
     // Local defaults if config fails (protects against missing SharedRobotTuning definitions).
     private static final double DEF_LOCK_TOL_DEG   = 1.0;
@@ -243,6 +251,7 @@ public abstract class BaseAuto extends LinearOpMode {
             try { vision.setRangeScale(VisionTuning.RANGE_SCALE); } catch (Throwable ignored) {}
         } catch (Exception ex) { vision = null; }
         odometry = new Odometry(drive, vision);
+        dashboard = FtcDashboard.getInstance();
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
         intake   = new Intake(hardwareMap);     // Floor intake
@@ -835,18 +844,20 @@ public abstract class BaseAuto extends LinearOpMode {
     /** Alliance-aware helper to align the intake with the correct artifact row and collect while reversing. */
     protected final void intakeFieldArtifacts(double approachSpeed, double reverseSpeed) {
         ObeliskSignal.Order order = ObeliskSignal.get();
-        double rowCenterX;
+        double rowStartX = (alliance() == Alliance.RED)
+                ? OdometryConfig.RED_ARTIFACT_ROW_START_X
+                : OdometryConfig.BLUE_ARTIFACT_ROW_START_X;
+        double rowY;
         switch (order) {
-            case GPP: rowCenterX = OdometryConfig.GPP_CENTER_X; break;
-            case PPG: rowCenterX = OdometryConfig.PPG_CENTER_X; break;
+            case GPP: rowY = OdometryConfig.GPP_ROW_Y; break;
+            case PPG: rowY = OdometryConfig.PPG_ROW_Y; break;
             case PGP:
-            default: rowCenterX = OdometryConfig.PGP_CENTER_X; break;
+            default: rowY = OdometryConfig.PGP_ROW_Y; break;
         }
-        double alignX = rowCenterX - OdometryConfig.INTAKE_OFFSET_X;
-        double alignY = OdometryConfig.ARTIFACT_ROW_Y;
-        moveToPosition("Align artifacts", alignX, alignY, approachSpeed, 0.0);
+        double alignX = rowStartX + OdometryConfig.ARTIFACT_SPACING_X - OdometryConfig.INTAKE_OFFSET_X; // center of the row trio
+        moveToPosition("Align artifacts", alignX, rowY, approachSpeed, 0.0);
         intake.set(true);
-        drive.moveWithTwist(-OdometryConfig.ARTIFACT_SPACING * 3.0, 0.0, 0.0,
+        drive.moveWithTwist(-OdometryConfig.ARTIFACT_SPACING_X * 3.0, 0.0, 0.0,
                 clampTranslationSpeed(reverseSpeed), clampTurnSpeed(reverseSpeed));
         updateOdometryPose();
     }
@@ -907,6 +918,22 @@ public abstract class BaseAuto extends LinearOpMode {
             }
             telemetry.addLine(feed.getFeedStopSummaryLine());
         }
+        FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
+        sendDashboard(poseForDashboard, statusPhase);
+    }
+
+    private void sendDashboard(FieldPose pose, String statusLabel) {
+        if (dashboard == null || pose == null) return;
+        TelemetryPacket packet = new TelemetryPacket();
+        packet.put("Status", statusLabel);
+        packet.put("Alliance", alliance().name());
+        packet.put("PoseX", pose.x);
+        packet.put("PoseY", pose.y);
+        packet.put("HeadingDeg", pose.headingDeg);
+        packet.put("AutoSpeedEnabled", autoCtrl != null && autoCtrl.isAutoEnabled());
+        packet.put("LauncherTarget", launcher != null ? launcher.targetRpm : 0.0);
+        DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
+        dashboard.sendTelemetryPacket(packet);
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }

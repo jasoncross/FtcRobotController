@@ -8,6 +8,10 @@ package org.firstinspires.ftc.teamcode.odometry;
  *   - Lightweight pose container (X, Y, heading degrees) expressed in the
  *     shared odometry coordinate system. Heading follows the Drivebase/IMU
  *     convention: 0° faces the target wall (+Y), +CCW.
+ *
+ * CHANGES (2025-11-26): Clarified heading convention alignment with odometry
+ *                        (+Y forward, +X right, +CCW) so dashboard drawing and
+ *                        pose math share the same frame.
  */
 public class FieldPose {
     public double x;

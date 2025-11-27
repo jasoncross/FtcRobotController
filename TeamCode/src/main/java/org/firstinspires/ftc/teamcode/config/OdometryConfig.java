@@ -16,6 +16,10 @@ package org.firstinspires.ftc.teamcode.config;
  *     practice field; every constant includes units and an inline description
  *     for quick pit-side edits.
  *
+ * CHANGES (2025-11-26): Switched launch zones to triangle vertices, replaced
+ *                        artifact row anchors with alliance-aware row starts,
+ *                        spacing, and radius, and documented the +X/+Y field
+ *                        frame used by odometry + dashboard drawing.
  * CHANGES (2025-11-25): Added goal AprilTag pose tunables (XYZ + yaw) to support
  *                        tag-based odometry fusion with camera offsets.
  */
@@ -101,20 +105,31 @@ public final class OdometryConfig {
     public static final double BASE_ZONE_SIZE = 18.0;              // Base zone square size, inches
 
     // ==== Launch zones & lines (inches) ====
-    public static final double HUMAN_LAUNCH_ZONE_CENTER_X = 0.0;   // Human-side launch zone center X
-    public static final double HUMAN_LAUNCH_ZONE_CENTER_Y = 24.0;  // Human-side launch zone center Y
-    public static final double TARGET_LAUNCH_ZONE_CENTER_X = 0.0;  // Target-side launch zone center X
-    public static final double TARGET_LAUNCH_ZONE_CENTER_Y = 120.0; // Target-side launch zone center Y
+    public static final double HUMAN_LAUNCH_LEFT_X = -24.0;        // Human-side launch triangle left base X (touching wall)
+    public static final double HUMAN_LAUNCH_LEFT_Y = 0.0;          // Human-side launch triangle left base Y
+    public static final double HUMAN_LAUNCH_RIGHT_X = 24.0;        // Human-side launch triangle right base X
+    public static final double HUMAN_LAUNCH_RIGHT_Y = 0.0;         // Human-side launch triangle right base Y
+    public static final double HUMAN_LAUNCH_APEX_X = 0.0;          // Human-side launch triangle apex X (upfield point)
+    public static final double HUMAN_LAUNCH_APEX_Y = 24.0;         // Human-side launch triangle apex Y
 
-    public static final double HUMAN_LAUNCH_LINE_Y  = 24.0;        // Y coordinate of human launch line
-    public static final double TARGET_LAUNCH_LINE_Y = 120.0;       // Y coordinate of target launch line
+    public static final double TARGET_LAUNCH_LEFT_X = -72.0;       // Target-side launch triangle left base X (touching wall)
+    public static final double TARGET_LAUNCH_LEFT_Y = 144.0;       // Target-side launch triangle left base Y
+    public static final double TARGET_LAUNCH_RIGHT_X = 72.0;       // Target-side launch triangle right base X
+    public static final double TARGET_LAUNCH_RIGHT_Y = 144.0;      // Target-side launch triangle right base Y
+    public static final double TARGET_LAUNCH_APEX_X = 0.0;         // Target-side launch triangle apex X (back toward center)
+    public static final double TARGET_LAUNCH_APEX_Y = 72.0;        // Target-side launch triangle apex Y
 
-    // ==== Initial artifact groups (rows share Y center) ====
-    public static final double ARTIFACT_ROW_Y = 42.5;             // Common Y for the starting artifact rows
-    public static final double GPP_CENTER_X = 35.0;               // Center X for GPP pattern row
-    public static final double PGP_CENTER_X = 59.0;                 // Center X for PGP pattern row
-    public static final double PPG_CENTER_X = 82.5;                // Center X for PPG pattern row
-    public static final double ARTIFACT_SPACING = 11.5;             // Spacing between artifacts along +X, inches
+    public static final double HUMAN_LAUNCH_LINE_Y  = 24.0;        // Y coordinate of human launch line (across triangle base)
+    public static final double TARGET_LAUNCH_LINE_Y = 120.0;       // Y coordinate of target launch line (across triangle base)
+
+    // ==== Initial artifact groups (alliance + row aware) ====
+    public static final double RED_ARTIFACT_ROW_START_X = 42.5;    // Red-side starting X for artifact rows (index 0)
+    public static final double BLUE_ARTIFACT_ROW_START_X = -42.5;  // Blue-side starting X for artifact rows (index 0)
+    public static final double GPP_ROW_Y = 35.0;                   // Y coordinate for GPP row (toward targets)
+    public static final double PGP_ROW_Y = 59.0;                   // Y coordinate for PGP row
+    public static final double PPG_ROW_Y = 82.5;                   // Y coordinate for PPG row (furthest toward targets)
+    public static final double ARTIFACT_SPACING_X = 5.0;           // Center-to-center spacing along +X for each row, inches
+    public static final double ARTIFACT_RADIUS = 2.5;              // Artifact radius used for drawing/spacing (5" diameter)
 
     // ==== Odometry fusion parameters ====
     public static final double VISION_WEIGHT = 0.25;                    // Blend weight for AprilTag pose correction (0..1)

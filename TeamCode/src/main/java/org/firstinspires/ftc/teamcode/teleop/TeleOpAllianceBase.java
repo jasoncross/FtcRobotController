@@ -58,6 +58,11 @@
  *                       handoff, and leave the stored pose untouched when
  *                       absent so TeleOp can still rely on AprilTag seeding
  *                       during INIT.
+ * CHANGES (2025-11-26): Added FTC Dashboard telemetry + field overlays each loop
+ *                       using DecodeFieldDrawing with the corrected +X/+Y frame,
+ *                       artifact rows, and launch triangles so drivers can see
+ *                       live odometry motion on the Dashboard alongside phone
+ *                       telemetry.
  * CHANGES (2025-11-25): Added odometry carryover via PoseStore plus AprilTag
  *                       re-localization during INIT so TeleOp starts with a
  *                       continuous fused pose for dashboard overlays.
@@ -103,6 +108,9 @@
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
+
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import org.firstinspires.ftc.teamcode.Alliance;
@@ -110,6 +118,7 @@ import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.subsystems.Feed;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
+import org.firstinspires.ftc.teamcode.odometry.DecodeFieldDrawing;
 import org.firstinspires.ftc.teamcode.odometry.FieldPose;
 import org.firstinspires.ftc.teamcode.odometry.Odometry;
 import org.firstinspires.ftc.teamcode.odometry.PoseStore;
@@ -215,6 +224,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private Odometry odometry;
     private FieldPose fusedPose = new FieldPose();
     private boolean poseSeeded = false;
+    private FtcDashboard dashboard;
 
     // ---------------- Vision + Aim ----------------
     private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
@@ -374,6 +384,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             odometry.setPose(fusedPose.x, fusedPose.y, fusedPose.headingDeg);
         }
 
+        dashboard = FtcDashboard.getInstance();
+
         resetTogglePulseQueue();
 
         // ---- Controller Bindings Setup ----
@@ -516,6 +528,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void init_loop() {
         maybeSeedPoseFromVision();
+        if (odometry != null) {
+            fusedPose = odometry.getPose();
+        }
         if (feed != null) {
             feed.update();
             if (feed.wasWindowLimitReached()) {
@@ -532,6 +547,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             telemetry.addLine(feed.getFeedStopSummaryLine());
         }
         telemetry.update();
+        sendDashboard(fusedPose, "INIT");
     }
 
     @Override
@@ -616,6 +632,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // If STOP is latched, hold zero outputs and render minimal status, then return early.
         if (stopLatched) {
             onStoppedLoopHold();
+            sendDashboard(fusedPose, "STOPPED");
             return;
         }
 
@@ -824,6 +841,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             telemetry.addLine(feed.getFeedStopSummaryLine());
         }
+        sendDashboard(fusedPose, "RUN");
         telemetry.update();
     }
 
@@ -1027,9 +1045,24 @@ public abstract class TeleOpAllianceBase extends OpMode {
             String msg = t.getMessage();
             visionProfileError = (msg != null && !msg.isEmpty()) ? msg : t.getClass().getSimpleName();
         } finally {
-            visionProfileSwapInProgress = false;
-            visionProfileSwapMode = null;
-        }
+        visionProfileSwapInProgress = false;
+        visionProfileSwapMode = null;
+    }
+
+    private void sendDashboard(FieldPose pose, String statusLabel) {
+        if (dashboard == null || pose == null) return;
+        TelemetryPacket packet = new TelemetryPacket();
+        packet.put("Status", statusLabel);
+        packet.put("PoseX", pose.x);
+        packet.put("PoseY", pose.y);
+        packet.put("HeadingDeg", pose.headingDeg);
+        packet.put("AutoSpeed", autoSpeedEnabled);
+        packet.put("AutoAim", autoAimEnabled);
+        packet.put("RPMTarget", launcher != null ? launcher.targetRpm : 0.0);
+        packet.put("IntakeOn", intake != null && intake.isOn());
+        DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
+        dashboard.sendTelemetryPacket(packet);
+    }
     }
 
     private void initAimRumble() {

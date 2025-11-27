@@ -23,6 +23,10 @@ import static java.lang.Math.*;
  *     maximum correction step to avoid teleporting the pose when detections
  *     spike.
  *
+ * CHANGES (2025-11-26): Corrected odometry sign conventions so +X is right and
+ *                        +Y is toward the targets, normalized IMU heading to
+ *                        the shared frame (0° facing +Y, +CCW), and reused the
+ *                        same heading basis for vision pose fusion.
  * CHANGES (2025-11-25): Added goal-tag pose fusion that leverages config tag poses,
  *                        camera offsets, and pitch/yaw to compute the robot center
  *                        from detections, enabling Auto→TeleOp pose carryover.
@@ -83,7 +87,7 @@ public class Odometry {
      * AprilTag detection for vision corrections.
      */
     public FieldPose update(AprilTagDetection detection) {
-        double heading = normHeading(drive.heading() + OdometryConfig.IMU_HEADING_OFFSET_DEG);
+        double heading = normalizeHeading(drive.heading());
 
         double[] wheels = drive.getWheelPositionsInches();
         if (!initialized) {
@@ -99,8 +103,8 @@ public class Odometry {
         double br = wheels[3] - lastWheelInches[3];
         System.arraycopy(wheels, 0, lastWheelInches, 0, wheels.length);
 
-        double forward = (fl + fr + bl + br) / 4.0; // +Y toward targets
-        double strafeRaw = (fl - fr - bl + br) / 4.0; // +X right
+        double forward = -(fl + fr + bl + br) / 4.0; // +Y toward targets (invert to match field frame)
+        double strafeRaw = -(fl - fr - bl + br) / 4.0; // +X right (invert to match field frame)
         double strafe = strafeRaw / Drivebase.STRAFE_CORRECTION;
 
         double hRad = toRadians(heading);
@@ -156,7 +160,7 @@ public class Odometry {
         double camX = tag.x + fieldCamOffsetX;
         double camY = tag.y + fieldCamOffsetY;
 
-        double headingRad = toRadians(normHeading(headingDeg));
+        double headingRad = toRadians(normalizeHeading(headingDeg));
         double camHeading = headingRad + toRadians(OdometryConfig.CAMERA_YAW_DEG);
         double offsetXField = OdometryConfig.CAMERA_OFFSET_X * cos(camHeading) + OdometryConfig.CAMERA_OFFSET_Y * sin(camHeading);
         double offsetYField = OdometryConfig.CAMERA_OFFSET_Y * cos(camHeading) - OdometryConfig.CAMERA_OFFSET_X * sin(camHeading);
@@ -189,6 +193,16 @@ public class Odometry {
                 current.y + (target.y - current.y) * a,
                 normHeading(current.headingDeg + (target.headingDeg - current.headingDeg) * a)
         );
+    }
+
+    /**
+     * Normalize IMU heading into the shared odometry frame where 0° faces the
+     * target wall (+Y) and positive angles turn counter-clockwise toward +X.
+     */
+    private double normalizeHeading(double rawHeadingDeg) {
+        double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG;
+        double fieldFrame = shifted - 90.0; // align IMU basis (0° = +X) to odometry basis (0° = +Y)
+        return normHeading(fieldFrame);
     }
 
     private double normHeading(double h) {

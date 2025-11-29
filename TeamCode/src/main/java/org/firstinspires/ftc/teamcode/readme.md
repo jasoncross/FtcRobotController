@@ -39,7 +39,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **Right Stick X** | Rotation (**disabled while AutoAim is ON**) |
 | **Left Trigger** | Brake – reduces top speed |
 | **Right Trigger** | Manual RPM control (**only** when **AutoSpeed = OFF**, **Lock = OFF**, **Test = OFF**) |
-| **Left Bumper (LB)** | **Tap:** feed once (with **Intake Assist** if Intake is OFF). **Hold:** continuous feed with FeedStop held open and intake assist latched if it was off. |
+| **Left Bumper (LB)** | **Tap:** feed once (with **Intake Assist** if Intake is OFF) using the full FeedStop lead/hold timing. **Hold (after the release window):** continuous feed with FeedStop held open and intake assist latched if it was off, plus a quick auto-aim nudge before each launch when a goal tag is visible even if AutoAim is toggled off. |
 | **Right Bumper (RB)** | **Toggle Intake On/Off** *(triple-tap quickly to latch reverse until the next tap)* |
 | **Right Stick Button (RS)** | **Toggle AutoAim** *(only ENABLES if a goal AprilTag is visible; auto-DISABLES if tag remains lost beyond grace window)* |
 | **Y / Triangle** | **Toggle AutoSpeed** *(double-pulse on ENABLE, single-pulse on DISABLE)* |
@@ -358,6 +358,11 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-11-29** – Restored single-tap feeds to honor the configured FeedStop lead/hold timing before
+converting to continuous streaming, gating the hold-to-stream behavior behind the release window so
+brief taps deliver a single shot again. Added a temporary auto-aim nudge that engages whenever a goal
+tag is visible right before firing (including tap and hold feeds) even if AutoAim is disabled, then
+restores the prior AutoAim toggle once the shot completes.
 - **2025-11-27** – Corrected odometry axis/heading math (+X right, +Y toward targets
 with IMU normalization) and refreshed field tunables: artifact rows now use
 alliance-aware start X, per-row Y lines, 5" spacing, and 2.5" radius; launch zones

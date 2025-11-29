@@ -72,6 +72,8 @@ public class Feed {
     //                       warnings surfaced only when limits or homing guards trigger.
     // CHANGES (2025-11-23): Added continuous-feed mode for fire-button holds so TeleOp can stream
     //                       artifacts without rearming the state machine between shots.
+    // CHANGES (2025-11-29): Exposed releaseHoldMs so TeleOp can delay continuous-feed conversion
+    //                       until a deliberate hold after the standard single-shot window.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -323,6 +325,11 @@ public class Feed {
     /** Returns the configured fire lead time (ms). */
     public long getFireLeadMs() {
         return Math.max(0L, fireLeadMs);
+    }
+
+    /** Returns the configured duration to remain at RELEASE after a feed request (ms). */
+    public long getReleaseHoldMs() {
+        return Math.max(0L, releaseHoldMs);
     }
 
     /** Current FeedStop gate state. */

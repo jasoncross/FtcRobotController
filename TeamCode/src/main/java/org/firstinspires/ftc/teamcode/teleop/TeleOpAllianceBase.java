@@ -184,6 +184,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     //                       every loop and surfaces the phase in telemetry.
     // CHANGES (2025-11-23): Added AutoRPM tweak scaling (D-pad left/right while AutoSpeed enabled) and
     //                       continuous-feed hold behavior on the fire button.
+    // CHANGES (2025-11-29): Restored single-shot tap behavior by delaying continuous-feed conversion
+    //                       until after the FeedStop release window and added a temporary auto-aim
+    //                       nudge before firing whenever a goal tag is visible, restoring the prior
+    //                       AutoAim state afterward.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -314,6 +318,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private boolean continuousFireHeld = false;   // True while LB is held for continuous feed
     private boolean continuousFireActive = false; // Latched once continuous feed has been enabled
+    private long continuousFireHoldStartMs = 0L;  // Timestamp when the LB hold began for continuous feed
+    private boolean pendingAutoAimNudge = false;  // Requests a temporary auto-aim before firing
+    private boolean autoAimNudgeActive = false;   // AutoAim temporarily enabled for a shot
+    private boolean autoAimNudgeRestoreState = false; // Previous AutoAim state to restore after the nudge
 
     private enum EjectPhase { IDLE, SPOOL, FEED, HOLD }
     private EjectPhase ejectPhase = EjectPhase.IDLE;
@@ -401,7 +409,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // -------- Gamepad 1 (Driver) --------
         // Feed / Intake
         controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
-        controls.bindHold(Pad.G1, Btn.LB, () -> continuousFireHeld = true);
+        controls.bindHold(Pad.G1, Btn.LB, this::markContinuousFireHeld);
         controls.bindPress(Pad.G1, Btn.RB, this::handleIntakeButtonPress);
 
         // Reverse Drive toggle
@@ -491,7 +499,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Gamepad 2 (Co-driver) --------
         controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
-        controls.bindHold(Pad.G2, Btn.LB, () -> continuousFireHeld = true);
+        controls.bindHold(Pad.G2, Btn.LB, this::markContinuousFireHeld);
         controls.bindPress(Pad.G2, Btn.RB, this::handleIntakeButtonPress);
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             boolean enable = !autoSpeedEnabled;
@@ -585,6 +593,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         continuousFireHeld = false;
         continuousFireActive = false;
+        continuousFireHoldStartMs = 0L;
+        pendingAutoAimNudge = false;
+        autoAimNudgeActive = false;
+        autoAimNudgeRestoreState = autoAimEnabled;
         resetAutoRpmTweak();
 
         applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
@@ -642,6 +654,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // -------- Normal controls (only run when NOT STOPPED) --------
         continuousFireHeld = false; // will be set true by hold bindings during this update
         controls.update(gamepad1, gamepad2);
+        if (!continuousFireHeld) {
+            continuousFireHoldStartMs = 0L;
+        }
         drainAutoSpeedQueue();
 
         now = System.currentTimeMillis();
@@ -686,6 +701,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 smRangeMeters = (smRangeMeters == null) ? rM_sc : (smoothA * rM_sc + (1 - smoothA) * smRangeMeters);
             }
         }
+
+        updateAutoAimNudge(goalDet);
 
         Double distanceForLockIn = (goalDet != null) ? getGoalDistanceInchesScaled(goalDet) : null;
         boolean longShotMode = isLongShot(distanceForLockIn);
@@ -1166,11 +1183,47 @@ public abstract class TeleOpAllianceBase extends OpMode {
         return rM_sc * M_TO_IN;
     }
 
+    /** Records a continuous-fire hold and stamps the start time if this is the first tick. */
+    private void markContinuousFireHeld() {
+        continuousFireHeld = true;
+        if (continuousFireHoldStartMs == 0L) {
+            continuousFireHoldStartMs = System.currentTimeMillis();
+        }
+    }
+
+    /** Flags a request to briefly enable AutoAim before launching a shot. */
+    private void requestAutoAimNudge() {
+        pendingAutoAimNudge = true;
+    }
+
+    /** Enables a temporary AutoAim assist when a tag is visible, then restores the prior setting after firing. */
+    private void updateAutoAimNudge(AprilTagDetection goalDet) {
+        boolean firingActive = feed != null && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
+
+        if (pendingAutoAimNudge && goalDet != null) {
+            autoAimNudgeRestoreState = autoAimEnabled;
+            autoAimEnabled = true;
+            autoAimNudgeActive = true;
+            pendingAutoAimNudge = false;
+            aimLossStartMs = -1L;
+        } else if (pendingAutoAimNudge && !firingActive) {
+            pendingAutoAimNudge = false;
+        }
+
+        if (autoAimNudgeActive && !firingActive) {
+            autoAimEnabled = autoAimNudgeRestoreState;
+            autoAimNudgeActive = false;
+            pendingAutoAimNudge = false;
+            aimLossStartMs = -1L;
+        }
+    }
+
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
         if (ejectPhase != EjectPhase.IDLE || continuousFireActive || continuousFireHeld) return;
         boolean wasOn = intake.isOn();
         if (feed.beginFeedCycle()) {
+            requestAutoAimNudge();
             startIntakeAssist(wasOn, 0L);
         }
     }
@@ -1322,11 +1375,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
             return;
         }
 
-        if (continuousFireHeld && !ejectActive) {
+        long holdDuration = continuousFireHeld ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs) : 0L;
+        long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
+        boolean holdReady = continuousFireHeld && holdDuration >= holdThreshold;
+
+        if (holdReady && !ejectActive) {
             if (!continuousFireActive) {
                 continuousFireActive = true;
                 boolean wasOn = intake.isOn();
                 feed.startContinuousFeed();
+                requestAutoAimNudge();
                 startIntakeAssist(wasOn, 0L);
             }
         } else if (continuousFireActive) {
@@ -1367,6 +1425,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         resetIntakeReverseGesture();
         continuousFireHeld = false;
         continuousFireActive = false;
+        continuousFireHoldStartMs = 0L;
+        if (autoAimNudgeActive) {
+            autoAimEnabled = autoAimNudgeRestoreState;
+        }
+        autoAimNudgeActive = false;
+        pendingAutoAimNudge = false;
         resetAutoRpmTweak();
 
         // DRIVE
@@ -1434,7 +1498,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (intake == null) {
             return;
         }
-        boolean feedActive = (feed != null) && feed.isFeedCycleActive();
+        boolean feedActive = (feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
         intake.update(feedActive);
     }
 }

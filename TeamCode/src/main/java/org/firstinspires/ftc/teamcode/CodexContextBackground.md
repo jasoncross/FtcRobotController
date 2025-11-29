@@ -102,6 +102,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Handles AutoAim/AutoSpeed toggles, rumble notifications, StopAll latch, and auto-stop timer logic.
   - Initializes shared subsystems and config classes, ensuring `config/*` overrides propagate at runtime.
   - Scales translation while AutoAim is active and exposes manual RPM D-pad nudges whenever AutoSpeed is disabled **and manual lock is engaged**.
+  - LB fire taps now honor the configured FeedStop lead/hold timing before any continuous streaming kicks in; LB holds only convert to continuous feed after the release window so single taps return to a one-shot cadence.
+  - Every feed request performs a brief AutoAim nudge whenever a goal tag is visible—even if AutoAim is toggled off—then restores the driver’s AutoAim setting after the shot.
   - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
 

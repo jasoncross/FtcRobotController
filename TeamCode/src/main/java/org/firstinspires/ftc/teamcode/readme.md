@@ -359,10 +359,14 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 
 ## Revision History
 - **2025-11-29** – Restored single-tap feeds to honor the configured FeedStop lead/hold timing before
-converting to continuous streaming, gating the hold-to-stream behavior behind the release window so
-brief taps deliver a single shot again. Added a temporary auto-aim nudge that engages whenever a goal
-tag is visible right before firing (including tap and hold feeds) even if AutoAim is disabled, then
-restores the prior AutoAim toggle once the shot completes.
+ converting to continuous streaming, gating the hold-to-stream behavior behind the release window so
+ brief taps deliver a single shot again. Added a temporary auto-aim nudge that engages whenever a goal
+ tag is visible right before firing (including tap and hold feeds) even if AutoAim is disabled, then
+ restores the prior AutoAim toggle once the shot completes. Surfaced live telemetry for AutoRPM D-pad
+ nudges (percent + RPM delta) and reworked `Drivebase.move(...)`/`moveWithTwist(...)` to stay in
+ RUN_USING_ENCODER with encoder-delta tracking plus a linear speed taper so Auto distances land
+ consistently across different speed caps, and moved the translation taper floors for both helpers into
+ `config/DriveTuning` so teams can adjust the minimum closing speed without editing drivetrain code.
 - **2025-11-27** – Corrected odometry axis/heading math (+X right, +Y toward targets
 with IMU normalization) and refreshed field tunables: artifact rows now use
 alliance-aware start X, per-row Y lines, 5" spacing, and 2.5" radius; launch zones

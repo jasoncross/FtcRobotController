@@ -24,6 +24,10 @@
  *   - TURN_TOLERANCE_DEG / TURN_SETTLE_TIME_SEC
  *       • Completion window and dwell time for IMU turns. Keep aligned with
  *         SharedRobotTuning.LOCK_TOLERANCE_DEG when autos rely on precise aim.
+ *
+ * CHANGES (2025-11-29): Added tunable translation speed floors for Auto move
+ *                        tapering so distance accuracy stays configurable per
+ *                        robot without editing Drivebase.java.
  */
 package org.firstinspires.ftc.teamcode.config;
 
@@ -45,4 +49,8 @@ public final class DriveTuning {
     // Turn completion requirements
     public static double TURN_TOLERANCE_DEG   = 1.0;  // Acceptable heading error
     public static double TURN_SETTLE_TIME_SEC = 0.15; // Seconds inside tolerance before declaring done
+
+    // Auto translation taper floors (prevent stalling near completion)
+    public static double AUTO_MOVE_MIN_SPEED                 = 0.15; // Min speed for encoder-delta move() ramp
+    public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.15; // Min translation speed for moveWithTwist() ramp
 }

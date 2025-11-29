@@ -87,6 +87,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
           .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
           .readyToLaunch("Ready launcher for volley", 3200)
           .fire("Fire volley", 5, true, 1000)
+          //.fireContinuous("Firing",3000,true)
           .returnToStoredHeading("Return to start heading", 0.45)
           .move("Drive 36 in forward", 36.0, 0.0, 0.0, 0.85)
           .run();

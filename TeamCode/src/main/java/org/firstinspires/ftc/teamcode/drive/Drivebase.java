@@ -82,6 +82,10 @@ public class Drivebase {
     public static final double TURN_TOLERANCE_DEG = DriveTuning.TURN_TOLERANCE_DEG;   // stop when within ±tuned tolerance
     public static final double TURN_SETTLE_TIME   = DriveTuning.TURN_SETTLE_TIME_SEC;  // remain within tolerance this many seconds
 
+    // Auto translation taper floors (tunable)
+    public static final double AUTO_MOVE_MIN_SPEED = DriveTuning.AUTO_MOVE_MIN_SPEED;
+    public static final double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = DriveTuning.AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED;
+
     // ======= INTERNAL =======
     private final LinearOpMode linear;   // Non-null only in Autonomous usage
     private final Telemetry telemetry;
@@ -98,6 +102,11 @@ public class Drivebase {
     // CHANGES (2025-10-31): Added safeInit to guarantee zero drive power during INIT.
     // CHANGES (2025-11-27): Added moveWithTwist(...) to blend translation + heading change concurrently
     //                        for AutoSequence twist-enabled moves.
+    // CHANGES (2025-11-29): Reworked move()/moveWithTwist(...) to stay in RUN_USING_ENCODER with
+    //                        encoder-delta progress tracking and linear speed tapering for
+    //                        speed-independent distance accuracy.
+    // CHANGES (2025-11-29): Moved auto translation taper floors to DriveTuning so ramp minima can
+    //                        be retuned without editing Drivebase.java.
     // CHANGES (2025-11-25): Exposed wheel encoder helpers for odometry consumers while
     //                        keeping TeleOp safe-init guarantees; refreshed changelog dates to match release.
 
@@ -204,49 +213,77 @@ public class Drivebase {
      */
     public void move(double distanceInches, double degrees, double speed) {
         if (!isActive()) return;  // TeleOp: don't block
+        final double minSpeed = AUTO_MOVE_MIN_SPEED;
+        double maxSpeed = clamp(speed, 0.1, 1.0);
+        maxSpeed = Math.max(minSpeed, maxSpeed);
 
-        speed = clamp(speed, 0.1, 1.0);
-
-        // Polar (robot-centric) with 0°=forward (match TeleOp forward sign)
         double rad = toRadians(degrees);
-        double forwardRaw = cos(rad);   // prior convention (+) backward; log for reference
-        double lateral = sin(rad);      // +right (+90° = right)
-        double forward = -forwardRaw;   // ALIGN: positive distance now drives +forward
+        double forwardRaw = cos(rad);
+        double lateralRaw = sin(rad);
+        double forward = -forwardRaw;
+        double lateral = lateralRaw;
 
-        if (telemetry != null) {
-            telemetry.addData("Auto move vector",
-                    "hd=%.1f rawF=%.3f rawL=%.3f fwd=%.3f lat=%.3f",
-                    degrees, forwardRaw, lateral, forward, lateral);
-            telemetry.update();
-        }
+        // Normalize vector so the speed cap applies uniformly across headings
+        double vecNorm = max(1.0, max(abs(forward), abs(lateral)));
+        forward /= vecNorm;
+        lateral /= vecNorm;
 
-        // Compensate lateral losses
         double xAdj = lateral * STRAFE_CORRECTION;
         double yAdj = forward;
 
-        // Wheel multipliers (no twist)
         double flMult = yAdj + xAdj;
         double frMult = yAdj - xAdj;
         double blMult = yAdj - xAdj;
         double brMult = yAdj + xAdj;
+        double multNorm = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
+        flMult /= multNorm; frMult /= multNorm; blMult /= multNorm; brMult /= multNorm;
 
-        // Normalize multipliers
-        double maxMag = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
-        flMult /= maxMag; frMult /= maxMag; blMult /= maxMag; brMult /= maxMag;
-
-        int baseTicks = (int) round(distanceInches * TICKS_PER_IN);
-        int flT = fl.getCurrentPosition() + (int) round(baseTicks * flMult);
-        int frT = fr.getCurrentPosition() + (int) round(baseTicks * frMult);
-        int blT = bl.getCurrentPosition() + (int) round(baseTicks * blMult);
-        int brT = br.getCurrentPosition() + (int) round(baseTicks * brMult);
-
-        setRunToPosition(flT, frT, blT, brT);
-        setAllPower(speed);
-
-        while (isActive() && (fl.isBusy() || fr.isBusy() || bl.isBusy() || br.isBusy())) {
-            idle(); // yield to SDK
+        double baseTicks = distanceInches * TICKS_PER_IN;
+        double targetTicks = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * abs(baseTicks);
+        if (targetTicks < 5.0) {
+            stopAll();
+            return;
         }
-        restoreBaseRunMode(); // back to RUN_USING_ENCODER
+
+        int flStart = fl.getCurrentPosition();
+        int frStart = fr.getCurrentPosition();
+        int blStart = bl.getCurrentPosition();
+        int brStart = br.getCurrentPosition();
+
+        while (isActive()) {
+            double flDelta = abs(fl.getCurrentPosition() - flStart);
+            double frDelta = abs(fr.getCurrentPosition() - frStart);
+            double blDelta = abs(bl.getCurrentPosition() - blStart);
+            double brDelta = abs(br.getCurrentPosition() - brStart);
+            double meanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
+
+            if (meanDelta >= targetTicks) {
+                break;
+            }
+
+            double progress = clamp(meanDelta / targetTicks, 0.0, 1.0);
+            double remaining = 1.0 - progress;
+            double commandedSpeed = minSpeed + (maxSpeed - minSpeed) * remaining;
+            commandedSpeed = clamp(commandedSpeed, minSpeed, maxSpeed);
+
+            double driveCmd = commandedSpeed * forward;
+            double strafeCmd = commandedSpeed * lateral;
+
+            double flP = driveCmd + strafeCmd;
+            double frP = driveCmd - strafeCmd;
+            double blP = driveCmd - strafeCmd;
+            double brP = driveCmd + strafeCmd;
+
+            double maxMag = max(1.0, max(abs(flP), max(abs(frP), max(abs(blP), abs(brP)))));
+            fl.setPower(flP / maxMag);
+            fr.setPower(frP / maxMag);
+            bl.setPower(blP / maxMag);
+            br.setPower(brP / maxMag);
+
+            idle();
+        }
+
+        stopAll();
     }
 
     /**
@@ -265,7 +302,9 @@ public class Drivebase {
                               double twistSpeed) {
         if (!isActive()) return; // TeleOp: don't block
 
+        final double minTranslationSpeed = AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED;
         translationSpeed = clamp(translationSpeed, 0.1, 1.0);
+        translationSpeed = Math.max(minTranslationSpeed, translationSpeed);
         twistSpeed = clamp(twistSpeed, 0.1, 1.0);
 
         double rad = toRadians(degrees);
@@ -308,8 +347,20 @@ public class Drivebase {
             double twistCmd = TURN_KP * err + TURN_KD * derr;
             twistCmd = clamp(twistCmd, -twistSpeed, twistSpeed);
 
-            double driveCmd = translationSpeed * forward;
-            double strafeCmd = translationSpeed * lateralRaw;
+            double flDelta = abs(fl.getCurrentPosition() - flStart);
+            double frDelta = abs(fr.getCurrentPosition() - frStart);
+            double blDelta = abs(bl.getCurrentPosition() - blStart);
+            double brDelta = abs(br.getCurrentPosition() - brStart);
+            double absMeanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
+
+            double progress = (absTargetMean <= 1e-3) ? 0.0 : clamp(absMeanDelta / absTargetMean, 0.0, 1.0);
+            double remaining = 1.0 - progress;
+            double transSpeed = minTranslationSpeed
+                    + (translationSpeed - minTranslationSpeed) * remaining;
+            transSpeed = clamp(transSpeed, minTranslationSpeed, translationSpeed);
+
+            double driveCmd = transSpeed * forward;
+            double strafeCmd = transSpeed * lateralRaw;
 
             double flP = driveCmd + strafeCmd + twistCmd;
             double frP = driveCmd - strafeCmd - twistCmd;
@@ -321,12 +372,6 @@ public class Drivebase {
             fr.setPower(frP / maxMag);
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
-
-            double flDelta = abs(fl.getCurrentPosition() - flStart);
-            double frDelta = abs(fr.getCurrentPosition() - frStart);
-            double blDelta = abs(bl.getCurrentPosition() - blStart);
-            double brDelta = abs(br.getCurrentPosition() - brStart);
-            double absMeanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
 
             if (absTargetMean <= 1e-3 || absMeanDelta >= absTargetMean) {
                 break;

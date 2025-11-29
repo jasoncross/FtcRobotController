@@ -57,6 +57,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Highlights:**
   - Configurable wheel geometry and strafing compensation from [`config/DriveTuning`](./config/DriveTuning.java).
   - Dual constructors support blocking motion helpers in Auto and non-blocking TeleOp usage.
+  - Auto translation helpers remain in RUN_USING_ENCODER and taper speed off encoder deltas so commanded distances land consistently across different speed caps.
+  - Translation taper floors for straight moves and twist-blended moves live in [`config/DriveTuning`](./config/DriveTuning.java) so crews can raise/lower the minimum speed without editing drivetrain code.
   - `stopAll()` alias keeps StopAll compatibility across modes.
 - **Iterative Notes:** Motor direction fixes, IMU normalization, and settled-turn logic all surfaced in the file header to document drivetrain bring-up history.
 

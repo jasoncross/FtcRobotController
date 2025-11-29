@@ -53,6 +53,10 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
+ *                       AutoSpeed is active) with percentage and RPM deltas so
+ *                       drivers can see the live nudge under the RPM target
+ *                       line.
  * CHANGES (2025-11-27): Repaired FTC Dashboard vision profile swap cleanup
  *                       braces so telemetry packets compile and send
  *                       correctly during TeleOp loops.
@@ -796,6 +800,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
         telemetry.addData("Reverse", reverseDriveMode ? "ON" : "OFF");
         telemetry.addData("RPM Target / Actual", "%.0f / L:%.0f R:%.0f", launcher.targetRpm, launcher.getLeftRpm(), launcher.getRightRpm());
+        if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
+            double pct = (autoRpmTweakFactor - 1.0) * 100.0;
+            double rpmDelta = autoOutRpmCommanded - autoOutRpm;
+            telemetry.addData("AutoRPM Tweak", "ACTIVE: %+4.1f%% (%+.0f rpm)", pct, rpmDelta);
+        }
         telemetry.addData("Pose (X,Y,H)", "%.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg);
 
         telemetry.addLine();

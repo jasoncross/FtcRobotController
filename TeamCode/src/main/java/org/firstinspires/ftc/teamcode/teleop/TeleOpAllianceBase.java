@@ -1229,7 +1229,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
-        if (ejectPhase != EjectPhase.IDLE || continuousFireActive || continuousFireHeld) return;
+        long holdDuration = continuousFireHeld
+                ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs)
+                : 0L;
+        long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
+        boolean holdBlocksSingle = continuousFireHeld && holdDuration >= holdThreshold;
+
+        if (ejectPhase != EjectPhase.IDLE || continuousFireActive || holdBlocksSingle) return;
         boolean wasOn = intake.isOn();
         if (feed.beginFeedCycle()) {
             requestAutoAimNudge();

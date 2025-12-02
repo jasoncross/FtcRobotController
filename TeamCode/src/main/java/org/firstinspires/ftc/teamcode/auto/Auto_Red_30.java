@@ -42,7 +42,7 @@ public class Auto_Red_30 extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .move("Clear wall (drive 30 in)", 30.0, 0.0, 0.0, 0.35)
+                .move("Clear wall (drive 30 in)", 30.0, 0.0, 0.0, 0.85)
                 .run();
     }
 }

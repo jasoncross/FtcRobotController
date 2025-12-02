@@ -34,6 +34,11 @@ import org.firstinspires.ftc.teamcode.config.ControllerTuning;
  *   - update / clear
  *       • Execute bindings each loop and reset the registry when swapping modes.
  *
+ * CHANGES (2025-12-02): Allow multiple bindings on the same button (e.g., press +
+ *                       hold for LB) by chaining callbacks instead of replacing
+ *                       earlier registrations so tap-to-fire and continuous-hold
+ *                       feed can coexist.
+ *
  * NOTES
  *   - Gamepad 2 mirrors Gamepad 1 except for aim toggle + manual RPM axis; see
  *     TeleOpAllianceBase “BINDINGS SETUP” block for the full cheat sheet.
@@ -63,6 +68,26 @@ public class ControllerBindings {
     private Gamepad g1, g2;
 
     private interface Binding { void exec(boolean isDown); }
+
+    private static class MultiBinding implements Binding {
+        final List<Binding> bindings = new ArrayList<>();
+
+        MultiBinding(Binding first, Binding second) {
+            bindings.add(first);
+            bindings.add(second);
+        }
+
+        void add(Binding b) {
+            bindings.add(b);
+        }
+
+        @Override
+        public void exec(boolean isDown) {
+            for (Binding b : bindings) {
+                b.exec(isDown);
+            }
+        }
+    }
 
     private static class PressBinding implements Binding {
         final Runnable onPress; boolean gate=false;
@@ -197,7 +222,20 @@ public class ControllerBindings {
     /* =========================
      * HELPERS
      * ========================= */
-    private void addBinding(Pad pad, Btn btn, Binding b){ bindings.put(new Key(pad, btn), b); }
+    private void addBinding(Pad pad, Btn btn, Binding b){
+        Key k = new Key(pad, btn);
+        Binding existing = bindings.get(k);
+        if (existing == null) {
+            bindings.put(k, b);
+            return;
+        }
+
+        if (existing instanceof MultiBinding) {
+            ((MultiBinding) existing).add(b);
+        } else {
+            bindings.put(k, new MultiBinding(existing, b));
+        }
+    }
     private String key(Pad p, Trigger t){ return p.name()+"_"+t.name(); }
 
     private boolean isDown(Pad pad, Btn btn){

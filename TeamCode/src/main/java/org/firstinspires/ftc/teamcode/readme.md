@@ -358,6 +358,11 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-02** – Preserved single-tap fire behavior even when the FeedStop release hold window is
+ set to **0 ms** by only blocking taps when a nonzero release window is configured while still allowing
+ immediate continuous holds, and fixed controller bindings so LB can run both tap-to-fire **and** hold-
+ to-continuous callbacks simultaneously instead of replacing the tap action. (AutoAim nudge + intake
+ assist remain intact.)
 - **2025-11-29** – Restored single-tap feeds to honor the configured FeedStop lead/hold timing before
  converting to continuous streaming, gating the hold-to-stream behavior behind the release window so
  brief taps deliver a single shot again. Added a temporary auto-aim nudge that engages whenever a goal

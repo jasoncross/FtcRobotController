@@ -192,6 +192,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
     //                       until after the FeedStop release window and added a temporary auto-aim
     //                       nudge before firing whenever a goal tag is visible, restoring the prior
     //                       AutoAim state afterward.
+    // CHANGES (2025-12-02): Allow tap-to-fire to work even when the FeedStop release hold window is
+    //                       configured to 0 ms by gating the single-shot block on a nonzero release
+    //                       window while keeping continuous holds immediate when enabled.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -1233,7 +1236,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs)
                 : 0L;
         long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
-        boolean holdBlocksSingle = continuousFireHeld && holdDuration >= holdThreshold;
+        boolean holdBlocksSingle = continuousFireHeld && holdThreshold > 0L && holdDuration >= holdThreshold;
 
         if (ejectPhase != EjectPhase.IDLE || continuousFireActive || holdBlocksSingle) return;
         boolean wasOn = intake.isOn();

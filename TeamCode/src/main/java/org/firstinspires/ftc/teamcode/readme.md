@@ -357,13 +357,21 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 - **Launcher:** Dual goBILDA 5202 6000 RPM motors, closed-loop PID.  
 - **Vision:** AprilTag ID 20/24 goal targeting.  
 - **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines.
-- **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.  
-- **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.  
+- **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.
+- **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.
+
+### Vision robustness updates (2025-12-03)
+- **P480 retune:** Decimation reduced to **2.0** and min decision margin lowered to **12** to stabilize detections in both bright gyms and dim practice spaces without changing exposure/gain.
+- **Visibility tiers:** `VisionAprilTag` now exposes **hasAnyGoalTag → hasGoodGoalTagForAim → isGoalTagVisibleSmoothedForAim**, with 3-frame ON / 5-frame OFF streaks so AutoAim entry/exit and grace windows follow sustained detections instead of single-frame flicker.
+- **Health line:** TeleOp prints a **Vision Health** line summarizing recent good/total detections, average margin, and brightness against the active profile to flag weak lighting before matches.
+- **Health check workflow:** In **X – Test – Camera Stream**, press **Gamepad 1 A** to run a ~2.5 s health sampler. PASS requires ≥80% good frames and average margin ≥ profile min; WARN covers 40–79% or slight margin deficit; FAIL triggers on low ratios, zero detections, or extreme brightness. Suggestions surface for raising/lowering exposure/gain or trimming the P480 min margin by 2 (never below 8).
+- **Normalized preview (diagnostics only):** The test camera stream enables `setPreviewShowsNormalized(true)` so the Driver Station preview reflects the brightness-normalized frame; competitive TeleOps keep the preview untouched.
+- **Alliance-locked aim/speed:** AutoAim and AutoSpeed now require the alliance-correct goal tag (ID 20 for BLUE, ID 24 for RED); the opposite goal is only used to assist odometry.
 
 ---
 
 ## Revision History
-- **2025-12-03** – Added tunable lighting normalization for the AprilTag pipeline (alpha/beta smoothing, optional CLAHE, and INIT exposure nudge) with TeleOp telemetry showing mean/alpha/beta/adaptive state so teams can stabilize detections under different field lighting, and hardened the hook with reflection so builds succeed even when the SDK omits the image-processor interface.
+ - **2025-12-03** – Added tunable lighting normalization for the AprilTag pipeline (alpha/beta smoothing, optional CLAHE, and INIT exposure nudge) with TeleOp telemetry showing mean/alpha/beta/adaptive state so teams can stabilize detections under different field lighting, and hardened the hook with reflection so builds succeed even when the SDK omits the image-processor interface. Retuned the P480 profile (decimation = 2.0, min margin = 12) and layered new goal-tag visibility tiers (raw/aim/smoothed streaks) so AutoAim toggles and grace windows follow stable detections. Added a vision health line in TeleOp plus a 2.5 s health sampler in **X – Test – Camera Stream** (Gamepad 1 A) that reports good/total ratio, margin stats, brightness, and suggestions for exposure/gain or margin tweaks; enabled an optional normalized preview in that test OpMode for pit lighting checks. AutoAim and AutoSpeed now gate strictly on the alliance-correct goal tag (ID 20 blue / ID 24 red) while odometry alone may blend either goal tag.
 - **2025-12-02** – Preserved single-tap fire behavior even when the FeedStop release hold window is
  set to **0 ms** by only blocking taps when a nonzero release window is configured while still allowing
  immediate continuous holds, and fixed controller bindings so LB can run both tap-to-fire **and** hold-

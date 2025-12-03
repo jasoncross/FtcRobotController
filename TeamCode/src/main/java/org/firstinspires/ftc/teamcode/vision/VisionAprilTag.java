@@ -83,6 +83,15 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *                        different fields without changing callers, with
  *                        reflection-based attachment for SDKs lacking the
  *                        image-processor hook.
+ * CHANGES (2025-12-03): Added goal-tag visibility tiers (raw/aim/smoothed),
+ *                        normalized-preview toggle, and vision health stats so
+ *                        TeleOp + diagnostics can gate AutoAim reliably across
+ *                        bright/dim fields without duplicating detection
+ *                        helpers.
+ * CHANGES (2025-12-03): Goal visibility smoothing now locks onto the
+ *                        alliance-selected goal tag so AutoAim/AutoSpeed only
+ *                        track the correct target while odometry remains free
+ *                        to blend either goal.
  */
 public class VisionAprilTag {
 
@@ -109,10 +118,15 @@ public class VisionAprilTag {
     private VisionTuning.Profile pendingControlsProfile = null;
     private boolean liveViewRequested = VisionTuning.DEFAULT_LIVE_VIEW_ENABLED;
     private boolean liveViewApplied = VisionTuning.DEFAULT_LIVE_VIEW_ENABLED;
+    private boolean previewShowsNormalized = false;
     private int processEveryN = VisionTuning.DEFAULT_PROFILE.processEveryN;
     private double minDecisionMargin = VisionTuning.DEFAULT_PROFILE.minDecisionMargin;
     private int frameGateCounter = 0;
     private List<AprilTagDetection> lastFilteredDetections = Collections.emptyList();
+    private int goalVisibleGoodStreak = 0;
+    private int goalVisibleBadStreak = 0;
+    private boolean goalVisibleSmoothed = false;
+    private int goalVisibilityTargetId = TAG_BLUE_GOAL;
 
     // === RANGE SCALING ===
     // Multiply raw ftcPose.range (meters) by this factor to correct distance.
@@ -186,6 +200,9 @@ public class VisionAprilTag {
         minDecisionMargin = Math.max(0.0, next.minDecisionMargin);
         frameGateCounter = 0;
         lastFilteredDetections = Collections.emptyList();
+        goalVisibleGoodStreak = 0;
+        goalVisibleBadStreak = 0;
+        goalVisibleSmoothed = false;
         liveViewApplied = false; // builder starts with live view disabled
         controlWarningOnce = null;
         pendingControlsProfile = next;
@@ -235,6 +252,16 @@ public class VisionAprilTag {
     public synchronized void toggleLiveView(boolean enable) {
         liveViewRequested = enable;
         applyLiveViewState();
+    }
+
+    public void setPreviewShowsNormalized(boolean enable) {
+        previewShowsNormalized = enable;
+    }
+
+    public void setGoalVisibilityTargetId(int desiredId) {
+        if (desiredId == TAG_BLUE_GOAL || desiredId == TAG_RED_GOAL) {
+            goalVisibilityTargetId = desiredId;
+        }
     }
 
     private void applyLiveViewState() {
@@ -705,6 +732,7 @@ public class VisionAprilTag {
         }
 
         List<AprilTagDetection> raw = fetchDetectionsRaw();
+        updateGoalVisibilityState(raw);
         List<AprilTagDetection> filtered = new ArrayList<>();
         if (raw != null) {
             for (AprilTagDetection det : raw) {
@@ -761,14 +789,21 @@ public class VisionAprilTag {
 
     /** Return the closest visible goal tag (red or blue). */
     public AprilTagDetection getClosestGoalDetection() {
+        return getNearestGoalTag(getDetectionsCompat());
+    }
+
+    /** Return the nearest valid goal tag using any detection list (skips NaN/∞ range). */
+    public AprilTagDetection getNearestGoalTag() {
+        return getNearestGoalTag(fetchDetectionsRaw());
+    }
+
+    private AprilTagDetection getNearestGoalTag(List<AprilTagDetection> dets) {
         AprilTagDetection best = null;
         double bestRange = Double.NaN;
-        for (AprilTagDetection d : getDetectionsCompat()) {
-            if (d.id == TAG_BLUE_GOAL || d.id == TAG_RED_GOAL) {
-                double range = getScaledRange(d);
-                if (Double.isNaN(range) && d.ftcPose != null) {
-                    range = d.ftcPose.range;
-                }
+        if (dets != null) {
+            for (AprilTagDetection d : dets) {
+                if (!isGoalTag(d)) continue;
+                double range = getFiniteRangeMeters(d);
                 if (Double.isNaN(range)) continue;
                 if (best == null || range < bestRange) {
                     best = d;
@@ -780,6 +815,61 @@ public class VisionAprilTag {
         return best;
     }
 
+    /** True when any goal tag is present (no decision-margin filtering). */
+    public boolean hasAnyGoalTag() {
+        return hasAnyGoalTag(fetchDetectionsRaw());
+    }
+
+    /** True when the specified goal tag is present (no decision-margin filtering). */
+    public boolean hasAnyGoalTagForTarget(int desiredId) {
+        return hasAnyGoalTag(fetchDetectionsRaw(), desiredId);
+    }
+
+    private boolean hasAnyGoalTag(List<AprilTagDetection> dets) {
+        return hasAnyGoalTag(dets, /*desiredId=*/-1);
+    }
+
+    private boolean hasAnyGoalTag(List<AprilTagDetection> dets, int desiredId) {
+        if (dets == null) return false;
+        for (AprilTagDetection det : dets) {
+            if (!isGoalTag(det)) continue;
+            if (desiredId > 0 && det.id != desiredId) continue;
+            if (!Double.isNaN(getFiniteRangeMeters(det))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when a goal tag meets the current aim margin threshold (P480 flexes by 2 down to 8). */
+    public boolean hasGoodGoalTagForAim() {
+        return hasGoodGoalTagForAim(fetchDetectionsRaw());
+    }
+
+    public boolean hasGoodGoalTagForAim(int desiredId) {
+        return hasGoodGoalTagForAim(fetchDetectionsRaw(), desiredId);
+    }
+
+    private boolean hasGoodGoalTagForAim(List<AprilTagDetection> dets) {
+        return hasGoodGoalTagForAim(dets, /*desiredId=*/-1);
+    }
+
+    private boolean hasGoodGoalTagForAim(List<AprilTagDetection> dets, int desiredId) {
+        if (dets == null) return false;
+        double aimMargin = getAimMarginThreshold();
+        for (AprilTagDetection det : dets) {
+            if (!isGoalTag(det)) continue;
+            if (desiredId > 0 && det.id != desiredId) continue;
+            if (det.ftcPose == null) continue;
+            double margin = det.decisionMargin;
+            if (Double.isNaN(margin) || margin < aimMargin) continue;
+            if (!Double.isNaN(getFiniteRangeMeters(det))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // =============================================================
     //  METHOD: setRangeScale / getScaledRange
     //  PURPOSE:
@@ -789,7 +879,58 @@ public class VisionAprilTag {
     public void setRangeScale(double s) { this.rangeScale = s; }
 
     public double getScaledRange(AprilTagDetection det) {
-        return (det == null) ? Double.NaN : det.ftcPose.range * rangeScale;
+        return (det == null || det.ftcPose == null) ? Double.NaN : det.ftcPose.range * rangeScale;
+    }
+
+    public boolean isGoalTagVisibleSmoothedForAim() {
+        return goalVisibleSmoothed;
+    }
+
+    public double getSmoothedBrightnessMean() {
+        return brightnessNormalizer.getSmoothedMean();
+    }
+
+    private void updateGoalVisibilityState(List<AprilTagDetection> dets) {
+        boolean good = hasGoodGoalTagForAim(dets, goalVisibilityTargetId);
+        if (good) {
+            goalVisibleGoodStreak++;
+            goalVisibleBadStreak = 0;
+        } else {
+            goalVisibleBadStreak++;
+            goalVisibleGoodStreak = 0;
+        }
+
+        if (!goalVisibleSmoothed && goalVisibleGoodStreak >= VisionTuning.GOAL_VISIBILITY_ON_STREAK) {
+            goalVisibleSmoothed = true;
+            goalVisibleBadStreak = 0;
+        }
+        if (goalVisibleSmoothed && goalVisibleBadStreak >= VisionTuning.GOAL_VISIBILITY_OFF_STREAK) {
+            goalVisibleSmoothed = false;
+            goalVisibleGoodStreak = 0;
+        }
+    }
+
+    private double getAimMarginThreshold() {
+        double base = (activeProfile != null) ? activeProfile.minDecisionMargin : minDecisionMargin;
+        if (activeMode == VisionTuning.Mode.P480) {
+            base = Math.max(VisionTuning.GOAL_TAG_MIN_MARGIN_FLOOR, base - VisionTuning.GOAL_TAG_P480_MARGIN_FLEX);
+        }
+        return Math.max(VisionTuning.GOAL_TAG_MIN_MARGIN_FLOOR, base);
+    }
+
+    private boolean isGoalTag(AprilTagDetection det) {
+        if (det == null) return false;
+        int id = det.id;
+        return id == TAG_BLUE_GOAL || id == TAG_RED_GOAL;
+    }
+
+    private double getFiniteRangeMeters(AprilTagDetection det) {
+        if (det == null || det.ftcPose == null) return Double.NaN;
+        double range = getScaledRange(det);
+        if (Double.isNaN(range)) {
+            range = det.ftcPose.range;
+        }
+        return (!Double.isNaN(range) && Double.isFinite(range)) ? range : Double.NaN;
     }
 
     public void samplePerformanceMetrics() {
@@ -1014,7 +1155,7 @@ public class VisionAprilTag {
                             if (tsArg instanceof Number) {
                                 timestamp = ((Number) tsArg).longValue();
                             }
-                            return brightnessNormalizer.processFrame((Mat) args[0], timestamp);
+                            return brightnessNormalizer.processFrame((Mat) args[0], timestamp, previewShowsNormalized);
                         }
                         try { return method.getDefaultValue(); } catch (Throwable ignored) { return null; }
                     });
@@ -1059,7 +1200,7 @@ public class VisionAprilTag {
             meanWindow.clear();
         }
 
-        public Mat processFrame(Mat input, long captureTimeNanos) {
+        public Mat processFrame(Mat input, long captureTimeNanos, boolean writeBackNormalized) {
             if (input == null || input.empty()) return input;
 
             Mat gray = input;
@@ -1109,7 +1250,18 @@ public class VisionAprilTag {
             lastAlpha = alpha;
             lastBeta = beta;
 
-            if (converted) {
+            if (writeBackNormalized && (applyTransform || adaptiveEnabled)) {
+                if (converted) {
+                    Mat rgbaOut = new Mat();
+                    Imgproc.cvtColor(adjusted, rgbaOut, Imgproc.COLOR_GRAY2RGBA);
+                    rgbaOut.copyTo(input);
+                    rgbaOut.release();
+                } else {
+                    adjusted.copyTo(input);
+                }
+            }
+
+            if (converted && !writeBackNormalized) {
                 input.release();
             }
             return adjusted;

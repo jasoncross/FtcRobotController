@@ -155,6 +155,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Centralized tunables prevent drift** – storing every parameter in `config/` keeps TeleOp and Auto synchronized even as students experiment.
 - **Field-centric math demands calibration** – IMU mounting (`SharedRobotTuning.LOGO_DIRECTION/USB_DIRECTION`) and strafing compensation (`DriveTuning.STRAFE_CORRECTION`) should be validated together after every rebuild.
 - **Vision aids should fail gracefully** – AutoAim retains last RPM and twists gently, so drivers can take over immediately when tags disappear.
+- **Vision robustness added (2025-12-03)** – P480 decimation dropped to 2.0 with a 12-point margin, and goal-tag visibility now tiers into raw/aim/smoothed states (3-frame ON / 5-frame OFF) that gate AutoAim entry/exit. TeleOp surfaces a Vision Health line using recent good/total ratios, margins, and brightness, and **TeleOp_Test_CameraStream** includes a 2.5 s health sampler (Gamepad 1 A) plus an optional normalized preview for pit lighting tests.
+- **Alliance-locked aiming (2025-12-03)** – AutoAim and AutoSpeed exclusively follow the alliance-correct goal tag (20 blue / 24 red); the opposite goal only feeds odometry, and obelisk IDs are excluded from aim/RPM/odometry inputs.
 - **StopAll builds driver trust** – a visible latch state and consistent recovery routine keep compliance simple during chaotic endgames.
 - **Documentation accelerates onboarding** – maintaining headers, the Tunable Directory, and this Codex background file lets new developers absorb context without reading every class.
 

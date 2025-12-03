@@ -9,9 +9,15 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainCon
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.opencv.imgproc.CLAHE;
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -70,6 +76,13 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *
  * CHANGES (2025-11-25): Added helper to fetch the nearest visible goal tag so
  *                        odometry can blend AprilTag poses regardless of alliance.
+ * CHANGES (2025-12-03): Added tunable lighting normalization (alpha/beta +
+ *                        optional adaptive equalization) ahead of AprilTag
+ *                        processing plus optional INIT exposure nudging and
+ *                        telemetry hooks so vision remains stable across
+ *                        different fields without changing callers, with
+ *                        reflection-based attachment for SDKs lacking the
+ *                        image-processor hook.
  */
 public class VisionAprilTag {
 
@@ -121,6 +134,15 @@ public class VisionAprilTag {
     private volatile boolean obeliskAutoLatch = false;
     private Thread obeliskThread = null;
 
+    // === FRAME NORMALIZATION ===
+    private final BrightnessNormalizer brightnessNormalizer = new BrightnessNormalizer();
+
+    // === OPTIONAL INIT EXPOSURE NUDGE ===
+    private boolean initExposureActive = false;
+    private int initExposureStepsRemaining = 0;
+    private long initExposureLastAttemptMs = 0L;
+    private int initExposureAppliedMs = 0;
+
     // =============================================================
     //  METHOD: init
     //  PURPOSE:
@@ -167,6 +189,8 @@ public class VisionAprilTag {
         liveViewApplied = false; // builder starts with live view disabled
         controlWarningOnce = null;
         pendingControlsProfile = next;
+        brightnessNormalizer.configureFromTuning();
+        resetInitExposureTuning(next);
 
         AprilTagProcessor.Builder tagBuilder = new AprilTagProcessor.Builder()
                 .setDrawAxes(true)
@@ -176,6 +200,8 @@ public class VisionAprilTag {
         try { tagBuilder.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11); } catch (Throwable ignored) {}
         trySetDecimation(tagBuilder, next.decimation);
         applyLensIntrinsics(tagBuilder, next);
+
+        tryAttachBrightnessProcessor(tagBuilder);
 
         tagProcessor = tagBuilder.build();
 
@@ -669,6 +695,7 @@ public class VisionAprilTag {
         if (tagProcessor == null) return java.util.Collections.emptyList();
 
         samplePerformanceMetrics();
+        maybeNudgeInitExposure();
 
         if (processEveryN > 1) {
             frameGateCounter = (frameGateCounter + 1) % processEveryN;
@@ -903,6 +930,241 @@ public class VisionAprilTag {
             }
         }
         return null;
+    }
+
+    public BrightnessTelemetry getBrightnessTelemetry() {
+        return brightnessNormalizer.snapshot();
+    }
+
+    private void resetInitExposureTuning(VisionTuning.Profile profile) {
+        initExposureActive = VisionTuning.ENABLE_INIT_EXPOSURE_TUNING;
+        initExposureStepsRemaining = Math.max(0, VisionTuning.INIT_EXPOSURE_MAX_STEPS);
+        initExposureLastAttemptMs = 0L;
+        initExposureAppliedMs = (profile != null) ? profile.exposureMs : VisionTuning.EXPOSURE_MS;
+    }
+
+    private void maybeNudgeInitExposure() {
+        if (!initExposureActive || portal == null || !controlsApplied) return;
+        if (initExposureStepsRemaining <= 0) {
+            initExposureActive = false;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if ((now - initExposureLastAttemptMs) < 120) return;
+
+        double mean = brightnessNormalizer.getSmoothedMean();
+        if (Double.isNaN(mean)) return;
+
+        double target = VisionTuning.INIT_EXPOSURE_TARGET_MEAN;
+        double tolerance = Math.max(0.0, VisionTuning.INIT_EXPOSURE_TOLERANCE);
+        double delta = target - mean;
+        if (Math.abs(delta) <= tolerance) {
+            initExposureActive = false;
+            return;
+        }
+
+        int stepMs = (delta > 0) ? 1 : -1;
+        int desiredExposure = Math.max(1, initExposureAppliedMs + stepMs);
+        if (applyExposure(desiredExposure)) {
+            initExposureAppliedMs = desiredExposure;
+            initExposureStepsRemaining--;
+            initExposureLastAttemptMs = now;
+        } else {
+            initExposureActive = false;
+        }
+    }
+
+    private boolean applyExposure(int exposureMs) {
+        try {
+            ExposureControl exposureControl = portal.getCameraControl(ExposureControl.class);
+            if (exposureControl == null) return false;
+            try {
+                if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                    exposureControl.setMode(ExposureControl.Mode.Manual);
+                }
+            } catch (Throwable ignored) {}
+            exposureControl.setExposure(exposureMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void tryAttachBrightnessProcessor(AprilTagProcessor.Builder builder) {
+        if (builder == null) return;
+        Object proxy = buildBrightnessProcessorProxy();
+        if (proxy == null) return;
+        try {
+            Class<?> imageProcessorClass = Class.forName("org.firstinspires.ftc.vision.apriltag.AprilTagProcessor$ImageProcessor");
+            Method setter = builder.getClass().getMethod("setImageProcessor", imageProcessorClass);
+            setter.invoke(builder, proxy);
+        } catch (Throwable ignored) { /* SDKs without this hook skip normalization */ }
+    }
+
+    private Object buildBrightnessProcessorProxy() {
+        try {
+            Class<?> imageProcessorClass = Class.forName("org.firstinspires.ftc.vision.apriltag.AprilTagProcessor$ImageProcessor");
+            return Proxy.newProxyInstance(
+                    imageProcessorClass.getClassLoader(),
+                    new Class<?>[]{imageProcessorClass},
+                    (proxy, method, args) -> {
+                        if ("processFrame".equals(method.getName()) && args != null && args.length >= 2 && args[0] instanceof Mat) {
+                            long timestamp = 0L;
+                            Object tsArg = args[1];
+                            if (tsArg instanceof Number) {
+                                timestamp = ((Number) tsArg).longValue();
+                            }
+                            return brightnessNormalizer.processFrame((Mat) args[0], timestamp);
+                        }
+                        try { return method.getDefaultValue(); } catch (Throwable ignored) { return null; }
+                    });
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static final class BrightnessNormalizer {
+        private double targetMean;
+        private double tolerance;
+        private double minAlpha;
+        private double maxAlpha;
+        private double maxBeta;
+        private int smoothingWindow;
+        private double maxDelta;
+        private double clipLimit;
+        private int tileGrid;
+        private boolean normalizationEnabled;
+        private boolean adaptiveEnabled;
+
+        private double smoothedMean = Double.NaN;
+        private double lastAlpha = 1.0;
+        private double lastBeta = 0.0;
+        private final java.util.ArrayDeque<Double> meanWindow = new java.util.ArrayDeque<>();
+
+        public void configureFromTuning() {
+            normalizationEnabled = VisionTuning.ENABLE_BRIGHTNESS_NORMALIZATION;
+            adaptiveEnabled = VisionTuning.ENABLE_ADAPTIVE_EQUALIZATION;
+            targetMean = VisionTuning.TARGET_MEAN_BRIGHTNESS;
+            tolerance = Math.max(0.0, VisionTuning.BRIGHTNESS_TOLERANCE);
+            minAlpha = Math.max(0.0, VisionTuning.MIN_CONTRAST_GAIN);
+            maxAlpha = Math.max(minAlpha, VisionTuning.MAX_CONTRAST_GAIN);
+            maxBeta = Math.max(0.0, VisionTuning.MAX_BRIGHTNESS_OFFSET);
+            smoothingWindow = Math.max(1, VisionTuning.BRIGHTNESS_SMOOTHING_WINDOW);
+            maxDelta = Math.max(0.0, VisionTuning.MAX_PER_FRAME_ADJUST_DELTA);
+            clipLimit = Math.max(0.1, VisionTuning.ADAPTIVE_CLIP_LIMIT);
+            tileGrid = Math.max(1, VisionTuning.ADAPTIVE_TILE_GRID_SIZE);
+            smoothedMean = Double.NaN;
+            lastAlpha = 1.0;
+            lastBeta = 0.0;
+            meanWindow.clear();
+        }
+
+        public Mat processFrame(Mat input, long captureTimeNanos) {
+            if (input == null || input.empty()) return input;
+
+            Mat gray = input;
+            boolean converted = false;
+            if (input.channels() > 1) {
+                gray = new Mat();
+                Imgproc.cvtColor(input, gray, Imgproc.COLOR_RGBA2GRAY);
+                converted = true;
+            }
+
+            double mean = Core.mean(gray).val[0];
+            updateMean(mean);
+            double alpha = lastAlpha;
+            double beta = lastBeta;
+            boolean applyTransform = false;
+
+            if (normalizationEnabled) {
+                if (Double.isNaN(smoothedMean)) {
+                    smoothedMean = mean;
+                }
+                double delta = targetMean - smoothedMean;
+                if (Math.abs(delta) > tolerance) {
+                    double alphaCandidate = 1.0 + (delta / 255.0);
+                    alphaCandidate = clamp(alphaCandidate, minAlpha, maxAlpha);
+                    double betaCandidate = clamp(delta, -maxBeta, maxBeta);
+
+                    alpha = clamp(alphaCandidate, lastAlpha - maxDelta, lastAlpha + maxDelta);
+                    beta = clamp(betaCandidate, lastBeta - (maxDelta * 255.0), lastBeta + (maxDelta * 255.0));
+                    applyTransform = true;
+                }
+            }
+
+            Mat adjusted = gray;
+            if (applyTransform || adaptiveEnabled) {
+                adjusted = new Mat();
+                gray.convertTo(adjusted, CvType.CV_8U, alpha, beta);
+            }
+
+            if (adaptiveEnabled) {
+                CLAHE clahe = Imgproc.createCLAHE(clipLimit, new org.opencv.core.Size(tileGrid, tileGrid));
+                Mat equalized = new Mat();
+                clahe.apply(adjusted, equalized);
+                adjusted.release();
+                adjusted = equalized;
+            }
+
+            lastAlpha = alpha;
+            lastBeta = beta;
+
+            if (converted) {
+                input.release();
+            }
+            return adjusted;
+        }
+
+        private void updateMean(double newMean) {
+            meanWindow.addLast(newMean);
+            while (meanWindow.size() > smoothingWindow) {
+                meanWindow.removeFirst();
+            }
+            double sum = 0.0;
+            for (double v : meanWindow) sum += v;
+            smoothedMean = sum / meanWindow.size();
+        }
+
+        private double clamp(double value, double min, double max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        public BrightnessTelemetry snapshot() {
+            return new BrightnessTelemetry(
+                    normalizationEnabled,
+                    adaptiveEnabled,
+                    smoothedMean,
+                    targetMean,
+                    lastAlpha,
+                    lastBeta);
+        }
+
+        public double getSmoothedMean() {
+            return smoothedMean;
+        }
+    }
+
+    public static final class BrightnessTelemetry {
+        public final boolean normalizationEnabled;
+        public final boolean adaptiveEnabled;
+        public final double smoothedMean;
+        public final double targetMean;
+        public final double alpha;
+        public final double beta;
+
+        private BrightnessTelemetry(boolean normalizationEnabled,
+                                     boolean adaptiveEnabled,
+                                     double smoothedMean,
+                                     double targetMean,
+                                     double alpha,
+                                     double beta) {
+            this.normalizationEnabled = normalizationEnabled;
+            this.adaptiveEnabled = adaptiveEnabled;
+            this.smoothedMean = smoothedMean;
+            this.targetMean = targetMean;
+            this.alpha = alpha;
+            this.beta = beta;
+        }
     }
 
     // =============================================================

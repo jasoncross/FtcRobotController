@@ -76,6 +76,14 @@
  * CHANGES (2025-12-03): Surfaced vision lighting telemetry (mean/alpha/beta +
  *                       adaptive state) from the new normalization layer so
  *                       drivers can tune brightness on dark/bright fields.
+ * CHANGES (2025-12-03): Added goal-tag visibility tiers (raw/aim/smoothed),
+ *                       vision health telemetry, and normalized-preview
+ *                       plumbing for diagnostics while keeping AutoAim gating
+ *                       aligned with smoothed visibility.
+ * CHANGES (2025-12-03): AutoAim + AutoSpeed now rely solely on the
+ *                       alliance-correct goal tag; non-alliance tags remain
+ *                       limited to odometry blending so shooter targets stay
+ *                       aligned to field scoring intent.
  *
  * CHANGES (2025-11-22): Added a tunable master switch for long-shot lock biasing
  *                       so crews can revert to symmetric windows without code
@@ -251,11 +259,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private String visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
     private String visionPerfLine = "Perf: FPS=--- LatMs=---";
     private String visionLightingLine = null;
+    private String visionHealthLine = null;
     private boolean visionWarningShown = false;
     private ExecutorService visionTaskExecutor;
     private volatile boolean visionProfileSwapInProgress = false;
     private volatile VisionTuning.Mode visionProfileSwapMode = null;
     private volatile String visionProfileError = null;
+    private long visionHealthWindowStartMs = 0L;
+    private int visionHealthSamples = 0;
+    private int visionHealthGoodSamples = 0;
+    private double visionHealthMarginSum = 0.0;
+    private int visionHealthMarginCount = 0;
+    private double visionHealthBrightnessSum = 0.0;
+    private int visionHealthBrightnessCount = 0;
 
     // ---------------- AutoAim Loss Grace (CONFIGURABLE) ----------------
     private int  autoAimLossGraceMs = TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS; // Grace period to reacquire tag before disabling AutoAim
@@ -389,6 +405,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // ---- Vision Initialization ----
         vision = new VisionAprilTag();
         vision.init(hardwareMap, "Webcam 1");
+        vision.setGoalVisibilityTargetId(allianceGoalTagId());
         vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
         lastVisionTelemetryMs = 0L;
         visionWarningShown = false;
@@ -428,13 +445,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // AutoAim toggle (gated by current tag visibility)
         controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-            int targetId = (alliance() == Alliance.BLUE)
-                    ? VisionAprilTag.TAG_BLUE_GOAL
-                    : VisionAprilTag.TAG_RED_GOAL;
-            AprilTagDetection detNow = vision.getDetectionFor(targetId);
-
+            int targetId = allianceGoalTagId();
+            boolean hasGoal = (vision != null) && vision.hasAnyGoalTagForTarget(targetId);
             if (!autoAimEnabled) {
-                if (detNow != null) {
+                if (hasGoal) {
                     autoAimEnabled = true;
                     aimLossStartMs = -1;
                     pulseDouble(gamepad1);
@@ -695,14 +709,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double appliedAimSpeedScale = 1.0;
 
         // Alliance target
-        int targetId = (alliance() == Alliance.BLUE)
-                ? VisionAprilTag.TAG_BLUE_GOAL
-                : VisionAprilTag.TAG_RED_GOAL;
+        int targetId = allianceGoalTagId();
+        if (vision != null) {
+            vision.setGoalVisibilityTargetId(targetId);
+        }
 
         // Vision
-        AprilTagDetection goalDet = vision.getDetectionFor(targetId);
-        AprilTagDetection poseDet = vision.getClosestGoalDetection();
-        AprilTagDetection telemetryDet = (goalDet != null) ? goalDet : poseDet;
+        AprilTagDetection goalDet = (vision != null) ? vision.getDetectionFor(targetId) : null;
+        AprilTagDetection poseDet = (vision != null) ? vision.getClosestGoalDetection() : null;
+        AprilTagDetection telemetryDet = goalDet;
+        AprilTagDetection aimDet = goalDet;
+        boolean goalVisibleAny = (vision != null) && vision.hasAnyGoalTagForTarget(targetId);
+        boolean goalVisibleForAim = (vision != null) && vision.hasGoodGoalTagForAim(targetId);
+        boolean goalVisibleSmoothed = (vision != null) && vision.isGoalTagVisibleSmoothedForAim();
 
         if (telemetryDet != null) {
             double hDeg  = telemetryDet.ftcPose.bearing;
@@ -713,7 +732,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
-        updateAutoAimNudge(goalDet);
+        updateAutoAimNudge(aimDet);
 
         Double distanceForLockIn = (goalDet != null) ? getGoalDistanceInchesScaled(goalDet) : null;
         boolean longShotMode = isLongShot(distanceForLockIn);
@@ -725,9 +744,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
             driveY  *= appliedAimSpeedScale;
             strafeX *= appliedAimSpeedScale;
-            if (goalDet != null) {
+            if (goalVisibleSmoothed && aimDet != null) {
                 aimLossStartMs = -1L;
-                twist = aim.turnPower(goalDet); // ignore right stick
+                twist = aim.turnPower(aimDet); // ignore right stick
             } else {
                 if (aimLossStartMs < 0) aimLossStartMs = now;
                 if ((now - aimLossStartMs) >= autoAimLossGraceMs) {
@@ -740,8 +759,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         } else {
             // Manual aim-window rumble when AutoAim is OFF
-            if (aimRumbleEnabled && goalDet != null && aimRumbleDriver1 != null) {
-                aimRumbleDriver1.update(goalDet.ftcPose.bearing);
+            if (aimRumbleEnabled && goalVisibleForAim && aimDet != null && aimRumbleDriver1 != null) {
+                aimRumbleDriver1.update(aimDet.ftcPose.bearing);
             }
         }
 
@@ -820,15 +839,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (manualRpmLocked) telemetry.addData("ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
         if (autoAimEnabled) telemetry.addData("SpeedScale", String.format(Locale.US, "%.2f", appliedAimSpeedScale));
-        telemetry.addData("Tag Visible", (goalDet != null) ? "YES" : "NO");
+        telemetry.addData("Tag Visible", goalVisibleAny ? "YES" : "NO");
         telemetry.addData("AutoAim Grace (ms)", autoAimLossGraceMs);
-        if (autoAimEnabled && aimLossStartMs >= 0 && goalDet == null) {
+        if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
             telemetry.addData("AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
         }
 
         telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
-        Double rawIn = getGoalDistanceInchesScaled(goalDet);
-        updateVisionTelemetry(goalDet, rawIn);
+        Double rawIn = getGoalDistanceInchesScaled((aimDet != null) ? aimDet : goalDet);
+        updateVisionTelemetry(aimDet, rawIn);
         telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
         telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
         telemetry.addData("ShotRangeMode", longShotMode ? "LONG" : "NORMAL");
@@ -854,6 +873,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         telemetry.addLine(visionPerfLine);
         if (visionLightingLine != null) {
             telemetry.addLine(visionLightingLine);
+        }
+        if (visionHealthLine != null) {
+            telemetry.addLine(visionHealthLine);
         }
         if (visionProfileError != null) {
             telemetry.addLine("Vision profile error: " + visionProfileError);
@@ -908,7 +930,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
-    private void updateVisionTelemetry(AprilTagDetection goalDet, Double rawDistanceIn) {
+    private void updateVisionTelemetry(AprilTagDetection aimDet, Double rawDistanceIn) {
         if (vision == null) return;
         long now = System.currentTimeMillis();
         if ((now - lastVisionTelemetryMs) < 100) return; // ~10 Hz updates
@@ -923,6 +945,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             visionStatusLine = String.format(Locale.US, "Vision: Switching to %s …", pendingName);
             visionPerfLine = "Perf: --- LatMs=--- (profile swap)";
             visionLightingLine = null;
+            visionHealthLine = null;
+            resetVisionHealthWindow(now);
             return;
         }
 
@@ -949,8 +973,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionPerfLine = String.format(Locale.US, "Perf: FPS=%s LatMs=%s", fpsStr, latencyStr);
 
         VisionAprilTag.BrightnessTelemetry brightness = vision.getBrightnessTelemetry();
+        double brightnessMean = Double.NaN;
         if (brightness != null && (brightness.normalizationEnabled || brightness.adaptiveEnabled)) {
-            String meanStr = Double.isNaN(brightness.smoothedMean) ? "---" : String.format(Locale.US, "%.0f", brightness.smoothedMean);
+            brightnessMean = brightness.smoothedMean;
+            String meanStr = Double.isNaN(brightnessMean) ? "---" : String.format(Locale.US, "%.0f", brightnessMean);
             String alphaStr = String.format(Locale.US, "%.2f", brightness.alpha);
             String betaStr = String.format(Locale.US, "%.0f", brightness.beta);
             visionLightingLine = String.format(Locale.US,
@@ -963,6 +989,80 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } else {
             visionLightingLine = null;
         }
+
+        boolean goalVisibleForAim = vision.hasGoodGoalTagForAim(allianceGoalTagId());
+        updateVisionHealthTelemetry(goalVisibleForAim, aimDet, brightnessMean, profile, now);
+    }
+
+    private void updateVisionHealthTelemetry(boolean goalVisibleForAim,
+                                             AprilTagDetection aimDet,
+                                             double brightnessMean,
+                                             VisionTuning.Profile profile,
+                                             long nowMs) {
+        if (profile == null) return;
+        if (visionHealthWindowStartMs == 0L) visionHealthWindowStartMs = nowMs;
+
+        visionHealthSamples++;
+        if (goalVisibleForAim) visionHealthGoodSamples++;
+        if (aimDet != null && !Double.isNaN(aimDet.decisionMargin)) {
+            visionHealthMarginSum += aimDet.decisionMargin;
+            visionHealthMarginCount++;
+        }
+        if (!Double.isNaN(brightnessMean)) {
+            visionHealthBrightnessSum += brightnessMean;
+            visionHealthBrightnessCount++;
+        }
+
+        if ((nowMs - visionHealthWindowStartMs) < 1500) {
+            return;
+        }
+
+        double ratio = (visionHealthSamples > 0) ? (double) visionHealthGoodSamples / visionHealthSamples : 0.0;
+        double avgMargin = (visionHealthMarginCount > 0) ? visionHealthMarginSum / visionHealthMarginCount : Double.NaN;
+        double avgBrightness = (visionHealthBrightnessCount > 0) ? visionHealthBrightnessSum / visionHealthBrightnessCount : Double.NaN;
+
+        boolean brightnessExtreme = !Double.isNaN(avgBrightness)
+                && Math.abs(avgBrightness - VisionTuning.TARGET_MEAN_BRIGHTNESS) > VisionTuning.HEALTH_BRIGHTNESS_WARN_DELTA;
+        boolean marginLow = !Double.isNaN(avgMargin)
+                && avgMargin < (profile.minDecisionMargin - VisionTuning.HEALTH_MARGIN_WARN_DELTA);
+
+        String state;
+        if (visionHealthSamples == 0) {
+            state = "FAIL";
+        } else if (ratio >= VisionTuning.HEALTH_PASS_GOOD_RATIO
+                && !marginLow
+                && !brightnessExtreme
+                && !Double.isNaN(avgMargin)
+                && avgMargin >= profile.minDecisionMargin) {
+            state = "OK";
+        } else if (ratio >= VisionTuning.HEALTH_WARN_GOOD_RATIO && !marginLow && !brightnessExtreme) {
+            state = "WEAK";
+        } else {
+            state = "FAIL";
+        }
+
+        String marginStr = Double.isNaN(avgMargin) ? "--" : String.format(Locale.US, "%.1f", avgMargin);
+        String brightStr = Double.isNaN(avgBrightness) ? "--" : String.format(Locale.US, "%.0f", avgBrightness);
+        visionHealthLine = String.format(Locale.US,
+                "Vision Health: %s (good=%d/%d margin=%s min=%.0f mean=%s)",
+                state,
+                visionHealthGoodSamples,
+                visionHealthSamples,
+                marginStr,
+                profile.minDecisionMargin,
+                brightStr);
+
+        resetVisionHealthWindow(nowMs);
+    }
+
+    private void resetVisionHealthWindow(long nowMs) {
+        visionHealthWindowStartMs = nowMs;
+        visionHealthSamples = 0;
+        visionHealthGoodSamples = 0;
+        visionHealthMarginSum = 0.0;
+        visionHealthMarginCount = 0;
+        visionHealthBrightnessSum = 0.0;
+        visionHealthBrightnessCount = 0;
     }
 
     private void applyAutoSpeedEnablement(boolean enable, boolean stopOnDisable) {
@@ -1198,6 +1298,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
             return false;
         }
         return distanceIn != null && distanceIn >= AutoAimTuning.LONG_SHOT_DISTANCE_IN;
+    }
+
+    private int allianceGoalTagId() {
+        return (alliance() == Alliance.BLUE)
+                ? VisionAprilTag.TAG_BLUE_GOAL
+                : VisionAprilTag.TAG_RED_GOAL;
     }
 
     private void adjustAutoRpmTweak(int directionSign) {

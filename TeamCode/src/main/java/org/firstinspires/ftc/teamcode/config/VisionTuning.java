@@ -44,9 +44,9 @@ public final class VisionTuning {
     public static final int P480_WIDTH = 640;                           // Camera capture width in pixels for Performance profile
     public static final int P480_HEIGHT = 480;                          // Camera capture height in pixels for Performance profile
     public static final int P480_FPS = 30;                              // Target frame rate for Performance profile (Control Hub friendly)
-    public static final float P480_DECIMATION = 2.8f;                   // AprilTag decimation (higher skips pixels for speed)
+    public static final float P480_DECIMATION = 2.0f;                   // AprilTag decimation (higher skips pixels for speed)
     public static final int P480_PROCESS_EVERY_N = 1;                   // Process every frame (no skipping) when in Performance mode
-    public static final double P480_MIN_DECISION_MARGIN = 18.0;         // Reject detections with weaker decision margins than this threshold
+    public static final double P480_MIN_DECISION_MARGIN = 12.0;         // Reject detections with weaker decision margins than this threshold
     public static final int P480_EXPOSURE_MS = 6;                      // Manual exposure in milliseconds tuned for indoor lighting
     public static final int P480_GAIN = 85;                             // Camera-native gain for stable image brightness at 480p
     public static final boolean P480_WHITE_BALANCE_LOCK = true;         // Lock white balance after start to prevent drift
@@ -259,6 +259,18 @@ public final class VisionTuning {
     public static double INIT_EXPOSURE_TARGET_MEAN = 120.0;          // Target mean used for INIT exposure tuning (matches TARGET_MEAN_BRIGHTNESS by default)
     public static double INIT_EXPOSURE_TOLERANCE = 10.0;             // Allowed band around INIT target before nudging exposure
     public static int INIT_EXPOSURE_MAX_STEPS = 2;                   // Max number of single-step exposure nudges applied during INIT
+
+    // Goal-tag visibility smoothing + aim margin flex (all units: frames or margin points)
+    public static final int GOAL_VISIBILITY_ON_STREAK = 3;            // Frames required to declare smoothed goal visibility ON
+    public static final int GOAL_VISIBILITY_OFF_STREAK = 5;           // Frames required to declare smoothed goal visibility OFF
+    public static final double GOAL_TAG_MIN_MARGIN_FLOOR = 8.0;       // Lowest allowable decision margin when flexing thresholds
+    public static final double GOAL_TAG_P480_MARGIN_FLEX = 2.0;       // Amount to relax the decision margin in P480 for aim gating
+
+    // Vision health sampling thresholds
+    public static final double HEALTH_PASS_GOOD_RATIO = 0.80;         // Minimum good/total ratio for a PASS classification
+    public static final double HEALTH_WARN_GOOD_RATIO = 0.40;         // Minimum good/total ratio for a WARN classification
+    public static final double HEALTH_MARGIN_WARN_DELTA = 2.0;        // Allowed shortfall (points) below profile minDecisionMargin before FAIL
+    public static final double HEALTH_BRIGHTNESS_WARN_DELTA = 15.0;   // Allowed deviation (points) from target mean before lighting is considered extreme
 
     // 640x480 calibrated intrinsics (Logitech C270 default profile)
     public static boolean HAS_480P_INTRINSICS = PROFILE_480.hasIntrinsics();

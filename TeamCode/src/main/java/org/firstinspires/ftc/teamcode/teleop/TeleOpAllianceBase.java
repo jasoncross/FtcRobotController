@@ -73,6 +73,9 @@
  * CHANGES (2025-11-25): Added odometry carryover via PoseStore plus AprilTag
  *                       re-localization during INIT so TeleOp starts with a
  *                       continuous fused pose for dashboard overlays.
+ * CHANGES (2025-12-03): Surfaced vision lighting telemetry (mean/alpha/beta +
+ *                       adaptive state) from the new normalization layer so
+ *                       drivers can tune brightness on dark/bright fields.
  *
  * CHANGES (2025-11-22): Added a tunable master switch for long-shot lock biasing
  *                       so crews can revert to symmetric windows without code
@@ -247,6 +250,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private long lastVisionTelemetryMs = 0L;      // Throttle (~10 Hz) for vision status lines
     private String visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
     private String visionPerfLine = "Perf: FPS=--- LatMs=---";
+    private String visionLightingLine = null;
     private boolean visionWarningShown = false;
     private ExecutorService visionTaskExecutor;
     private volatile boolean visionProfileSwapInProgress = false;
@@ -848,6 +852,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         telemetry.addLine(visionStatusLine);
         telemetry.addLine(visionPerfLine);
+        if (visionLightingLine != null) {
+            telemetry.addLine(visionLightingLine);
+        }
         if (visionProfileError != null) {
             telemetry.addLine("Vision profile error: " + visionProfileError);
             visionProfileError = null;
@@ -915,6 +922,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             visionStatusLine = String.format(Locale.US, "Vision: Switching to %s …", pendingName);
             visionPerfLine = "Perf: --- LatMs=--- (profile swap)";
+            visionLightingLine = null;
             return;
         }
 
@@ -939,6 +947,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
         String fpsStr = (fps == null) ? "---" : String.format(Locale.US, "%.1f", fps);
         String latencyStr = (latency == null) ? "---" : String.format(Locale.US, "%.0f", latency);
         visionPerfLine = String.format(Locale.US, "Perf: FPS=%s LatMs=%s", fpsStr, latencyStr);
+
+        VisionAprilTag.BrightnessTelemetry brightness = vision.getBrightnessTelemetry();
+        if (brightness != null && (brightness.normalizationEnabled || brightness.adaptiveEnabled)) {
+            String meanStr = Double.isNaN(brightness.smoothedMean) ? "---" : String.format(Locale.US, "%.0f", brightness.smoothedMean);
+            String alphaStr = String.format(Locale.US, "%.2f", brightness.alpha);
+            String betaStr = String.format(Locale.US, "%.0f", brightness.beta);
+            visionLightingLine = String.format(Locale.US,
+                    "VisionLight: Mean=%s→%.0f α=%s β=%s Adaptive=%s",
+                    meanStr,
+                    brightness.targetMean,
+                    alphaStr,
+                    betaStr,
+                    brightness.adaptiveEnabled ? "ON" : "OFF");
+        } else {
+            visionLightingLine = null;
+        }
     }
 
     private void applyAutoSpeedEnablement(boolean enable, boolean stopOnDisable) {

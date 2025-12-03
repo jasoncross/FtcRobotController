@@ -110,6 +110,8 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Every feed request performs a brief AutoAim nudge whenever a goal tag is visible—even if AutoAim is toggled off—then restores the driver’s AutoAim setting after the shot.
   - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
+  - Long-shot aim bias now stays latched until a new tag distance is read so brief vision dropouts do not flip between NORMAL and LONG windows.
+  - All driver-station telemetry lines mirror to FTC Dashboard with graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels for tuning.
 
 ### 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
 - **Role:** Provides a fused field pose for Auto and TeleOp using drive wheel deltas, IMU heading, and AprilTag goal detections.

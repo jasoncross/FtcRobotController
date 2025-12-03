@@ -224,7 +224,12 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Telemetry bundle (≈10 Hz):**
   - `Vision: Profile=<P480|P720> LiveView=<ON|OFF> Res=<WxH>@<FPS> Decim=<x.x> ProcN=<n> MinM=<m>`
   - `Perf: FPS=<measured> LatMs=<latest>`
+  - `VisionLight: Mean=<smoothed>→<target> α=<alpha> β=<beta> Adaptive=<ON|OFF>` (shown when lighting normalization is enabled)
 - **Driver feedback:** Telemetry raises a one-time warning if the webcam does not accept manual exposure/gain/white-balance commands.
+- **Lighting normalization:**
+  - Before AprilTag solving, frames optionally pass through a tunable alpha/beta normalization layer that nudges brightness toward `VisionTuning.TARGET_MEAN_BRIGHTNESS` within `BRIGHTNESS_TOLERANCE` and clamps changes by `MIN/MAX_CONTRAST_GAIN`, `MAX_BRIGHTNESS_OFFSET`, and `MAX_PER_FRAME_ADJUST_DELTA` to avoid flicker.
+  - Optional adaptive equalization (CLAHE) runs afterward when `ENABLE_ADAPTIVE_EQUALIZATION` is true, using `ADAPTIVE_CLIP_LIMIT` and `ADAPTIVE_TILE_GRID_SIZE`.
+  - During INIT, a small bounded exposure nudge (`ENABLE_INIT_EXPOSURE_TUNING`) can apply up to `INIT_EXPOSURE_MAX_STEPS` one-step exposure changes toward `INIT_EXPOSURE_TARGET_MEAN` before START. Disable if the camera ignores exposure commands.
 
 **Aim Controller Defaults**
 ```
@@ -358,6 +363,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-03** – Added tunable lighting normalization for the AprilTag pipeline (alpha/beta smoothing, optional CLAHE, and INIT exposure nudge) with TeleOp telemetry showing mean/alpha/beta/adaptive state so teams can stabilize detections under different field lighting, and hardened the hook with reflection so builds succeed even when the SDK omits the image-processor interface.
 - **2025-12-02** – Preserved single-tap fire behavior even when the FeedStop release hold window is
  set to **0 ms** by only blocking taps when a nonzero release window is configured while still allowing
  immediate continuous holds, and fixed controller bindings so LB can run both tap-to-fire **and** hold-

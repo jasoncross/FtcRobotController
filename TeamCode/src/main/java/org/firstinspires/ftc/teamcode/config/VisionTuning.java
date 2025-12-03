@@ -13,6 +13,11 @@
  *                       Converted VisionTuning to explicit named constants
  *                       per 480p and 720p profile for easy editing, while
  *                       preserving legacy mirror fields and runtime behavior.
+ * CHANGES (2025-12-03): Added lighting-normalization tunables (brightness
+ *                       target/tolerance, contrast clamps, adaptive
+ *                       equalization, and optional INIT exposure nudges) so
+ *                       AprilTag processing remains stable across lighting
+ *                       conditions without rewriting vision callers.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Vision & range calibration)
  *   - RANGE_SCALE
@@ -233,6 +238,27 @@ public final class VisionTuning {
     public static int EXPOSURE_MS = DEFAULT_PROFILE.exposureMs;      // manual exposure in milliseconds
     public static int GAIN = DEFAULT_PROFILE.gain;                   // camera-native gain units
     public static boolean WHITE_BALANCE_LOCK_ENABLED = DEFAULT_PROFILE.whiteBalanceLock;
+
+    // Lighting normalization toggles and parameters (AprilTag pre-processing)
+    public static boolean ENABLE_BRIGHTNESS_NORMALIZATION = true;    // Global alpha/beta frame normalization toggle
+    public static boolean ENABLE_ADAPTIVE_EQUALIZATION = false;      // Enable CLAHE-style adaptive equalization after alpha/beta
+    public static double TARGET_MEAN_BRIGHTNESS = 120.0;             // Target grayscale mean (0–255) to aim toward before tag solve
+    public static double BRIGHTNESS_TOLERANCE = 8.0;                 // Allowed delta from target mean before any adjustment occurs
+    public static double MIN_CONTRAST_GAIN = 0.9;                    // Lower clamp for contrast gain (alpha)
+    public static double MAX_CONTRAST_GAIN = 1.2;                    // Upper clamp for contrast gain (alpha)
+    public static double MAX_BRIGHTNESS_OFFSET = 25.0;               // Maximum |beta| brightness shift per frame (pixel units)
+    public static int BRIGHTNESS_SMOOTHING_WINDOW = 5;               // Frames in the moving-average window for mean brightness
+    public static double MAX_PER_FRAME_ADJUST_DELTA = 0.08;          // Max change per frame for alpha/beta to prevent flicker
+
+    // Optional adaptive equalization details (applied after alpha/beta when enabled)
+    public static double ADAPTIVE_CLIP_LIMIT = 2.0;                  // CLAHE clip limit to bound contrast expansion
+    public static int ADAPTIVE_TILE_GRID_SIZE = 8;                   // Square tile grid size (pixels) used by adaptive equalizer
+
+    // Optional INIT-time exposure nudging (single bounded correction before START)
+    public static boolean ENABLE_INIT_EXPOSURE_TUNING = true;        // Toggle a one-time exposure nudge during INIT based on brightness
+    public static double INIT_EXPOSURE_TARGET_MEAN = 120.0;          // Target mean used for INIT exposure tuning (matches TARGET_MEAN_BRIGHTNESS by default)
+    public static double INIT_EXPOSURE_TOLERANCE = 10.0;             // Allowed band around INIT target before nudging exposure
+    public static int INIT_EXPOSURE_MAX_STEPS = 2;                   // Max number of single-step exposure nudges applied during INIT
 
     // 640x480 calibrated intrinsics (Logitech C270 default profile)
     public static boolean HAS_480P_INTRINSICS = PROFILE_480.hasIntrinsics();

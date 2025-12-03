@@ -80,6 +80,10 @@
  *                       vision health telemetry, and normalized-preview
  *                       plumbing for diagnostics while keeping AutoAim gating
  *                       aligned with smoothed visibility.
+ * CHANGES (2025-12-03): Mirrored driver-station telemetry onto FTC Dashboard
+ *                       with graphable launcher RPM channels and made long-shot
+ *                       mode sticky until a new distance reading arrives so
+ *                       brief tag dropouts no longer flip the shot window.
  * CHANGES (2025-12-03): AutoAim + AutoSpeed now rely solely on the
  *                       alliance-correct goal tag; non-alliance tags remain
  *                       limited to odometry blending so shooter targets stay
@@ -176,6 +180,8 @@ import org.firstinspires.ftc.teamcode.config.TagAimTuning;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag range calibration
 
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -236,6 +242,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private Gamepad autoSpeedTogglePad = null;
     private AutoSpeedRumble autoSpeedToggleRumble = AutoSpeedRumble.NONE;
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
+    private boolean longShotMode     = false;                     // Sticky long/normal shot window selection
 
     // AutoRPM tweak (per-press percentage scaling while AutoSpeed is enabled)
     private double autoRpmTweakScale  = TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE;
@@ -549,16 +556,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
         // ---- FIRST LINE telemetry (init): obelisk memory ----
-        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
-        telemetry.addData("TeleOp", "Alliance: %s", alliance());
-        telemetry.addData("Startup Defaults", "AutoSpeed=%s  AutoAim=%s  Intake=%s",
+        List<String> initDashboardLines = new ArrayList<>();
+        mirrorData(initDashboardLines, "Obelisk", "%s", ObeliskSignal.getDisplay());
+        mirrorData(initDashboardLines, "TeleOp", "Alliance: %s", alliance());
+        mirrorData(initDashboardLines, "Startup Defaults", "AutoSpeed=%s  AutoAim=%s  Intake=%s",
                 DEFAULT_AUTOSPEED_ENABLED ? "ON" : "OFF",
                 DEFAULT_AUTOAIM_ENABLED   ? "ON" : "OFF",
                 DEFAULT_INTAKE_ENABLED    ? "ON" : "OFF");
         if (autoStopTimerEnabled) {
-            telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
+            mirrorLine(initDashboardLines, String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
         }
         telemetry.update();
+        sendDashboard(fusedPose, "INIT", initDashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
     }
 
     @Override
@@ -567,23 +576,24 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (odometry != null) {
             fusedPose = odometry.getPose();
         }
+        List<String> dashboardLines = new ArrayList<>();
         if (feed != null) {
             feed.update();
             if (feed.wasWindowLimitReached()) {
-                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+                mirrorLine(dashboardLines, "FeedStop: scale window hit bounds – angles trimmed.");
             } else if (feed.wasAngleClamped()) {
-                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+                mirrorLine(dashboardLines, "FeedStop: angles trimmed to fit available span.");
             }
             if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
-                telemetry.addLine(feed.getSoftLimitMessage());
+                mirrorLine(dashboardLines, feed.getSoftLimitMessage());
             }
             if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
-                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+                mirrorLine(dashboardLines, "FeedStop: " + feed.getHomeAbortMessage());
             }
-            telemetry.addLine(feed.getFeedStopSummaryLine());
+            mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
         telemetry.update();
-        sendDashboard(fusedPose, "INIT");
+        sendDashboard(fusedPose, "INIT", dashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
     }
 
     @Override
@@ -611,6 +621,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         autoSpeedToggleTarget = autoSpeedEnabled;
 
         reverseDriveMode = false;
+        longShotMode = false;
 
         visionProfileSwapInProgress = false;
         visionProfileSwapMode = null;
@@ -635,6 +646,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (feed != null) feed.update();
         updateIntakeFlow();
         updatePendingToggleRumbles(now);
+        List<String> dashboardLines = new ArrayList<>();
 
         if (!poseSeeded) {
             maybeSeedPoseFromVision();
@@ -653,7 +665,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             int remSec = (int)Math.ceil(remainingMs / 1000.0);
             int mm = remSec / 60, ss = remSec % 60;
 
-            telemetry.addLine(String.format(Locale.US, "⏱ AutoStop: %02d:%02d %s",
+            mirrorLine(dashboardLines, String.format(Locale.US, "⏱ AutoStop: %02d:%02d %s",
                     mm, ss, (autoStopTriggered || stopLatched) ? "(STOPPED)" : ""));
 
             if (!autoStopTriggered && remainingMs == 0) {
@@ -665,14 +677,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     intakeResumeState = intake.isOn();
                 }
                 stopAll();
-                telemetry.addLine("⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
+                mirrorLine(dashboardLines, "⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
         }
 
         // If STOP is latched, hold zero outputs and render minimal status, then return early.
         if (stopLatched) {
-            onStoppedLoopHold();
-            sendDashboard(fusedPose, "STOPPED");
+            onStoppedLoopHold(dashboardLines);
+            sendDashboard(fusedPose, "STOPPED", dashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
             return;
         }
 
@@ -735,7 +747,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateAutoAimNudge(aimDet);
 
         Double distanceForLockIn = (goalDet != null) ? getGoalDistanceInchesScaled(goalDet) : null;
-        boolean longShotMode = isLongShot(distanceForLockIn);
+        if (!AutoAimTuning.LONG_SHOT_ENABLED) {
+            longShotMode = false;
+        } else if (distanceForLockIn != null) {
+            longShotMode = isLongShot(distanceForLockIn);
+        }
         LockWindow lockWindow = computeLockWindow(longShotMode, TagAimTuning.DEADBAND_DEG);
         aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
 
@@ -816,93 +832,99 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // --- Observe obelisk tags (IDs 21..23) and persist optimal order ---
         if (vision != null) vision.observeObelisk();
 
+        double rpmTarget = getRpmTarget();
+        double rpmLeft = getRpmLeft();
+        double rpmRight = getRpmRight();
+        double rpmAverage = getRpmAverage();
+
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
-        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
+        String obeliskDisplay = ObeliskSignal.getDisplay();
+        mirrorData(dashboardLines, "Obelisk", "%s", obeliskDisplay);
 
         // Telemetry (top block)
-        telemetry.addData("Alliance", "%s", alliance());
-        telemetry.addData("Intake", intake.getTelemetrySummary());
-        telemetry.addData("AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
-        telemetry.addData("AutoAim", autoAimEnabled ? "ON" : "OFF");
-        telemetry.addData("Reverse", reverseDriveMode ? "ON" : "OFF");
-        telemetry.addData("RPM Target / Actual", "%.0f / L:%.0f R:%.0f", launcher.targetRpm, launcher.getLeftRpm(), launcher.getRightRpm());
+        mirrorData(dashboardLines, "Alliance", "%s", alliance());
+        mirrorData(dashboardLines, "Intake", intake.getTelemetrySummary());
+        mirrorData(dashboardLines, "AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
+        mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
+        mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
+        mirrorData(dashboardLines, "RPM Target / Actual", "%.0f / L:%.0f R:%.0f", rpmTarget, rpmLeft, rpmRight);
         if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
             double pct = (autoRpmTweakFactor - 1.0) * 100.0;
             double rpmDelta = autoOutRpmCommanded - autoOutRpm;
-            telemetry.addData("AutoRPM Tweak", "ACTIVE: %+4.1f%% (%+.0f rpm)", pct, rpmDelta);
+            mirrorData(dashboardLines, "AutoRPM Tweak", "ACTIVE: %+4.1f%% (%+.0f rpm)", pct, rpmDelta);
         }
-        telemetry.addData("Pose (X,Y,H)", "%.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg);
+        mirrorData(dashboardLines, "Pose (X,Y,H)", "%.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg);
 
-        telemetry.addLine();
+        mirrorLine(dashboardLines, "");
 
-        telemetry.addData("BrakeCap", "%.2f", cap);
-        if (manualRpmLocked) telemetry.addData("ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
-        telemetry.addData("RT", "%.2f", gamepad1.right_trigger);
-        if (autoAimEnabled) telemetry.addData("SpeedScale", String.format(Locale.US, "%.2f", appliedAimSpeedScale));
-        telemetry.addData("Tag Visible", goalVisibleAny ? "YES" : "NO");
-        telemetry.addData("AutoAim Grace (ms)", autoAimLossGraceMs);
+        mirrorData(dashboardLines, "BrakeCap", "%.2f", cap);
+        if (manualRpmLocked) mirrorData(dashboardLines, "ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
+        mirrorData(dashboardLines, "RT", "%.2f", gamepad1.right_trigger);
+        if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
+        mirrorData(dashboardLines, "Tag Visible", goalVisibleAny ? "YES" : "NO");
+        mirrorData(dashboardLines, "AutoAim Grace (ms)", autoAimLossGraceMs);
         if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
-            telemetry.addData("AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
+            mirrorData(dashboardLines, "AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
         }
 
-        telemetry.addData("Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format("%.1f", smHeadingDeg));
+        mirrorData(dashboardLines, "Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg));
         Double rawIn = getGoalDistanceInchesScaled((aimDet != null) ? aimDet : goalDet);
         updateVisionTelemetry(aimDet, rawIn);
-        telemetry.addData("Tag Distance (in)", (rawIn == null) ? "---" : String.format("%.1f", rawIn));
-        telemetry.addData("Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format("%.1f", smRangeMeters * M_TO_IN));
-        telemetry.addData("ShotRangeMode", longShotMode ? "LONG" : "NORMAL");
+        mirrorData(dashboardLines, "Tag Distance (in)", (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn));
+        mirrorData(dashboardLines, "Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN));
+        mirrorData(dashboardLines, "ShotRangeMode", longShotMode ? "LONG" : "NORMAL");
 
         if (autoRpmActive && !rpmTestEnabled) {
-            telemetry.addData("AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format("%.1f", autoDistIn));
-            telemetry.addData("AutoRPM Out", "%.0f (x%.3f → %.0f)", autoOutRpm, autoRpmTweakFactor, autoOutRpmCommanded);
+            mirrorData(dashboardLines, "AutoRPM In (in)", (autoDistIn == null) ? "---" : String.format(Locale.US, "%.1f", autoDistIn));
+            mirrorData(dashboardLines, "AutoRPM Out", "%.0f (x%.3f → %.0f)", autoOutRpm, autoRpmTweakFactor, autoOutRpmCommanded);
             double[] calDist = autoCtrl.getCalibrationDistancesIn();
             double[] calRpm  = autoCtrl.getCalibrationSpeedsRpm();
             if (calDist.length > 0) {
                 int lastIdx = calDist.length - 1;
-                telemetry.addData("AutoRPM Tunables",
+                mirrorData(dashboardLines, "AutoRPM Tunables",
                         "%d pts %.0f\"→%.0f … %.0f\"→%.0f",
                         calDist.length,
                         calDist[0], calRpm[0],
                         calDist[lastIdx], calRpm[lastIdx]);
             } else {
-                telemetry.addData("AutoRPM Tunables", "No calibration points loaded");
+                mirrorData(dashboardLines, "AutoRPM Tunables", "No calibration points loaded");
             }
-            telemetry.addData("AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
+            mirrorData(dashboardLines, "AutoRPM Smoothing α", "%.2f", autoCtrl.getSmoothingAlpha());
         }
-        telemetry.addLine(visionStatusLine);
-        telemetry.addLine(visionPerfLine);
+        mirrorLine(dashboardLines, visionStatusLine);
+        mirrorLine(dashboardLines, visionPerfLine);
         if (visionLightingLine != null) {
-            telemetry.addLine(visionLightingLine);
+            mirrorLine(dashboardLines, visionLightingLine);
         }
         if (visionHealthLine != null) {
-            telemetry.addLine(visionHealthLine);
+            mirrorLine(dashboardLines, visionHealthLine);
         }
         if (visionProfileError != null) {
-            telemetry.addLine("Vision profile error: " + visionProfileError);
+            mirrorLine(dashboardLines, "Vision profile error: " + visionProfileError);
             visionProfileError = null;
         }
         if (!visionWarningShown && vision != null) {
             String warn = vision.consumeControlWarning();
             if (warn != null) {
-                telemetry.addLine(warn);
+                mirrorLine(dashboardLines, warn);
                 visionWarningShown = true;
             }
         }
         if (feed != null) {
             if (feed.wasWindowLimitReached()) {
-                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+                mirrorLine(dashboardLines, "FeedStop: scale window hit bounds – angles trimmed.");
             } else if (feed.wasAngleClamped()) {
-                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+                mirrorLine(dashboardLines, "FeedStop: angles trimmed to fit available span.");
             }
             if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
-                telemetry.addLine(feed.getSoftLimitMessage());
+                mirrorLine(dashboardLines, feed.getSoftLimitMessage());
             }
             if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
-                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+                mirrorLine(dashboardLines, "FeedStop: " + feed.getHomeAbortMessage());
             }
-            telemetry.addLine(feed.getFeedStopSummaryLine());
+            mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
-        sendDashboard(fusedPose, "RUN");
+        sendDashboard(fusedPose, "RUN", dashboardLines, rpmTarget, rpmAverage, rpmLeft, rpmRight);
         telemetry.update();
     }
 
@@ -919,6 +941,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // =========================================================================
     // HELPERS
     // =========================================================================
+    private double getRpmTarget() {
+        return (launcher != null) ? launcher.targetRpm : 0.0;
+    }
+
+    private double getRpmLeft() {
+        return (launcher != null) ? launcher.getLeftRpm() : 0.0;
+    }
+
+    private double getRpmRight() {
+        return (launcher != null) ? launcher.getRightRpm() : 0.0;
+    }
+
+    private double getRpmAverage() {
+        return (launcher != null) ? launcher.getCurrentRpm() : 0.0;
+    }
+
     private void maybeSeedPoseFromVision() {
         if (poseSeeded || odometry == null || vision == null) return;
         AprilTagDetection det = vision.getClosestGoalDetection();
@@ -1206,7 +1244,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
-    private void sendDashboard(FieldPose pose, String statusLabel) {
+    private void mirrorData(List<String> mirror, String label, String format, Object... args) {
+        telemetry.addData(label, format, args);
+        if (mirror != null) {
+            mirror.add(label + ": " + String.format(Locale.US, format, args));
+        }
+    }
+
+    private void mirrorData(List<String> mirror, String label, Object value) {
+        mirrorData(mirror, label, "%s", value);
+    }
+
+    private void mirrorLine(List<String> mirror, String line) {
+        telemetry.addLine(line);
+        if (mirror != null) {
+            mirror.add(line);
+        }
+    }
+
+    private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines,
+                               Double rpmTarget, Double rpmActual, Double rpmLeft, Double rpmRight) {
         if (dashboard == null || pose == null) return;
         TelemetryPacket packet = new TelemetryPacket();
         packet.put("Status", statusLabel);
@@ -1215,8 +1272,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         packet.put("HeadingDeg", pose.headingDeg);
         packet.put("AutoSpeed", autoSpeedEnabled);
         packet.put("AutoAim", autoAimEnabled);
-        packet.put("RPMTarget", launcher != null ? launcher.targetRpm : 0.0);
+        packet.put("RPMTarget", rpmTarget != null ? rpmTarget : 0.0);
+        packet.put("RPMActual", rpmActual != null ? rpmActual : 0.0);
+        packet.put("RPMLeft", rpmLeft != null ? rpmLeft : 0.0);
+        packet.put("RPMRight", rpmRight != null ? rpmRight : 0.0);
         packet.put("IntakeOn", intake != null && intake.isOn());
+        if (mirroredLines != null) {
+            for (String line : mirroredLines) {
+                packet.addLine(line);
+            }
+        }
         DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
         dashboard.sendTelemetryPacket(packet);
     }
@@ -1634,11 +1699,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     /** While STOP is latched, continuously enforce 0 outputs and render a concise status line. */
-    private void onStoppedLoopHold() {
+    private void onStoppedLoopHold(List<String> dashboardLines) {
         stopAll(); // defensive: keep everything off each frame
         if (feed != null) feed.update();
         updateIntakeFlow();
-        telemetry.addLine("⛔ STOPPED — press START to RESUME");
+        mirrorLine(dashboardLines, "⛔ STOPPED — press START to RESUME");
         telemetry.update();
     }
 

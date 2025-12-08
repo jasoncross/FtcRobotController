@@ -72,11 +72,11 @@ public class Auto_Red_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .visionMode("Switch to 720p vision", VisionTuning.Mode.P720)
+                .visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.55)
+                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.85)
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.25, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.75, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
                 .fire("Fire volley", 5, true, 1000)
                 //.waitFor("Hold position", 500)

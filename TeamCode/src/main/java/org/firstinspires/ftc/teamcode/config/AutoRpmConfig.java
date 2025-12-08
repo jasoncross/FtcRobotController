@@ -58,7 +58,7 @@ public final class AutoRpmConfig {
             2550.0,
             2750.0,
             3050.0,
-            3800.0
+            3850.0
     }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
     public static double DEFAULT_NO_TAG_RPM = 2500.0; // RPM to hold while AutoSpeed runs without a tag lock

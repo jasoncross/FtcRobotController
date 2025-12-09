@@ -95,6 +95,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  * CHANGES (2025-12-09): Applied the new vision environment selector during init
  *                        so P480 lighting tunables map to practice/event sets
  *                        without changing TeleOp/Auto call sites.
+ * CHANGES (2025-12-09): Obelisk observation now falls back to raw AprilTag
+ *                        detections whenever filtered lists drop IDs 21/22/23
+ *                        so motif latches remain reliable for telemetry and autos.
  */
 public class VisionAprilTag {
 
@@ -1332,19 +1335,30 @@ public class VisionAprilTag {
     // =============================================================
     public void observeObelisk() {
         List<AprilTagDetection> dets = getDetectionsCompat();
-        observeObelisk(dets);
+        boolean latched = latchObelisk(dets);
+        if (!latched) {
+            // Fall back to raw detections so motif tags still latch even when
+            // current filtering/margin gates drop them from the compat list.
+            List<AprilTagDetection> raw = fetchDetectionsRaw();
+            if (raw != dets) latchObelisk(raw);
+        }
     }
 
     public void observeObelisk(List<AprilTagDetection> dets) {
-        if (dets == null) return;
+        latchObelisk(dets);
+    }
+
+    private boolean latchObelisk(List<AprilTagDetection> dets) {
+        if (dets == null) return false;
         for (AprilTagDetection d : dets) {
             if (d == null) continue;
             int id = d.id;
             if (id == TAG_OBELISK_GPP || id == TAG_OBELISK_PGP || id == TAG_OBELISK_PPG) {
                 ObeliskSignal.updateFromTagId(id);
-                return; // latch first seen
+                return true; // latch first seen
             }
         }
+        return false;
     }
 
     // =============================================================

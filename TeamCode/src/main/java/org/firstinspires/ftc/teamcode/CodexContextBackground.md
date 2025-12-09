@@ -95,6 +95,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
 - **Role:** Provide AprilTag detections, convert pose to inches, and feed aim/twist corrections.
 - **Highlights:**
   - `VisionAprilTag` wraps the FTC `VisionPortal`, enables the Driver Station live stream, applies alliance filtering, and latches Obelisk patterns through [`utils/ObeliskSignal`](./utils/ObeliskSignal.java).
+  - Obelisk scanning now falls back to raw AprilTag detections so motif IDs 21/22/23 latch even when margin filtering trims them from the compat list.
   - `TagAimController` implements PD steering with tunables surfaced in [`config/TagAimTuning`](./config/TagAimTuning.java).
   - `AutoAimSpeed` unifies AprilTag distance-to-RPM mapping and aim assistance for both TeleOp and Autonomous while honoring [`config/AutoAimTuning`](./config/AutoAimTuning.java).
   - Frames now pass through a tunable lighting-normalization layer (alpha/beta shift with moving-average smoothing, optional CLAHE, and a bounded INIT exposure nudge) before AprilTag solve, exposing `VisionLight` telemetry so students can stabilize brightness without changing driver workflow.
@@ -112,7 +113,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - Triple-tapping the RB intake toggle latches the intake in reverse (power in `IntakeTuning`) until the next tap restores the saved intake state.
   - Exposes telemetry for drivetrain, launcher, and Obelisk signal states, including alliance-aware AprilTag distance and rumble prompts described in the [TeamCode README](./readme.md).
   - Long-shot aim bias now stays latched until a new tag distance is read so brief vision dropouts do not flip between NORMAL and LONG windows.
-  - All driver-station telemetry lines mirror to FTC Dashboard with graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels for tuning.
+  - All driver-station telemetry lines mirror verbatim to FTC Dashboard; dashboard-only metrics and graphs were removed to keep parity with on-phone telemetry.
 
 ### 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
 - **Role:** Provides a fused field pose for Auto and TeleOp using drive wheel deltas, IMU heading, and AprilTag goal detections.

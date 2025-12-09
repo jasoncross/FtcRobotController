@@ -92,6 +92,9 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *                        alliance-selected goal tag so AutoAim/AutoSpeed only
  *                        track the correct target while odometry remains free
  *                        to blend either goal.
+ * CHANGES (2025-12-09): Applied the new vision environment selector during init
+ *                        so P480 lighting tunables map to practice/event sets
+ *                        without changing TeleOp/Auto call sites.
  */
 public class VisionAprilTag {
 
@@ -166,6 +169,7 @@ public class VisionAprilTag {
     public void init(HardwareMap hw, String webcamName) {
         this.hardwareMap = hw;
         this.webcamName = webcamName;
+        VisionTuning.applyEnvironment();
         VisionTuning.Mode defaultMode = inferMode(VisionTuning.DEFAULT_PROFILE);
         applyProfile(defaultMode);
         toggleLiveView(VisionTuning.DEFAULT_LIVE_VIEW_ENABLED);

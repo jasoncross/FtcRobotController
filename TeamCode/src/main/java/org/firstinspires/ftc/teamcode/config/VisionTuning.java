@@ -18,6 +18,10 @@
  *                       equalization, and optional INIT exposure nudges) so
  *                       AprilTag processing remains stable across lighting
  *                       conditions without rewriting vision callers.
+ * CHANGES (2025-12-09): Added practice vs. event P480 lighting tunables with a
+ *                       single environment selector that maps into the
+ *                       existing P480 fields so TeleOp/Auto keep using the
+ *                       same profile names without changing call sites.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Vision & range calibration)
  *   - RANGE_SCALE
@@ -31,6 +35,24 @@ public final class VisionTuning {
     private VisionTuning() {}
 
     // === Logitech C270 AprilTag tuning (edit values below) ===
+
+    public enum Environment {
+        PRACTICE,
+        EVENT
+    }
+
+    // Lighting environment selector (PRACTICE default to preserve current behavior)
+    public static Environment VISION_ENVIRONMENT = Environment.PRACTICE;  // Choose PRACTICE for our arena, EVENT for bright fields
+
+    // Practice-field P480 lighting (current baseline)
+    public static final int P480_PRACTICE_EXPOSURE_MS = 6;                // Practice exposure tuned for our arena lighting
+    public static final int P480_PRACTICE_GAIN = 85;                      // Practice gain tuned for our arena lighting
+    public static final boolean P480_PRACTICE_WHITE_BALANCE_LOCK = true;  // Practice white balance lock for stable color
+
+    // Event-field P480 lighting (bright venue baseline)
+    public static final int P480_EVENT_EXPOSURE_MS = 2;                   // Event exposure tuned for bright fields
+    public static final int P480_EVENT_GAIN = 50;                         // Event gain tuned for bright fields
+    public static final boolean P480_EVENT_WHITE_BALANCE_LOCK = true;     // Event white balance lock for stable color
 
     // Startup defaults for the vision system
     public static final Mode DEFAULT_MODE = Mode.P480;                 // Startup profile (Performance 640×480 for Control Hub headroom)
@@ -47,9 +69,9 @@ public final class VisionTuning {
     public static final float P480_DECIMATION = 2.0f;                   // AprilTag decimation (higher skips pixels for speed)
     public static final int P480_PROCESS_EVERY_N = 1;                   // Process every frame (no skipping) when in Performance mode
     public static final double P480_MIN_DECISION_MARGIN = 10.0;         // Reject detections with weaker decision margins than this threshold
-    public static final int P480_EXPOSURE_MS = 2;                      // Manual exposure in milliseconds tuned for indoor lighting
-    public static final int P480_GAIN = 50;                             // Camera-native gain for stable image brightness at 480p
-    public static final boolean P480_WHITE_BALANCE_LOCK = true;         // Lock white balance after start to prevent drift
+    public static int P480_EXPOSURE_MS = P480_PRACTICE_EXPOSURE_MS;     // Manual exposure in milliseconds (environment-mapped)
+    public static int P480_GAIN = P480_PRACTICE_GAIN;                   // Camera-native gain for stable image brightness at 480p
+    public static boolean P480_WHITE_BALANCE_LOCK = P480_PRACTICE_WHITE_BALANCE_LOCK; // Lock white balance after start to prevent drift
     public static final double P480_FX = 690.0;                         // Calibrated focal length (pixels) in X for 480p profile
     public static final double P480_FY = 690.0;                         // Calibrated focal length (pixels) in Y for 480p profile
     public static final double P480_CX = 320.0;                         // Principal point X (pixels) for 480p profile
@@ -222,10 +244,10 @@ public final class VisionTuning {
         }
     }
 
-    public static final Profile PROFILE_480 = forMode(Mode.P480);
-    public static final Profile PROFILE_720 = forMode(Mode.P720);
+    public static Profile PROFILE_480 = forMode(Mode.P480);
+    public static Profile PROFILE_720 = forMode(Mode.P720);
 
-    public static final Profile DEFAULT_PROFILE = PROFILE_480;
+    public static Profile DEFAULT_PROFILE = forMode(DEFAULT_MODE);
 
     // Legacy single-profile fields mirror the current default profile so
     // existing references continue to compile while telemetry migrates.
@@ -238,6 +260,79 @@ public final class VisionTuning {
     public static int EXPOSURE_MS = DEFAULT_PROFILE.exposureMs;      // manual exposure in milliseconds
     public static int GAIN = DEFAULT_PROFILE.gain;                   // camera-native gain units
     public static boolean WHITE_BALANCE_LOCK_ENABLED = DEFAULT_PROFILE.whiteBalanceLock;
+
+    static {
+        applyEnvironment();
+    }
+
+    public static void applyEnvironment() {
+        Environment selected = (VISION_ENVIRONMENT != null) ? VISION_ENVIRONMENT : Environment.PRACTICE;
+        switch (selected) {
+            case EVENT:
+                P480_EXPOSURE_MS = clampExposure(P480_EVENT_EXPOSURE_MS);
+                P480_GAIN = clampGain(P480_EVENT_GAIN);
+                P480_WHITE_BALANCE_LOCK = P480_EVENT_WHITE_BALANCE_LOCK;
+                break;
+            case PRACTICE:
+            default:
+                P480_EXPOSURE_MS = clampExposure(P480_PRACTICE_EXPOSURE_MS);
+                P480_GAIN = clampGain(P480_PRACTICE_GAIN);
+                P480_WHITE_BALANCE_LOCK = P480_PRACTICE_WHITE_BALANCE_LOCK;
+                break;
+        }
+
+        refreshDerivedProfiles();
+    }
+
+    private static int clampExposure(int exposureMs) {
+        return Math.max(0, exposureMs);
+    }
+
+    private static int clampGain(int gain) {
+        return Math.max(0, gain);
+    }
+
+    public static void refreshDerivedProfiles() {
+        PROFILE_480 = forMode(Mode.P480);
+        PROFILE_720 = forMode(Mode.P720);
+        DEFAULT_PROFILE = forMode(DEFAULT_MODE);
+
+        VISION_RES_WIDTH = DEFAULT_PROFILE.width;
+        VISION_RES_HEIGHT = DEFAULT_PROFILE.height;
+        VISION_TARGET_FPS = DEFAULT_PROFILE.fps;
+        APRILTAG_DECIMATION = DEFAULT_PROFILE.decimation;
+        VISION_PROCESS_EVERY_N = DEFAULT_PROFILE.processEveryN;
+        MIN_DECISION_MARGIN = DEFAULT_PROFILE.minDecisionMargin;
+        EXPOSURE_MS = DEFAULT_PROFILE.exposureMs;
+        GAIN = DEFAULT_PROFILE.gain;
+        WHITE_BALANCE_LOCK_ENABLED = DEFAULT_PROFILE.whiteBalanceLock;
+
+        HAS_480P_INTRINSICS = PROFILE_480.hasIntrinsics();
+        FX_480 = PROFILE_480.fx;
+        FY_480 = PROFILE_480.fy;
+        CX_480 = PROFILE_480.cx;
+        CY_480 = PROFILE_480.cy;
+
+        HAS_480P_DISTORTION = PROFILE_480.hasDistortion();
+        K1_480 = PROFILE_480.k1;
+        K2_480 = PROFILE_480.k2;
+        P1_480 = PROFILE_480.p1;
+        P2_480 = PROFILE_480.p2;
+        K3_480 = PROFILE_480.k3;
+
+        HAS_720P_INTRINSICS = PROFILE_720.hasIntrinsics();
+        FX_720 = PROFILE_720.fx;
+        FY_720 = PROFILE_720.fy;
+        CX_720 = PROFILE_720.cx;
+        CY_720 = PROFILE_720.cy;
+
+        HAS_720P_DISTORTION = PROFILE_720.hasDistortion();
+        K1_720 = PROFILE_720.k1;
+        K2_720 = PROFILE_720.k2;
+        P1_720 = PROFILE_720.p1;
+        P2_720 = PROFILE_720.p2;
+        K3_720 = PROFILE_720.k3;
+    }
 
     // Lighting normalization toggles and parameters (AprilTag pre-processing)
     public static boolean ENABLE_BRIGHTNESS_NORMALIZATION = true;    // Global alpha/beta frame normalization toggle

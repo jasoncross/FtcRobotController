@@ -98,6 +98,7 @@ These constraints drive the emphasis on IMU-stable turning, safe power distribut
   - `TagAimController` implements PD steering with tunables surfaced in [`config/TagAimTuning`](./config/TagAimTuning.java).
   - `AutoAimSpeed` unifies AprilTag distance-to-RPM mapping and aim assistance for both TeleOp and Autonomous while honoring [`config/AutoAimTuning`](./config/AutoAimTuning.java).
   - Frames now pass through a tunable lighting-normalization layer (alpha/beta shift with moving-average smoothing, optional CLAHE, and a bounded INIT exposure nudge) before AprilTag solve, exposing `VisionLight` telemetry so students can stabilize brightness without changing driver workflow.
+  - Vision lighting can be swapped between practice and event values via `VisionTuning.VISION_ENVIRONMENT`, which maps the shared P480 exposure/gain/white-balance lock to the selected set while keeping existing profile names unchanged for TeleOp/Auto callers.
 
 ### 🕹 TeleOp ([`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java), [`teleop/TeleOp_Blue.java`](./teleop/TeleOp_Blue.java), [`teleop/TeleOp_Red.java`](./teleop/TeleOp_Red.java))
 - **Role:** Shared TeleOp implementation with alliance-specific wrappers that only override the `alliance()` hint.

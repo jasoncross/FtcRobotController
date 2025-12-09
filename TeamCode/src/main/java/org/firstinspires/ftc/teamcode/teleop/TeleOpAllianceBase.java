@@ -84,6 +84,11 @@
  *                       with graphable launcher RPM channels and made long-shot
  *                       mode sticky until a new distance reading arrives so
  *                       brief tag dropouts no longer flip the shot window.
+ * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
+ *                       telemetry lines (no dashboard-only metrics) while
+ *                       keeping field overlays; Obelisk scanning now falls back
+ *                       to raw detections so motifs latch even when filtered
+ *                       frames drop below the margin gate.
  * CHANGES (2025-12-03): AutoAim + AutoSpeed now rely solely on the
  *                       alliance-correct goal tag; non-alliance tags remain
  *                       limited to odometry blending so shooter targets stay
@@ -567,7 +572,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             mirrorLine(initDashboardLines, String.format(Locale.US, "⏱ AutoStop: ENABLED (%ds from INIT)", autoStopTimerTimeSec));
         }
         telemetry.update();
-        sendDashboard(fusedPose, "INIT", initDashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
+        sendDashboard(fusedPose, "INIT", initDashboardLines);
     }
 
     @Override
@@ -593,7 +598,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
         telemetry.update();
-        sendDashboard(fusedPose, "INIT", dashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
+        sendDashboard(fusedPose, "INIT", dashboardLines);
     }
 
     @Override
@@ -684,7 +689,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // If STOP is latched, hold zero outputs and render minimal status, then return early.
         if (stopLatched) {
             onStoppedLoopHold(dashboardLines);
-            sendDashboard(fusedPose, "STOPPED", dashboardLines, getRpmTarget(), getRpmAverage(), getRpmLeft(), getRpmRight());
+            sendDashboard(fusedPose, "STOPPED", dashboardLines);
             return;
         }
 
@@ -924,7 +929,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
-        sendDashboard(fusedPose, "RUN", dashboardLines, rpmTarget, rpmAverage, rpmLeft, rpmRight);
+        sendDashboard(fusedPose, "RUN", dashboardLines);
         telemetry.update();
     }
 
@@ -1262,21 +1267,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
-    private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines,
-                               Double rpmTarget, Double rpmActual, Double rpmLeft, Double rpmRight) {
+    private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines) {
         if (dashboard == null || pose == null) return;
         TelemetryPacket packet = new TelemetryPacket();
-        packet.put("Status", statusLabel);
-        packet.put("PoseX", pose.x);
-        packet.put("PoseY", pose.y);
-        packet.put("HeadingDeg", pose.headingDeg);
-        packet.put("AutoSpeed", autoSpeedEnabled);
-        packet.put("AutoAim", autoAimEnabled);
-        packet.put("RPMTarget", rpmTarget != null ? rpmTarget : 0.0);
-        packet.put("RPMActual", rpmActual != null ? rpmActual : 0.0);
-        packet.put("RPMLeft", rpmLeft != null ? rpmLeft : 0.0);
-        packet.put("RPMRight", rpmRight != null ? rpmRight : 0.0);
-        packet.put("IntakeOn", intake != null && intake.isOn());
         if (mirroredLines != null) {
             for (String line : mirroredLines) {
                 packet.addLine(line);

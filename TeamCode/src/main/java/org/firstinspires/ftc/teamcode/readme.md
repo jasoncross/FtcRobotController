@@ -304,11 +304,12 @@ The on-field **obelisk** displays one of three AprilTags that determine the **op
 | **23** | PPG | Purple → Purple → Green |
 
 ### Behavior
-- The robot continuously scans for these tags via `VisionAprilTag.observeObelisk()`.  
-- When detected, the shared class `ObeliskSignal` latches the pattern (`GPP`, `PGP`, or `PPG`) in memory.  
-- This value persists between Auto and TeleOp modes so both can access the same detected order.  
-- **Telemetry:** The first line on the Driver Station always shows the current obelisk result,  
+- The robot continuously scans for these tags via `VisionAprilTag.observeObelisk()`.
+- When detected, the shared class `ObeliskSignal` latches the pattern (`GPP`, `PGP`, or `PPG`) in memory.
+- This value persists between Auto and TeleOp modes so both can access the same detected order.
+- **Telemetry:** The first line on the Driver Station always shows the current obelisk result,
   e.g. `Obelisk: PGP (10 s ago)`.
+- Vision now falls back to the raw AprilTag list when scanning for obelisk IDs so marginal detections still latch the motif.
 
 ### Implementation Details
 | File | Purpose |
@@ -357,7 +358,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 - **Architecture:** Mecanum drive + IMU heading control.  
 - **Launcher:** Dual goBILDA 5202 6000 RPM motors, closed-loop PID.  
 - **Vision:** AprilTag ID 20/24 goal targeting.  
-- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines, and every line is mirrored to FTC Dashboard alongside graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels.
+- **Telemetry:** Drive, launcher RPM, AutoSpeed state, AutoAim status, tag distance + heading. TeleOp top-line telemetry lists Obelisk memory, Alliance, Intake, AutoSpeed, AutoAim, Reverse mode, and RPM Target/Actual (left/right) before other status lines, and every driver-station line is mirrored verbatim to FTC Dashboard (no extra-only dashboard data).
 - **File header standard:** `FILE / LOCATION / PURPOSE / NOTES / METHODS`.
 - **Rule Reference:** FTC 2025–2026 Competition Manual + Team Updates.
 
@@ -372,7 +373,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-09** – Added a `VisionTuning.VISION_ENVIRONMENT` selector that maps the existing P480 profile to either the practice lighting set (6 ms exposure, gain 85, white balance lock on) or the bright event set (2 ms, gain 50, white balance lock on) without changing TeleOp/Auto call sites, keeping PRACTICE as the default to preserve current behavior. Updated docs and tunable listings for the new practice/event parameters.
+- **2025-12-09** – Added a `VisionTuning.VISION_ENVIRONMENT` selector that maps the existing P480 profile to either the practice lighting set (6 ms exposure, gain 85, white balance lock on) or the bright event set (2 ms, gain 50, white balance lock on) without changing TeleOp/Auto call sites, keeping PRACTICE as the default to preserve current behavior. Restored obelisk motif reporting by falling back to raw AprilTag detections when margin filters drop IDs 21/22/23 and tightened FTC Dashboard mirroring so only the same driver-station telemetry lines are sent in both TeleOp and Auto.
 - **2025-12-03** – Added tunable lighting normalization for the AprilTag pipeline (alpha/beta smoothing, optional CLAHE, and INIT exposure nudge) with TeleOp telemetry showing mean/alpha/beta/adaptive state so teams can stabilize detections under different field lighting, and hardened the hook with reflection so builds succeed even when the SDK omits the image-processor interface. Retuned the P480 profile (decimation = 2.0, min margin = 12) and layered new goal-tag visibility tiers (raw/aim/smoothed streaks) so AutoAim toggles and grace windows follow stable detections. Added a vision health line in TeleOp plus a 2.5 s health sampler in **X – Test – Camera Stream** (Gamepad 1 A) that reports good/total ratio, margin stats, brightness, and suggestions for exposure/gain or margin tweaks; enabled an optional normalized preview in that test OpMode for pit lighting checks. AutoAim and AutoSpeed now gate strictly on the alliance-correct goal tag (ID 20 blue / ID 24 red) while odometry alone may blend either goal tag. Long-shot range mode now stays latched until a new tag distance arrives instead of reverting to NORMAL on brief dropouts, and every driver-station telemetry line is mirrored to FTC Dashboard with graphable RPM Target, averaged RPM Actual, and per-wheel RPM channels.
 - **2025-12-02** – Preserved single-tap fire behavior even when the FeedStop release hold window is
  set to **0 ms** by only blocking taps when a nonzero release window is configured while still allowing

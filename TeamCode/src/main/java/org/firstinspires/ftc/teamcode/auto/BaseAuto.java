@@ -149,6 +149,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        that hold the gate open while sustaining launcher RPM.
     // CHANGES (2025-11-25): Corrected AutoSequence.fireContinuous(...) to call the BaseAuto helper
     //                        with the proper scope and parameter order so continuous feeds compile and run.
+    // CHANGES (2025-12-09): FTC Dashboard telemetry now mirrors only the Driver Station lines while
+    //                        keeping DecodeFieldDrawing overlays for pose context.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -897,41 +899,67 @@ public abstract class BaseAuto extends LinearOpMode {
         if (statusPhase.isEmpty()) {
             statusPhase = "Sequence";
         }
+        List<String> mirroredLines = new ArrayList<>();
+
         telemetry.addData("Phase", statusPhase);
+        mirroredLines.add("Phase: " + statusPhase);
+
         telemetry.addLine("");
+        mirroredLines.add("");
+
         telemetry.addData("Alliance", alliance());
+        mirroredLines.add("Alliance: " + alliance());
+
         telemetry.addData("Auto", autoOpModeName);
-        telemetry.addData("Start Pose", startPoseDescription());
-        telemetry.addData("Obelisk", ObeliskSignal.getDisplay());
-        telemetry.addData("AprilTag Lock", tagLocked ? "LOCKED" : "SEARCHING");
+        mirroredLines.add("Auto: " + autoOpModeName);
+
+        String startPoseText = startPoseDescription();
+        telemetry.addData("Start Pose", startPoseText);
+        mirroredLines.add("Start Pose: " + startPoseText);
+
+        String obeliskLine = ObeliskSignal.getDisplay();
+        telemetry.addData("Obelisk", obeliskLine);
+        mirroredLines.add("Obelisk: " + obeliskLine.replace("Obelisk: ", ""));
+
+        String lockLine = tagLocked ? "LOCKED" : "SEARCHING";
+        telemetry.addData("AprilTag Lock", lockLine);
+        mirroredLines.add("AprilTag Lock: " + lockLine);
         if (feed != null) {
             if (feed.wasWindowLimitReached()) {
-                telemetry.addLine("FeedStop: scale window hit bounds – angles trimmed.");
+                String line = "FeedStop: scale window hit bounds – angles trimmed.";
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             } else if (feed.wasAngleClamped()) {
-                telemetry.addLine("FeedStop: angles trimmed to fit available span.");
+                String line = "FeedStop: angles trimmed to fit available span.";
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
             if (feed.wasSoftLimitClamped() && feed.getSoftLimitMessage() != null) {
-                telemetry.addLine(feed.getSoftLimitMessage());
+                String line = feed.getSoftLimitMessage();
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
             if (feed.wasHomeAborted() && feed.getHomeAbortMessage() != null) {
-                telemetry.addLine("FeedStop: " + feed.getHomeAbortMessage());
+                String line = "FeedStop: " + feed.getHomeAbortMessage();
+                telemetry.addLine(line);
+                mirroredLines.add(line);
             }
-            telemetry.addLine(feed.getFeedStopSummaryLine());
+            String summary = feed.getFeedStopSummaryLine();
+            telemetry.addLine(summary);
+            mirroredLines.add(summary);
         }
         FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
-        sendDashboard(poseForDashboard, statusPhase);
+        sendDashboard(poseForDashboard, statusPhase, mirroredLines);
     }
 
-    private void sendDashboard(FieldPose pose, String statusLabel) {
+    private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines) {
         if (dashboard == null || pose == null) return;
         TelemetryPacket packet = new TelemetryPacket();
-        packet.put("Status", statusLabel);
-        packet.put("Alliance", alliance().name());
-        packet.put("PoseX", pose.x);
-        packet.put("PoseY", pose.y);
-        packet.put("HeadingDeg", pose.headingDeg);
-        packet.put("AutoSpeedEnabled", autoCtrl != null && autoCtrl.isAutoEnabled());
-        packet.put("LauncherTarget", launcher != null ? launcher.targetRpm : 0.0);
+        if (mirroredLines != null) {
+            for (String line : mirroredLines) {
+                packet.addLine(line);
+            }
+        }
         DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
         dashboard.sendTelemetryPacket(packet);
     }

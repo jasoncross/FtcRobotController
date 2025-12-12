@@ -132,6 +132,13 @@
  * CHANGES (2025-10-31): Disabled feed idle hold while StopAll is latched so the
  *                       motor stays at 0 power, restoring the hold when Start
  *                       resumes TeleOp control.
+ * CHANGES (2025-12-11): Wired TeleOp to select a VisionTargetProvider (Limelight
+ *                       default, webcam legacy fallback) via VisionConfig and
+ *                       feed it into aim/auto-speed helpers.
+ * CHANGES (2025-12-11): Recentered default odometry pose on the field-center
+ *                       frame (human wall = −72" Y) and moved odometry fusion
+ *                       to Limelight-only XY blending with bounded corrections
+ *                       (IMU-only heading, no webcam pose fusion).
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -151,9 +158,15 @@ import org.firstinspires.ftc.teamcode.odometry.Odometry;
 import org.firstinspires.ftc.teamcode.odometry.PoseStore;
 
 // === VISION IMPORTS ===
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
-import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.config.VisionConfig;
+import org.firstinspires.ftc.teamcode.config.VisionConfig.VisionSource;
+import org.firstinspires.ftc.teamcode.vision.LimelightTargetProvider;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
+import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
+import org.firstinspires.ftc.teamcode.vision.WebcamLegacyTargetProvider;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 
 import static java.lang.Math.*;
@@ -178,6 +191,7 @@ import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;      // distance→RPM curve + smoothing
 import org.firstinspires.ftc.teamcode.config.LauncherTuning;
+import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults; // TeleOp-only workflow + manual ranges
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;    // TeleOp-only eject routine
 import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rumble envelopes
@@ -259,12 +273,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     // ---------------- Odometry ----------------
     private Odometry odometry;
-    private FieldPose fusedPose = new FieldPose();
+    private FieldPose fusedPose = new FieldPose(0.0, OdometryConfig.HUMAN_WALL_Y, 0.0);
     private boolean poseSeeded = false;
     private FtcDashboard dashboard;
 
     // ---------------- Vision + Aim ----------------
-    private VisionAprilTag vision;                // Shared AprilTag pipeline for aim + autospeed
+    private VisionTargetProvider visionTargetProvider; // Selected heading/range provider (Limelight default)
+    private Limelight3A limelight;                    // Limelight device when selected as the provider source
+    private VisionAprilTag vision;                // Legacy AprilTag pipeline (only when webcam provider is selected)
     private TagAimController aim = new TagAimController(); // PD twist helper; TeleOp clamps via SharedRobotTuning
     private double autoAimSpeedScale = AutoAimTuning.AUTO_AIM_SPEED_SCALE; // Translation multiplier while AutoAim is active
     private long lastVisionTelemetryMs = 0L;      // Throttle (~10 Hz) for vision status lines
@@ -415,16 +431,30 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionProfileError = null;
 
         // ---- Vision Initialization ----
-        vision = new VisionAprilTag();
-        vision.init(hardwareMap, "Webcam 1");
-        vision.setGoalVisibilityTargetId(allianceGoalTagId());
-        vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
+        vision = null;
+        limelight = null;
+        visionTargetProvider = null;
+        VisionSource source = VisionConfig.VISION_SOURCE;
+        if (source == VisionSource.WEBCAM_LEGACY) {
+            vision = new VisionAprilTag();
+            vision.init(hardwareMap, "Webcam 1");
+            vision.setGoalVisibilityTargetId(allianceGoalTagId());
+            vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
+            visionTargetProvider = new WebcamLegacyTargetProvider(vision, this::alliance);
+        } else {
+            limelight = hardwareMap.get(Limelight3A.class, "limelight");
+            try { limelight.getClass().getMethod("setPipelineIndex", int.class)
+                    .invoke(limelight, VisionConfig.LimelightFusion.PIPELINE_INDEX); } catch (Throwable ignored) {}
+            visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
+        }
+
+        aim.setProvider(visionTargetProvider);
         lastVisionTelemetryMs = 0L;
         visionWarningShown = false;
         visionStatusLine = "Vision: Profile=-- LiveView=OFF Res=---@-- Decim=-.- ProcN=1 MinM=--";
         visionPerfLine = "Perf: FPS=--- LatMs=---";
 
-        odometry = new Odometry(drive, vision);
+        odometry = new Odometry(drive, limelight);
         FieldPose storedPose = PoseStore.consumeLastKnownPose();
         if (storedPose != null) {
             fusedPose = storedPose;
@@ -457,8 +487,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // AutoAim toggle (gated by current tag visibility)
         controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-            int targetId = allianceGoalTagId();
-            boolean hasGoal = (vision != null) && vision.hasAnyGoalTagForTarget(targetId);
+            boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasTarget();
             if (!autoAimEnabled) {
                 if (hasGoal) {
                     autoAimEnabled = true;
@@ -725,33 +754,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double twist   = cap * -gamepad1.right_stick_x;
         double appliedAimSpeedScale = 1.0;
 
-        // Alliance target
-        int targetId = allianceGoalTagId();
-        if (vision != null) {
-            vision.setGoalVisibilityTargetId(targetId);
+        boolean goalVisibleAny = visionTargetProvider != null && visionTargetProvider.hasTarget();
+        boolean goalVisibleForAim = goalVisibleAny;
+        boolean goalVisibleSmoothed = goalVisibleAny;
+        double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
+        double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
+        if (!Double.isNaN(headingDegRaw) && Double.isFinite(headingDegRaw)) {
+            smHeadingDeg = (smHeadingDeg == null) ? headingDegRaw : (smoothA * headingDegRaw + (1 - smoothA) * smHeadingDeg);
+        }
+        if (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) {
+            smRangeMeters = (smRangeMeters == null) ? rangeMetersRaw : (smoothA * rangeMetersRaw + (1 - smoothA) * smRangeMeters);
         }
 
-        // Vision
-        AprilTagDetection goalDet = (vision != null) ? vision.getDetectionFor(targetId) : null;
-        AprilTagDetection poseDet = (vision != null) ? vision.getClosestGoalDetection() : null;
-        AprilTagDetection telemetryDet = goalDet;
-        AprilTagDetection aimDet = goalDet;
-        boolean goalVisibleAny = (vision != null) && vision.hasAnyGoalTagForTarget(targetId);
-        boolean goalVisibleForAim = (vision != null) && vision.hasGoodGoalTagForAim(targetId);
-        boolean goalVisibleSmoothed = (vision != null) && vision.isGoalTagVisibleSmoothedForAim();
+        updateAutoAimNudge(null);
 
-        if (telemetryDet != null) {
-            double hDeg  = telemetryDet.ftcPose.bearing;
-            double rM_sc = vision.getScaledRange(telemetryDet);
-            smHeadingDeg = (smHeadingDeg == null) ? hDeg : (smoothA * hDeg + (1 - smoothA) * smHeadingDeg);
-            if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) {
-                smRangeMeters = (smRangeMeters == null) ? rM_sc : (smoothA * rM_sc + (1 - smoothA) * smRangeMeters);
-            }
-        }
-
-        updateAutoAimNudge(aimDet);
-
-        Double distanceForLockIn = (goalDet != null) ? getGoalDistanceInchesScaled(goalDet) : null;
+        Double distanceForLockIn = goalVisibleAny && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)
+                ? rangeMetersRaw * M_TO_IN : null;
         if (!AutoAimTuning.LONG_SHOT_ENABLED) {
             longShotMode = false;
         } else if (distanceForLockIn != null) {
@@ -765,9 +783,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
             driveY  *= appliedAimSpeedScale;
             strafeX *= appliedAimSpeedScale;
-            if (goalVisibleSmoothed && aimDet != null) {
+            if (goalVisibleSmoothed && goalVisibleAny) {
                 aimLossStartMs = -1L;
-                twist = aim.turnPower(aimDet); // ignore right stick
+                twist = aim.turnPower(); // ignore right stick
             } else {
                 if (aimLossStartMs < 0) aimLossStartMs = now;
                 if ((now - aimLossStartMs) >= autoAimLossGraceMs) {
@@ -780,8 +798,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         } else {
             // Manual aim-window rumble when AutoAim is OFF
-            if (aimRumbleEnabled && goalVisibleForAim && aimDet != null && aimRumbleDriver1 != null) {
-                aimRumbleDriver1.update(aimDet.ftcPose.bearing);
+            if (aimRumbleEnabled && goalVisibleForAim && aimRumbleDriver1 != null) {
+                aimRumbleDriver1.update(headingDegRaw);
             }
         }
 
@@ -794,8 +812,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         drive.drive(driveY, strafeX, twist);
 
         if (odometry != null) {
-            AprilTagDetection odomDet = (poseDet != null) ? poseDet : goalDet;
-            fusedPose = odometry.update(odomDet);
+            fusedPose = odometry.update();
         }
 
         // AutoSpeed update
@@ -811,9 +828,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             Double rangeM = null;
             if (smRangeMeters != null && Double.isFinite(smRangeMeters)) {
                 rangeM = smRangeMeters;
-            } else if (goalDet != null) {
-                double rM_sc = vision.getScaledRange(goalDet);
-                if (!Double.isNaN(rM_sc) && Double.isFinite(rM_sc)) rangeM = rM_sc;
             }
 
             if (rangeM != null) {
@@ -873,8 +887,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         mirrorData(dashboardLines, "Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg));
-        Double rawIn = getGoalDistanceInchesScaled((aimDet != null) ? aimDet : goalDet);
-        updateVisionTelemetry(aimDet, rawIn);
+        Double rawIn = (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) ? rangeMetersRaw * M_TO_IN : null;
+        updateVisionTelemetry(null, rawIn);
         mirrorData(dashboardLines, "Tag Distance (in)", (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn));
         mirrorData(dashboardLines, "Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN));
         mirrorData(dashboardLines, "ShotRangeMode", longShotMode ? "LONG" : "NORMAL");
@@ -963,9 +977,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     private void maybeSeedPoseFromVision() {
-        if (poseSeeded || odometry == null || vision == null) return;
-        AprilTagDetection det = vision.getClosestGoalDetection();
-        FieldPose guess = odometry.computeVisionPose(det, drive.heading());
+        if (poseSeeded || odometry == null) return;
+        FieldPose guess = odometry.getLastVisionPose();
+        if (guess == null && VisionConfig.VISION_SOURCE == VisionSource.LIMELIGHT && limelight != null) {
+            odometry.update();
+            guess = odometry.getLastVisionPose();
+        }
         if (guess != null) {
             fusedPose = guess;
             odometry.setPose(guess.x, guess.y, guess.headingDeg);

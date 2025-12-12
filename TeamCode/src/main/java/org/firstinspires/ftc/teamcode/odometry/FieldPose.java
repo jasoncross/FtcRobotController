@@ -12,6 +12,8 @@ package org.firstinspires.ftc.teamcode.odometry;
  * CHANGES (2025-11-26): Clarified heading convention alignment with odometry
  *                        (+Y forward, +X right, +CCW) so dashboard drawing and
  *                        pose math share the same frame.
+ * CHANGES (2025-12-11): Documented that X/Y are now centered on the field
+ *                        origin to match the updated odometry frame.
  */
 public class FieldPose {
     public double x;

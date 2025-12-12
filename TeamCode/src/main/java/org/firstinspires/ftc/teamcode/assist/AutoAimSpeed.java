@@ -129,7 +129,7 @@ public class AutoAimSpeed {
             vision = wrapDetection(det);
         }
 
-        boolean hasTarget = vision != null && vision.hasTarget();
+        boolean hasTarget = vision != null && vision.hasGoalTarget();
 
         // ---- AutoSpeed ----
         double outRpm;
@@ -175,6 +175,15 @@ public class AutoAimSpeed {
             public boolean hasTarget() {
                 return true;
             }
+
+            @Override
+            public boolean hasGoalTarget() { return hasTarget(); }
+
+            @Override
+            public boolean hasAnyTarget() { return hasTarget(); }
+
+            @Override
+            public int getBestVisibleTagId() { return det.id; }
 
             @Override
             public double getHeadingErrorDeg() {

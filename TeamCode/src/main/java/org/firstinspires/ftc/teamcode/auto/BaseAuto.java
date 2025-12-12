@@ -418,7 +418,7 @@ public abstract class BaseAuto extends LinearOpMode {
             double bearing = Double.NaN;
             boolean lockedNow = false;
 
-            if (provider != null && provider.hasTarget()) {
+            if (provider != null && provider.hasGoalTarget()) {
                 Double distanceIn = distanceInchesFromProvider(provider);
                 lockWindow = computeLockWindow(isLongShot(distanceIn), tol);
                 aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
@@ -774,7 +774,7 @@ public abstract class BaseAuto extends LinearOpMode {
         while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
             updateIntakeFlowForAuto();
             VisionTargetProvider provider = visionTargetProvider;
-            if (provider != null && provider.hasTarget()) {
+            if (provider != null && provider.hasGoalTarget()) {
                 double err = provider.getHeadingErrorDeg();
                 boolean locked = Math.abs(err) <= tol;
                 if (locked) {
@@ -1051,7 +1051,7 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private Double distanceInchesFromProvider(VisionTargetProvider provider) {
-        if (provider == null || !provider.hasTarget()) {
+        if (provider == null || !provider.hasGoalTarget()) {
             return null;
         }
         double rangeM = provider.getDistanceMeters();

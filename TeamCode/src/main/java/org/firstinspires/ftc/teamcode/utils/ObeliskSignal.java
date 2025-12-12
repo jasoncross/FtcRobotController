@@ -28,6 +28,7 @@ public final class ObeliskSignal {
 
     private static volatile Order current = Order.UNKNOWN;
     private static volatile long lastUpdateMs = 0L;
+    private static volatile int lastTagId = -1;
 
     private ObeliskSignal() {}
 
@@ -39,6 +40,7 @@ public final class ObeliskSignal {
             case 23: set(Order.PPG); break;
             default: /* ignore other tags */ break;
         }
+        lastTagId = id;
     }
 
     /** Explicitly set an order */
@@ -46,13 +48,23 @@ public final class ObeliskSignal {
         if (order == null) return;
         current = order;
         lastUpdateMs = System.currentTimeMillis();
+        if (order == Order.UNKNOWN) lastTagId = -1;
     }
 
     /** Returns the current latched order */
     public static Order get() { return current; }
 
+    /** Returns the last AprilTag ID that updated the latch; -1 when unknown */
+    public static int getLastTagId() { return lastTagId; }
+
+    /** Returns the age of the last update in milliseconds */
+    public static long ageMs() {
+        if (lastUpdateMs == 0L) return Long.MAX_VALUE;
+        return Math.max(0L, System.currentTimeMillis() - lastUpdateMs);
+    }
+
     /** Resets the latch to UNKNOWN */
-    public static void clear() { current = Order.UNKNOWN; lastUpdateMs = 0L; }
+    public static void clear() { current = Order.UNKNOWN; lastUpdateMs = 0L; lastTagId = -1; }
 
     /** Returns a readable string for telemetry */
     public static String getDisplay() {

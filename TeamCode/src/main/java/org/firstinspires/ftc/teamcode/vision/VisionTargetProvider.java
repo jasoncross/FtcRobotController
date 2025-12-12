@@ -11,7 +11,15 @@ package org.firstinspires.ftc.teamcode.vision;
  *
  * METHODS
  *   - hasTarget()
- *       • True when the underlying vision source currently tracks a goal tag.
+ *       • True when the underlying vision source currently tracks the alliance goal tag.
+ *   - hasGoalTarget()
+ *       • Alias for hasTarget(); explicit name for callers that should only react
+ *         to the alliance scoring tag.
+ *   - hasAnyTarget()
+ *       • True when any valid AprilTag solve is present (goal OR other tags).
+ *   - getBestVisibleTagId()
+ *       • Returns the fiducial ID currently driving heading/distance or -1 when
+ *         unknown.
  *   - getHeadingErrorDeg()
  *       • Signed left/right error to the scoring target in degrees (+ right,
  *         – left). Returns NaN when no target is available.
@@ -25,6 +33,12 @@ package org.firstinspires.ftc.teamcode.vision;
  */
 public interface VisionTargetProvider {
     boolean hasTarget();
+
+    boolean hasGoalTarget();
+
+    boolean hasAnyTarget();
+
+    int getBestVisibleTagId();
 
     double getHeadingErrorDeg();
 

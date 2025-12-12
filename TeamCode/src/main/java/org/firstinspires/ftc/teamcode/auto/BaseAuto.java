@@ -276,9 +276,12 @@ public abstract class BaseAuto extends LinearOpMode {
                 }
                 visionTargetProvider = new WebcamLegacyTargetProvider(vision, this::alliance);
             } else {
-                limelight = hardwareMap.get(Limelight3A.class, "limelight");
-                try { limelight.getClass().getMethod("setPipelineIndex", int.class)
-                        .invoke(limelight, VisionConfig.LimelightFusion.PIPELINE_INDEX); } catch (Throwable ignored) {}
+                try {
+                    limelight = hardwareMap.get(Limelight3A.class, "limelight");
+                    applyLimelightPipeline(limelight);
+                    applyLimelightPollRate(limelight);
+                    try { limelight.start(); } catch (Throwable ignored) {}
+                } catch (Exception ex) { limelight = null; }
                 visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
             }
         } catch (Exception ex) {
@@ -894,9 +897,29 @@ public abstract class BaseAuto extends LinearOpMode {
         try { intake.applyBrakeHold(); } catch (Throwable ignored) {}
         try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
     }
+    private void applyLimelightPipeline(Limelight3A ll) {
+        if (ll == null) return;
+        try {
+            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
+            return;
+        } catch (Throwable ignored) { }
+
+        try {
+            ll.getClass().getMethod("setPipelineIndex", int.class)
+                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
+        } catch (Throwable ignored) { }
+    }
+
+    private void applyLimelightPollRate(Limelight3A ll) {
+        if (ll == null) return;
+        try {
+            ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
+        } catch (Throwable ignored) { }
+    }
     /** Shutdown the vision portal safely if it was created. */
     protected final void stopVisionIfAny() {
         try { if (vision != null) { vision.setObeliskAutoLatchEnabled(false); vision.stop(); } } catch (Exception ignored) {}
+        try { if (limelight != null) { limelight.stop(); } } catch (Exception ignored) {}
     }
 
     private String resolveAutoName() {

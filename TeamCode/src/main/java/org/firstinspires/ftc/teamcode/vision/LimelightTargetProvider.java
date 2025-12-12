@@ -53,21 +53,18 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public boolean hasTarget() {
         LLResult result = latest();
-        latchObelisk(result);
         return result != null && result.isValid();
     }
 
     @Override
     public double getHeadingErrorDeg() {
         LLResult result = latest();
-        latchObelisk(result);
         return (result != null && result.isValid()) ? result.getTx() : Double.NaN;
     }
 
     @Override
     public double getDistanceMeters() {
         LLResult result = latest();
-        latchObelisk(result);
         if (result == null || !result.isValid()) return Double.NaN;
 
         Pose3D pose = selectPose(result);
@@ -84,7 +81,21 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     private LLResult latest() {
-        return (limelight != null) ? limelight.getLatestResult() : null;
+        LLResult result = fetchLatest();
+        if (!isFresh(result)) return null;
+        return result;
+    }
+
+    private LLResult fetchLatest() {
+        if (limelight == null) return null;
+        try {
+            LLResult result = limelight.getLatestResult();
+            latchObelisk(result);
+            if (result != null && result.isValid()) {
+                return result;
+            }
+            return null;
+        } catch (Throwable ignored) { return null; }
     }
 
     private Pose3D selectPose(LLResult result) {
@@ -94,6 +105,15 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         if (pose != null) return pose;
 
         return result.getBotpose();
+    }
+
+    private boolean isFresh(LLResult result) {
+        if (result == null) return false;
+        Long tsMs = readTimestampMs(result);
+        if (tsMs == null) return true; // No timestamp available—assume current
+
+        long ageMs = System.currentTimeMillis() - tsMs;
+        return ageMs <= VisionConfig.LimelightFusion.MAX_AGE_MS;
     }
 
     private void latchObelisk(LLResult result) {
@@ -119,6 +139,24 @@ public class LimelightTargetProvider implements VisionTargetProvider {
                 ObeliskSignal.updateFromTagId((int) Math.round(id));
             }
         }
+    }
+
+    private Long readTimestampMs(LLResult result) {
+        try {
+            Object seconds = result.getClass().getMethod("getTimestampSeconds").invoke(result);
+            if (seconds instanceof Number) {
+                return (long) (((Number) seconds).doubleValue() * 1000.0);
+            }
+        } catch (Throwable ignored) { }
+
+        try {
+            Object millis = result.getClass().getMethod("getTimestampMs").invoke(result);
+            if (millis instanceof Number) {
+                return ((Number) millis).longValue();
+            }
+        } catch (Throwable ignored) { }
+
+        return null;
     }
 
     private Integer readSingleId(LLResult result, String method) {

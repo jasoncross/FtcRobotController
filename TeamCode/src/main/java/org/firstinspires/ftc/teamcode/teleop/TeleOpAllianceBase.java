@@ -158,6 +158,7 @@ import org.firstinspires.ftc.teamcode.odometry.Odometry;
 import org.firstinspires.ftc.teamcode.odometry.PoseStore;
 
 // === VISION IMPORTS ===
+import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
@@ -204,6 +205,8 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 
 public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-10-30): Added AutoAim drive speed scaling, manual RPM D-pad nudges (AutoSpeed off & lock engaged), and telemetry updates.
@@ -288,6 +291,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private String visionPerfLine = "Perf: FPS=--- LatMs=---";
     private String visionLightingLine = null;
     private String visionHealthLine = null;
+    private String limelightStatusLine = null;
+    private String limelightHealthLine = null;
     private boolean visionWarningShown = false;
     private ExecutorService visionTaskExecutor;
     private volatile boolean visionProfileSwapInProgress = false;
@@ -442,9 +447,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
             vision.setRangeScale(VisionTuning.RANGE_SCALE); // keep your calibration scale unless re-tuned
             visionTargetProvider = new WebcamLegacyTargetProvider(vision, this::alliance);
         } else {
-            limelight = hardwareMap.get(Limelight3A.class, "limelight");
-            try { limelight.getClass().getMethod("setPipelineIndex", int.class)
-                    .invoke(limelight, VisionConfig.LimelightFusion.PIPELINE_INDEX); } catch (Throwable ignored) {}
+            try {
+                limelight = hardwareMap.get(Limelight3A.class, "limelight");
+            } catch (Exception ex) {
+                telemetry.addLine("Limelight not found; ensure EthernetDevice named 'limelight'");
+            }
+
+            if (limelight != null) {
+                applyLimelightPipeline(limelight);
+                applyLimelightPollRate(limelight);
+                try { limelight.start(); } catch (Throwable ignored) {}
+            }
+
             visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
         }
 
@@ -888,6 +902,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         mirrorData(dashboardLines, "Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg));
         Double rawIn = (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) ? rangeMetersRaw * M_TO_IN : null;
+        updateLimelightTelemetry();
+        if (limelightStatusLine != null) mirrorLine(dashboardLines, limelightStatusLine);
+        if (limelightHealthLine != null) mirrorLine(dashboardLines, limelightHealthLine);
         updateVisionTelemetry(null, rawIn);
         mirrorData(dashboardLines, "Tag Distance (in)", (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn));
         mirrorData(dashboardLines, "Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN));
@@ -951,6 +968,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     public void stop() {
         // Ensure everything is off when OpMode stops for any reason.
         stopAll();
+        try { if (limelight != null) limelight.stop(); } catch (Throwable ignored) {}
         if (visionTaskExecutor != null) {
             visionTaskExecutor.shutdownNow();
             visionTaskExecutor = null;
@@ -1052,6 +1070,85 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         boolean goalVisibleForAim = vision.hasGoodGoalTagForAim(allianceGoalTagId());
         updateVisionHealthTelemetry(goalVisibleForAim, aimDet, brightnessMean, profile, now);
+    }
+
+    private void updateLimelightTelemetry() {
+        if (VisionConfig.VISION_SOURCE != VisionSource.LIMELIGHT) {
+            limelightStatusLine = null;
+            limelightHealthLine = null;
+            return;
+        }
+
+        boolean present = limelight != null;
+        boolean resultNull = true;
+        boolean resultValid = false;
+        Double tx = null;
+        boolean botposePresent = false;
+        Integer pipelineIdx = null;
+        if (limelight != null) {
+            LLResult result = null;
+            try { result = limelight.getLatestResult(); } catch (Throwable ignored) {}
+            resultNull = (result == null);
+            if (result != null) {
+                resultValid = result.isValid();
+                tx = result.getTx();
+                Pose3D pose = result.getBotpose_MT2();
+                if (pose == null) pose = result.getBotpose();
+                botposePresent = pose != null && pose.getPosition() != null;
+            }
+            pipelineIdx = readPipelineIndex(limelight);
+        }
+
+        String pipeStr = (pipelineIdx == null) ? "--" : String.valueOf(pipelineIdx);
+        String txStr = (tx == null || Double.isNaN(tx)) ? "--" : String.format(Locale.US, "%.1f", tx);
+        limelightStatusLine = String.format(Locale.US,
+                "Limelight: present=%s resultNull=%s resultValid=%s pipe=%s tx=%s botpose=%s",
+                present, resultNull, resultValid, pipeStr, txStr, botposePresent);
+
+        if (!present) {
+            limelightHealthLine = "Limelight not found; ensure EthernetDevice named 'limelight'";
+        } else if (resultNull) {
+            limelightHealthLine = "Limelight connected; waiting for frames";
+        } else {
+            limelightHealthLine = null;
+        }
+    }
+
+    private void applyLimelightPipeline(Limelight3A ll) {
+        if (ll == null) return;
+        try {
+            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
+            return;
+        } catch (Throwable ignored) { }
+
+        try {
+            ll.getClass().getMethod("setPipelineIndex", int.class)
+                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
+        } catch (Throwable ignored) { }
+    }
+
+    private void applyLimelightPollRate(Limelight3A ll) {
+        if (ll == null) return;
+        try {
+            ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
+        } catch (Throwable ignored) { }
+    }
+
+    private Integer readPipelineIndex(Limelight3A ll) {
+        if (ll == null) return null;
+        try {
+            Object value = ll.getClass().getMethod("getCurrentPipelineIndex").invoke(ll);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+        } catch (Throwable ignored) { }
+        try {
+            Object value = ll.getClass().getMethod("getPipelineIndex").invoke(ll);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+        } catch (Throwable ignored) { }
+        return null;
     }
 
     private void updateVisionHealthTelemetry(boolean goalVisibleForAim,

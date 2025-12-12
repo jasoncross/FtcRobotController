@@ -91,15 +91,15 @@ public class TagAimController {
     }
 
     public double headingDeg() {
-        return provider != null && provider.hasTarget() ? provider.getHeadingErrorDeg() : Double.NaN;
+        return provider != null && provider.hasGoalTarget() ? provider.getHeadingErrorDeg() : Double.NaN;
     }
 
     public double distanceMeters() {
-        return provider != null && provider.hasTarget() ? provider.getDistanceMeters() : Double.NaN;
+        return provider != null && provider.hasGoalTarget() ? provider.getDistanceMeters() : Double.NaN;
     }
 
     private double turnPowerWithProvider(VisionTargetProvider vision) {
-        if (vision == null || !vision.hasTarget()) {
+        if (vision == null || !vision.hasGoalTarget()) {
             return 0.0;
         }
         double errDeg = vision.getHeadingErrorDeg();   // + right, - left
@@ -128,6 +128,15 @@ public class TagAimController {
             public boolean hasTarget() {
                 return true;
             }
+
+            @Override
+            public boolean hasGoalTarget() { return hasTarget(); }
+
+            @Override
+            public boolean hasAnyTarget() { return hasTarget(); }
+
+            @Override
+            public int getBestVisibleTagId() { return det.id; }
 
             @Override
             public double getHeadingErrorDeg() {

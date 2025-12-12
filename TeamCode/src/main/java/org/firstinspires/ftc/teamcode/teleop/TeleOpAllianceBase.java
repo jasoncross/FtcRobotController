@@ -500,11 +500,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
 
         // AutoAim toggle (gated by current tag visibility)
-        controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-            boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasTarget();
-            if (!autoAimEnabled) {
-                if (hasGoal) {
-                    autoAimEnabled = true;
+            controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
+                boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+                if (!autoAimEnabled) {
+                    if (hasGoal) {
+                        autoAimEnabled = true;
                     aimLossStartMs = -1;
                     pulseDouble(gamepad1);
                 } else {
@@ -768,9 +768,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double twist   = cap * -gamepad1.right_stick_x;
         double appliedAimSpeedScale = 1.0;
 
-        boolean goalVisibleAny = visionTargetProvider != null && visionTargetProvider.hasTarget();
-        boolean goalVisibleForAim = goalVisibleAny;
-        boolean goalVisibleSmoothed = goalVisibleAny;
+        boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
+        boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+        boolean goalVisibleSmoothed = goalVisibleForAim;
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
         if (!Double.isNaN(headingDegRaw) && Double.isFinite(headingDegRaw)) {
@@ -782,7 +782,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         updateAutoAimNudge(null);
 
-        Double distanceForLockIn = goalVisibleAny && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)
+        Double distanceForLockIn = goalVisibleForAim && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)
                 ? rangeMetersRaw * M_TO_IN : null;
         if (!AutoAimTuning.LONG_SHOT_ENABLED) {
             longShotMode = false;
@@ -797,7 +797,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             appliedAimSpeedScale = clamp(autoAimSpeedScale, 0.0, 1.0);
             driveY  *= appliedAimSpeedScale;
             strafeX *= appliedAimSpeedScale;
-            if (goalVisibleSmoothed && goalVisibleAny) {
+            if (goalVisibleSmoothed && goalVisibleForAim) {
                 aimLossStartMs = -1L;
                 twist = aim.turnPower(); // ignore right stick
             } else {
@@ -870,6 +870,27 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double rpmRight = getRpmRight();
         double rpmAverage = getRpmAverage();
 
+        int bestTagId = (visionTargetProvider != null) ? visionTargetProvider.getBestVisibleTagId() : -1;
+        int allianceGoalId = allianceGoalTagId();
+        List<Integer> visibleIds = new ArrayList<>();
+        if (visionTargetProvider instanceof LimelightTargetProvider) {
+            LimelightTargetProvider llProvider = (LimelightTargetProvider) visionTargetProvider;
+            allianceGoalId = llProvider.getAllianceGoalId();
+            visibleIds = llProvider.getVisibleTagIds();
+        } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
+            visibleIds.add(allianceGoalId);
+        }
+        String visibleIdsStr = joinIds(visibleIds);
+
+        List<Integer> obeliskIds = new ArrayList<>();
+        for (int id : visibleIds) {
+            if (id >= 21 && id <= 23) obeliskIds.add(id);
+        }
+        boolean obeliskSeen = !obeliskIds.isEmpty();
+        String obeliskIdsStr = joinIds(obeliskIds);
+        int latchedObeliskId = ObeliskSignal.getLastTagId();
+        String latchedObeliskIdStr = (latchedObeliskId < 0) ? "-" : String.valueOf(latchedObeliskId);
+
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         String obeliskDisplay = ObeliskSignal.getDisplay();
         mirrorData(dashboardLines, "Obelisk", "%s", obeliskDisplay);
@@ -894,7 +915,25 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (manualRpmLocked) mirrorData(dashboardLines, "ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         mirrorData(dashboardLines, "RT", "%.2f", gamepad1.right_trigger);
         if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
-        mirrorData(dashboardLines, "Tag Visible", goalVisibleAny ? "YES" : "NO");
+        mirrorData(dashboardLines, "Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO");
+        mirrorData(dashboardLines, "Tag Visible (any)", anyTagVisible ? "YES" : "NO");
+        mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
+                "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
+                anyTagVisible,
+                anyTagVisible,
+                goalVisibleForAim,
+                (bestTagId < 0) ? "-" : String.valueOf(bestTagId)));
+        mirrorData(dashboardLines, "LL: allianceGoalId/ids", String.format(Locale.US,
+                "%d / %s",
+                allianceGoalId,
+                visibleIdsStr));
+        mirrorData(dashboardLines, "OB: seen ids/latched", String.format(Locale.US,
+                "seen=%s ids=%s latchedId=%s motif=%s ageMs=%d",
+                obeliskSeen,
+                obeliskIdsStr,
+                latchedObeliskIdStr,
+                ObeliskSignal.get(),
+                ObeliskSignal.ageMs()));
         mirrorData(dashboardLines, "AutoAim Grace (ms)", autoAimLossGraceMs);
         if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
             mirrorData(dashboardLines, "AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
@@ -1149,6 +1188,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         } catch (Throwable ignored) { }
         return null;
+    }
+
+    private String joinIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return "-";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(ids.get(i));
+        }
+        return sb.toString();
     }
 
     private void updateVisionHealthTelemetry(boolean goalVisibleForAim,

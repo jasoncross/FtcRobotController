@@ -20,9 +20,14 @@ import java.util.function.Supplier;
  *     Limelight becomes the default source.
  *
  * METHODS
- *   - hasTarget()
+ *   - hasTarget()/hasGoalTarget()
  *       • True when the configured alliance goal tag is visible in the webcam
  *         pipeline.
+ *   - hasAnyTarget()
+ *       • Returns the same as hasGoalTarget() because this pipeline only
+ *         publishes goal tags.
+ *   - getBestVisibleTagId()
+ *       • Returns the latched goal tag ID or -1 when no detections exist.
  *   - getHeadingErrorDeg()
  *       • Returns AprilTag bearing for the alliance goal or NaN when absent.
  *   - getDistanceMeters()
@@ -45,9 +50,21 @@ public class WebcamLegacyTargetProvider implements VisionTargetProvider {
     }
 
     @Override
-    public boolean hasTarget() {
+    public boolean hasTarget() { return hasGoalTarget(); }
+
+    @Override
+    public boolean hasGoalTarget() {
         if (visionAprilTag == null) return false;
         return visionAprilTag.hasAnyGoalTagForTarget(goalId());
+    }
+
+    @Override
+    public boolean hasAnyTarget() { return hasGoalTarget(); }
+
+    @Override
+    public int getBestVisibleTagId() {
+        AprilTagDetection det = goalDetection();
+        return det != null ? det.id : -1;
     }
 
     @Override

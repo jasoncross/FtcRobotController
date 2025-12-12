@@ -9,7 +9,10 @@
 
 The **Limelight 3A** is a USB-connected, FTC-native vision processor. It replaces our USB webcam + OpenCV pipeline and provides reliable AprilTag detection and 3D localization directly to FTC Java via the Limelight3A SDK.
 
-The LL3A is our **primary source for heading (tx), distance (pose), and pose correction** in auto and TeleOp.
+The LL3A is our **primary source for heading (tx), distance (pose), and pose correction** in auto and TeleOp. Odometry now fuses
+only Limelight XY (MegaTag2 preferred) with bounded corrections; yaw remains IMU-only and webcam pose fusion is disabled.
+
+**New abstraction (2025-12-11):** `vision/VisionTargetProvider` now defines the heading+distance contract used by TeleOp/Auto. `LimelightTargetProvider` implements this interface using Limelight tx + botpose (MT2 when available) while `WebcamLegacyTargetProvider` wraps the deprecated VisionPortal pipeline strictly for compatibility. Limelight remains the default source, and TeleOp plus BaseAuto now construct the provider based on `VisionConfig.VISION_SOURCE` (Limelight default, webcam legacy fallback) before feeding aim + launcher helpers. When Limelight is active it also latches Obelisk (21/22/23) tags directly from LL3A results so motif memory and telemetry remain live without the webcam stack.
 
 ---
 
@@ -57,16 +60,16 @@ Codex must understand these three core outputs:
 - Consumed primarily by LimelightAimHelper and Drivebase PID turn routines
 
 ## 4.2 Distance
-Primary source: **3D AprilTag pose data**  
-- Extracted from `Pose3D.getPosition().getZ()`  
-- Secondary fallback: **area (ta)** if pose is invalid  
+Primary source: **3D AprilTag pose data (botpose MT2 preferred)**
+- Computes planar distance from the Limelight botpose XY to the alliance goal tag, scaled by `VisionConfig.LIMELIGHT_RANGE_SCALE`.
+- Secondary fallback: **area (ta)** is no longer used now that botpose is available.
 - Used to calculate shooter RPM, feed timing, and auto positional offsets
 
 ## 4.3 Robot Pose (MegaTag1 & MegaTag2)
-- MegaTag1: 3D localization without IMU fusion  
-- MegaTag2: 3D localization fused with robot IMU yaw  
-- Used for odometry correction in autos  
-- Consumed by VisionPoseFusion → which updates the drivetrain pose estimate
+- MegaTag1: 3D localization without IMU fusion
+- MegaTag2: 3D localization fused with robot IMU yaw (still ignored for odometry heading)
+- Used for odometry correction in autos/TeleOp as XY-only inputs (no yaw fusion)
+- Consumed by odometry with two-phase gating (tight outlier rejection while tracking, larger reacquire window after `reacquireAfterMs`), per-step clamps, and speed/turn-rate motion gates to prevent snapping.
 
 ---
 

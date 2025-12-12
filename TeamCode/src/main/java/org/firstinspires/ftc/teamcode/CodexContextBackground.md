@@ -79,13 +79,14 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 
 ## 🎯 Vision & Aim
 
-### **Limelight 3A — Primary Vision System**  
+### **Limelight 3A — Primary Vision System**
 *(See [`docs/vision/Limelight3A.md`](./docs/vision/Limelight3A.md) for full details.)*
 
 - Provides **heading (tx)**, **distance (3D pose)**, and **full-field localization (MegaTag1/MegaTag2)**.  
 - USB-only device; appears as `EthernetDevice` in DS config.  
 - Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.  
 - All new AutoAim, AutoSpeed, and OdometryFusion development must target the Limelight 3A pipeline.
+- A new `VisionTargetProvider` abstraction fronts heading + distance; Limelight is now the default source while a legacy webcam wrapper exists only for fallback builds. `TagAimController` and `AutoAimSpeed` both consume the provider so aim PD and RPM gating share the same source. `BaseAuto` and TeleOp construct the provider (Limelight default, webcam fallback), Limelight latches obelisk motifs, and AutoSequence `visionMode(...)` steps no-op when Limelight is active to avoid webcam-only swaps.
 
 ### **Legacy P480 AprilTag Pipeline (DEPRECATED)**  
 - Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).  
@@ -104,9 +105,9 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 ---
 
 ## 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
-- Fuses wheel odometry + IMU + vision.
-- LL3A MegaTag1/2 results will become the primary pose correction source.
-- P480 AprilTag positions are legacy-only and will be fully replaced this season.
+- Uses the FTC-standard field-center frame (0,0 in the middle; +X right, +Y toward targets) with IMU-only heading and mecanum wheel deltas.
+- Optionally fuses Limelight botpose XY (MegaTag2 preferred) with two-phase gating: tight outlier rejection while tracking, a larger window after `reacquireAfterMs`, per-step correction clamps, and motion gates on speed/turn rate. Yaw is never fused.
+- Webcam pose fusion has been removed entirely; Limelight is the only vision source allowed to influence odometry.
 
 ---
 

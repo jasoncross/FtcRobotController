@@ -1137,9 +1137,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private Integer readPipelineIndex(Limelight3A ll) {
         if (ll == null) return null;
         try {
-            return ll.getCurrentPipelineIndex();
+            Object value = ll.getClass().getMethod("getCurrentPipelineIndex").invoke(ll);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
         } catch (Throwable ignored) { }
-
         try {
             Object value = ll.getClass().getMethod("getPipelineIndex").invoke(ll);
             if (value instanceof Number) {

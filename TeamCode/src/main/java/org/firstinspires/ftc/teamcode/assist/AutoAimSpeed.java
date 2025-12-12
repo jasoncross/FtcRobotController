@@ -6,7 +6,7 @@
  *   - Share one AprilTag-powered "Auto Aim + Auto Speed" loop between
  *     TeleOpAllianceBase and every BaseAuto-derived routine so students tune a
  *     single behavior for both match phases.
- *   - Translate VisionAprilTag distance into Launcher RPM through
+ *   - Translate vision-provided distance into Launcher RPM through
  *     LauncherAutoSpeedController while guarding against noisy detections.
  *   - Smoothly clamp twist corrections (fed into Drivebase) so the driver keeps
  *     control while automation nudges the robot toward the goal.
@@ -36,8 +36,8 @@
  *   - isEnabled()
  *       • Convenience getter for OpModes managing toggle buttons.
  *   - update(AprilTagDetection, headingDeg)
- *       • Convert the latest detection into RPM + twist suggestions, falling
- *         back to the seeded RPM when tags are lost.
+ *       • Convert the latest provider-sourced target info into RPM + twist
+ *         suggestions, falling back to the seeded RPM when tags are lost.
  *   - atSpeed(tolRpm)
  *       • Confirms launcher readiness using either the caller-provided tolerance
  *         or the shared rpmTolerance field.
@@ -45,17 +45,21 @@
  * NOTES
  *   - AutoRpmConfig.apply(...) overwrites LauncherAutoSpeedController tunables
  *     during robot init; this class simply reads the live controller values.
- *   - VisionAprilTag.setRangeScale(...) calibrations change the distance fed to
+ *   - Provider-supplied distance calibration changes feed directly into
  *     update(); re-run tape-measure checks after moving the camera or goal.
  *   - TagAimController limits are slightly wider than maxTwist so this class is
  *     the final clamp before we pass steering hints back to TeleOp/Auto.
+ * CHANGES (2025-12-11): Routed AutoAimSpeed distance/heading queries through
+ *                       VisionTargetProvider so the helper follows whichever
+ *                       vision source is active (Limelight by default) while
+ *                       preserving existing toggles and readiness behavior.
  */
 package org.firstinspires.ftc.teamcode.assist;
 
 import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
-import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 
@@ -66,10 +70,10 @@ public class AutoAimSpeed {
     public double rpmTolerance = AutoAimTuning.RPM_TOLERANCE;     // Shared readiness window so Auto and TeleOp agree on launcher "ready"
     public double initialAutoDefaultSpeed = AutoAimTuning.INITIAL_AUTO_DEFAULT_SPEED; // Seed RPM prior to tag lock; match TeleOpAllianceBase override if changed
 
-    private static final double M_TO_IN = 39.37007874015748;               // Constant to convert AprilTag meters → inches
+    private static final double M_TO_IN = 39.37007874015748;               // Constant to convert meters → inches
 
     // ---------------- Deps ----------------
-    private final VisionAprilTag vision;                 // Shared AprilTag detector (distance + bearing)
+    private VisionTargetProvider provider;               // Shared target provider (distance + bearing)
     private final TagAimController aim;                  // PD twist controller for goal alignment
     private final LauncherAutoSpeedController autoCtrl;  // Distance→RPM curve helper
     private final Launcher launcher;                     // Physical flywheel subsystem
@@ -79,14 +83,25 @@ public class AutoAimSpeed {
     private boolean hadTagFix = false;                   // Remembers if we have seen a tag this enable cycle
 
     // Constructor wires dependencies so both TeleOp and Auto share identical assists.
-    public AutoAimSpeed(VisionAprilTag vision,
+    public AutoAimSpeed(VisionTargetProvider provider,
                         TagAimController aim,
                         LauncherAutoSpeedController autoCtrl,
                         Launcher launcher) {
-        this.vision   = vision;
+        this.provider = provider;
         this.aim      = aim;
         this.autoCtrl = autoCtrl;
         this.launcher = launcher;
+        if (this.aim != null) {
+            this.aim.setProvider(provider);
+        }
+    }
+
+    /** Legacy-compatible setter so existing OpModes can swap providers without changing constructor signatures. */
+    public void setProvider(VisionTargetProvider provider) {
+        this.provider = provider;
+        if (aim != null) {
+            aim.setProvider(provider);
+        }
     }
 
     // Enable the assist loop and let AutoSpeed control RPM again.
@@ -109,12 +124,19 @@ public class AutoAimSpeed {
     public double update(AprilTagDetection det, double currentHeadingDeg) {
         if (!enabled) return 0;
 
+        VisionTargetProvider vision = provider;
+        if (vision == null && det != null) {
+            vision = wrapDetection(det);
+        }
+
+        boolean hasTarget = vision != null && vision.hasTarget();
+
         // ---- AutoSpeed ----
         double outRpm;
-        if (det != null) {
-            double rM = vision.getScaledRange(det);
-            if (!Double.isNaN(rM) && Double.isFinite(rM)) {
-                double distIn = rM * M_TO_IN;
+        if (hasTarget) {
+            double distM = vision.getDistanceMeters();
+            if (!Double.isNaN(distM) && Double.isFinite(distM)) {
+                double distIn = distM * M_TO_IN;
                 outRpm = autoCtrl.updateWithVision(distIn);
                 hadTagFix = true;
             } else {
@@ -127,7 +149,9 @@ public class AutoAimSpeed {
 
         // ---- AutoAim → twist suggestion ----
         double twist = 0.0;
-        if (det != null) twist = aim.turnPower(det);
+        if (aim != null) {
+            twist = provider != null ? aim.turnPower() : aim.turnPower(det);
+        }
 
         // Clamp twist
         if (twist >  maxTwist) twist =  maxTwist;
@@ -140,5 +164,27 @@ public class AutoAimSpeed {
         double tol = (tolRpm != null && tolRpm > 0) ? tolRpm : rpmTolerance;
         double err = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
         return err <= tol;
+    }
+
+    private VisionTargetProvider wrapDetection(AprilTagDetection det) {
+        if (det == null) {
+            return null;
+        }
+        return new VisionTargetProvider() {
+            @Override
+            public boolean hasTarget() {
+                return true;
+            }
+
+            @Override
+            public double getHeadingErrorDeg() {
+                return det.ftcPose.bearing;
+            }
+
+            @Override
+            public double getDistanceMeters() {
+                return det.ftcPose.range;
+            }
+        };
     }
 }

@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.vision;
 
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.config.TagAimTuning;
+import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
 
 /*
  * FILE: TagAimController.java
@@ -25,21 +26,37 @@ import org.firstinspires.ftc.teamcode.config.TagAimTuning;
  * METHODS
  *   - setGains(kP, kD)
  *       • Update PD terms to match new tuning.
- *   - turnPower(det)
- *       • Return twist suggestion in [-0.6, 0.6] based on tag error.
- *   - headingDeg(det) / distanceMeters(det)
- *       • Telemetry helpers returning NaN when no tag is present.
+ *   - turnPower()
+ *       • Return twist suggestion in [-0.6, 0.6] based on heading error from the active provider.
+ *   - headingDeg() / distanceMeters()
+ *       • Telemetry helpers returning NaN when no tag is present via the provider.
  *
  * CHANGES (2025-11-18): Added asymmetric deadband support so callers can bias
  *                       the lock window for long-distance shots.
+ * CHANGES (2025-12-11): Routed heading + availability through VisionTargetProvider
+ *                       to decouple aim from legacy webcam implementations while
+ *                       preserving PD tuning and deadband behavior.
  */
 public class TagAimController {
+    private VisionTargetProvider provider;     // Source for target visibility + heading error
     private double kP = TagAimTuning.KP;        // Proportional gain (twist per degree); align with TunableDirectory AutoAim table
     private double kD = TagAimTuning.KD;        // Derivative gain to damp overshoot; increase slightly when oscillations appear
     private double clampAbs = TagAimTuning.CLAMP_ABS;      // Twist clamp magnitude (±clampAbs)
     private double deadbandMinDeg = -Math.abs(TagAimTuning.DEADBAND_DEG); // Deadband lower bound (can bias around zero)
     private double deadbandMaxDeg =  Math.abs(TagAimTuning.DEADBAND_DEG); // Deadband upper bound (can bias around zero)
     private double lastErrorDeg = 0.0; // Stored from previous frame for D term
+
+    public TagAimController() {
+        this(null);
+    }
+
+    public TagAimController(VisionTargetProvider provider) {
+        this.provider = provider;
+    }
+
+    public void setProvider(VisionTargetProvider provider) {
+        this.provider = provider;
+    }
 
     public void setGains(double kP, double kD) { this.kP = kP; this.kD = kD; }
     public void setClampAndDeadband(double clampAbs, double deadbandDeg) {
@@ -56,10 +73,36 @@ public class TagAimController {
         setDeadbandWindow(-Math.abs(TagAimTuning.DEADBAND_DEG), Math.abs(TagAimTuning.DEADBAND_DEG));
     }
 
-    /** Returns twist power [-1..1] to align robot to the tag; 0 when det == null or within deadband. */
+    /** Returns twist power [-1..1] to align robot to the tag; 0 when target is missing or within deadband. */
+    public double turnPower() {
+        return turnPowerWithProvider(provider);
+    }
+
+    /**
+     * Legacy signature to keep existing TeleOp/Auto code compiling while wiring through the new provider
+     * abstraction. When no provider is set, the detection is wrapped temporarily to supply heading error.
+     */
     public double turnPower(AprilTagDetection det) {
-        if (det == null) return 0.0;
-        double errDeg = det.ftcPose.bearing;   // + right, - left (SDK convention)
+        VisionTargetProvider vision = provider;
+        if (vision == null) {
+            vision = wrapDetection(det);
+        }
+        return turnPowerWithProvider(vision);
+    }
+
+    public double headingDeg() {
+        return provider != null && provider.hasTarget() ? provider.getHeadingErrorDeg() : Double.NaN;
+    }
+
+    public double distanceMeters() {
+        return provider != null && provider.hasTarget() ? provider.getDistanceMeters() : Double.NaN;
+    }
+
+    private double turnPowerWithProvider(VisionTargetProvider vision) {
+        if (vision == null || !vision.hasTarget()) {
+            return 0.0;
+        }
+        double errDeg = vision.getHeadingErrorDeg();   // + right, - left
         double deriv  = errDeg - lastErrorDeg; // simple D term (frame-to-frame)
         lastErrorDeg  = errDeg;
 
@@ -76,11 +119,25 @@ public class TagAimController {
         return power;
     }
 
-    public static double headingDeg(AprilTagDetection det) {
-        return det == null ? Double.NaN : det.ftcPose.bearing;
-    }
+    private VisionTargetProvider wrapDetection(AprilTagDetection det) {
+        if (det == null) {
+            return null;
+        }
+        return new VisionTargetProvider() {
+            @Override
+            public boolean hasTarget() {
+                return true;
+            }
 
-    public static double distanceMeters(AprilTagDetection det) {
-        return det == null ? Double.NaN : det.ftcPose.range;
+            @Override
+            public double getHeadingErrorDeg() {
+                return det.ftcPose.bearing;
+            }
+
+            @Override
+            public double getDistanceMeters() {
+                return det.ftcPose.range;
+            }
+        };
     }
 }

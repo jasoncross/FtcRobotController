@@ -19,6 +19,9 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  *                        launch zones, alliance-aware artifact rows with spacing
  *                        + radius tunables, and dashboard telemetry packet
  *                        support for TeleOp/Auto callers.
+ * CHANGES (2025-12-11): Updated drawing transforms for the field-center
+ *                        odometry frame (no Y shift) so overlays match fused
+ *                        poses with Limelight XY fusion enabled.
  */
 public final class DecodeFieldDrawing {
 
@@ -192,6 +195,6 @@ public final class DecodeFieldDrawing {
     }
 
     private static double toDashY(double fieldY) {
-        return fieldY - OdometryConfig.FIELD_LENGTH / 2.0; // Shift human wall origin to dashboard center
+        return fieldY; // Odometry now uses the dashboard-centered frame directly
     }
 }

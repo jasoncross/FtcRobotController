@@ -55,6 +55,13 @@ import java.util.function.Supplier;
  * CHANGES (2025-12-19): Per-fiducial aim uses the locked tag's tx/tz instead of
  *                       Limelight's global best target output, and obelisk
  *                       motif memory remains latched when tags leave view.
+ * CHANGES (2025-12-13): Treat zero/absent timestamps as current samples and
+ *                       accept fiducial-bearing frames even when isValid()
+ *                       returns false so Auto/TeleOp can keep locking tags,
+ *                       rumbling, and driving while AutoAim is enabled.
+ * CHANGES (2025-12-14): Treat any fresh Limelight sample as usable for goal
+ *                       targeting so AutoAim/Auto searches keep running even
+ *                       when validity flags drop during scans.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -179,7 +186,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private boolean isFresh(LLResult result) {
         if (result == null) return false;
         Long tsMs = readTimestampMs(result);
-        if (tsMs == null) return true; // No timestamp available—assume current
+        if (tsMs == null || tsMs <= 0L) return true; // No timestamp available—assume current
 
         long ageMs = System.currentTimeMillis() - tsMs;
         return ageMs <= VisionConfig.CameraFusion.CAMERA_POSE_MAX_AGE_MS;
@@ -252,7 +259,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         LLResult result = latest();
         long now = System.currentTimeMillis();
         List<FiducialObservation> observations = extractFiducials(result);
-        boolean resultValid = result != null && result.isValid();
+        boolean hasFiducials = !observations.isEmpty();
+        boolean resultValid = result != null; // Treat any fresh sample as usable for aim/rumble even if marked invalid
 
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);

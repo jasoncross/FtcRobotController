@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.vision;
 
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.config.TagAimTuning;
+import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
 
 /*
@@ -98,8 +99,20 @@ public class TagAimController {
         return provider != null && provider.hasGoalTarget() ? provider.getDistanceMeters() : Double.NaN;
     }
 
+    /**
+     * Ensure positive twist means “rotate right/clockwise (nose toward +X, decreasing field heading)” at the drivebase.
+     * Apply exactly once when handing rotation to the drivetrain to align drive hardware with aim error convention.
+     */
+    public static double applyDriveTwistSign(double twist) {
+        boolean invert = false;
+        try { invert = AutoAimTuning.INVERT_TWIST; } catch (Throwable ignored) {}
+        return invert ? -twist : twist;
+    }
+
     private double turnPowerWithProvider(VisionTargetProvider vision) {
         if (vision == null || !vision.hasGoalTarget()) {
+            // Keep derivative sane after target loss so the first frame back uses fresh error
+            lastErrorDeg = 0.0;
             return 0.0;
         }
         double errDeg = vision.getHeadingErrorDeg();   // + right, - left

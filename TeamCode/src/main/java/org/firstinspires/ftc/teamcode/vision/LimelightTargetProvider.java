@@ -3,6 +3,10 @@ package org.firstinspires.ftc.teamcode.vision;
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
@@ -401,7 +405,9 @@ public class LimelightTargetProvider implements VisionTargetProvider {
                 if (value instanceof double[]) {
                     double[] arr = (double[]) value;
                     if (arr.length >= 3) {
-                        return new Pose3D(arr[0], arr[1], arr[2]);
+                        return new Pose3D(
+                                new Position(DistanceUnit.METER, arr[0], arr[1], arr[2], 0L),
+                                new YawPitchRollAngles(AngleUnit.RADIANS, 0, 0, 0, 0L));
                     }
                 }
             } catch (Throwable ignored) { }

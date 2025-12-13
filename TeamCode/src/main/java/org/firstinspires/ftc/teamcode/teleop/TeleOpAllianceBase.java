@@ -910,10 +910,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         int bestTagId = (visionTargetProvider != null) ? visionTargetProvider.getBestVisibleTagId() : -1;
         int allianceGoalId = allianceGoalTagId();
         List<Integer> visibleIds = new ArrayList<>();
+        LimelightTargetProvider.AimTelemetry aimTelemetry = null;
         if (visionTargetProvider instanceof LimelightTargetProvider) {
             LimelightTargetProvider llProvider = (LimelightTargetProvider) visionTargetProvider;
             allianceGoalId = llProvider.getAllianceGoalId();
             visibleIds = llProvider.getVisibleTagIds();
+            aimTelemetry = llProvider.getAimTelemetry();
         } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
             visibleIds.add(allianceGoalId);
         }
@@ -974,6 +976,18 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 "%d / %s",
                 allianceGoalId,
                 visibleIdsStr));
+        if (aimTelemetry != null) {
+            String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
+            String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
+            String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
+            mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
+                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
+                    aimTelemetry.goalVisible,
+                    lockedId,
+                    aimTxUsed,
+                    lockAgeMs,
+                    joinIds(aimTelemetry.visibleIds)));
+        }
         mirrorData(dashboardLines, "OB: seen ids/latched", String.format(Locale.US,
                 "seen=%s ids=%s latchedId=%s motif=%s ageMs=%d",
                 obeliskSeen,

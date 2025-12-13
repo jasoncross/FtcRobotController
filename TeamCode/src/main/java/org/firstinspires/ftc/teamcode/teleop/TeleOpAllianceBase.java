@@ -954,7 +954,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 twistAfterSign,
                 driveRotCommand,
                 twistSignTestMode ? "ON" : "OFF",
-                Double.isNaN(aimTwistRaw) ? "-" : String.format(Locale.US, "%.3f", aimTwistRaw))));
+                Double.isNaN(aimTwistRaw) ? "-" : String.format(Locale.US, "%.3f", aimTwistRaw)));
         mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
                 "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
                 anyTagVisible,

@@ -28,6 +28,10 @@
  *   - LONG_SHOT_DISTANCE_IN (NEW 2025-11-18)
  *       • Distance threshold (inches) above which AutoAim applies the
  *         alliance-biased lock window for long-range shots.
+ *   - INVERT_TWIST (NEW 2026-01-08)
+ *       • Optional sign flip applied once where twist feeds the drivebase so
+ *         the physical "+rotation" direction matches TagAimController’s
+ *         heading error convention (+right / -left).
  */
 package org.firstinspires.ftc.teamcode.config;
 
@@ -43,4 +47,5 @@ public final class AutoAimTuning {
     public static double AUTO_AIM_SPEED_SCALE = 0.25;                                 // Translation multiplier (0-1) while AutoAim is active
     public static boolean LONG_SHOT_ENABLED = true;                                    // Master toggle for alliance-biased long-shot lock behavior
     public static double LONG_SHOT_DISTANCE_IN = 90.0;                                // Range cutover (in) for long-shot lock biasing
+    public static boolean INVERT_TWIST = false;                                        // Flip once at drivebase input if drive rotation sign is opposite of aim convention
 }

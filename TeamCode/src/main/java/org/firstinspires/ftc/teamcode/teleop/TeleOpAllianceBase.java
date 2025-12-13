@@ -326,6 +326,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private boolean rpmTestEnabled = false; // Manual RPM sweep test (D-pad adjustments)
     private double  rpmTestTarget  = 0.0;   // Current manual test RPM when enabled
 
+    // ---------------- Twist Sign Test ----------------
+    private boolean twistSignTestMode = false;   // Forces a constant +rotation to confirm drivebase sign
+    private boolean lastTwistSignTestButton = false;
+
     // ---------------- Intake Resume ----------------
     private boolean intakeResumeState = DEFAULT_INTAKE_ENABLED; // Stored intake state for StopAll resume
 
@@ -738,6 +742,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Normal controls (only run when NOT STOPPED) --------
         continuousFireHeld = false; // will be set true by hold bindings during this update
+
+        boolean twistSignTestButton = gamepad1.ps;
+        if (twistSignTestButton && !lastTwistSignTestButton) {
+            twistSignTestMode = !twistSignTestMode; // Toggle constant-rotation diagnostic
+        }
+        lastTwistSignTestButton = twistSignTestButton;
         controls.update(gamepad1, gamepad2);
         if (!continuousFireHeld) {
             continuousFireHoldStartMs = 0L;
@@ -765,8 +775,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         double driveY  = cap * gamepad1.left_stick_y;
         double strafeX = cap * -gamepad1.left_stick_x;
-        double twist   = cap * -gamepad1.right_stick_x;
+        double driverTwistRaw = cap * -gamepad1.right_stick_x;
+        double twistRaw = driverTwistRaw; // Updated below by AutoAim/test overrides
         double appliedAimSpeedScale = 1.0;
+        double aimTwistRaw = Double.NaN;  // Captures aim suggestion pre-sign for telemetry
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
         boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
@@ -803,7 +815,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             strafeX *= appliedAimSpeedScale;
             if (goalVisibleSmoothed && goalVisibleForAim) {
                 aimLossStartMs = -1L;
-                twist = aim.turnPower(); // ignore right stick
+                aimTwistRaw = aim.turnPower(); // ignore right stick
+                twistRaw = aimTwistRaw;
             } else {
                 if (aimLossStartMs < 0) aimLossStartMs = now;
                 if ((now - aimLossStartMs) >= autoAimLossGraceMs) {
@@ -811,7 +824,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     aimLossStartMs = -1L;
                     pulseSingle(gamepad1); // disabled after grace
                 } else {
-                    twist = 0.0; // hold heading during grace
+                    twistRaw = 0.0; // hold heading during grace
                 }
             }
         } else {
@@ -821,13 +834,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
+        if (twistSignTestMode) {
+            twistRaw = 0.2; // Positive rotation diagnostic (+ should turn robot clockwise/right)
+        }
+
         if (reverseDriveMode) {
             driveY = -driveY;
             strafeX = -strafeX;
         }
 
         // Drive it
-        drive.drive(driveY, strafeX, twist);
+        double twistAfterSign = TagAimController.applyDriveTwistSign(twistRaw);
+        double driveRotCommand = twistAfterSign;
+        drive.drive(driveY, strafeX, driveRotCommand);
 
         if (odometry != null) {
             fusedPose = odometry.update();
@@ -928,6 +947,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
         mirrorData(dashboardLines, "Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO");
         mirrorData(dashboardLines, "Tag Visible (any)", anyTagVisible ? "YES" : "NO");
+        mirrorData(dashboardLines, "Aim Sign Debug", String.format(Locale.US,
+                "errDeg=%.1f raw=%.3f signed=%.3f driveRot=%.3f test=%s aimRaw=%s",
+                (Double.isFinite(headingDegRaw) ? headingDegRaw : Double.NaN),
+                twistRaw,
+                twistAfterSign,
+                driveRotCommand,
+                twistSignTestMode ? "ON" : "OFF",
+                Double.isNaN(aimTwistRaw) ? "-" : String.format(Locale.US, "%.3f", aimTwistRaw)));
         mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
                 "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
                 anyTagVisible,

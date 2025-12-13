@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.odometry;
 
-import com.qualcomm.hardware.limelightvision.LLFiducialResult;
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -37,6 +36,9 @@ import static java.lang.Math.*;
  *                        age) with an alliance-safe obelisk exclusion, and
  *                        centralized camera pose mapping to the shared frame
  *                        while exposing fusion debug telemetry.
+ * CHANGES (2025-12-14): Restored SDK compatibility by reflection-reading
+ *                        fiducial IDs when LLFiducialResult is absent and
+ *                        tightened static helpers used by the camera gate.
  * CHANGES (2025-11-26): Corrected odometry sign conventions so +X is right and
  *                        +Y is toward the targets, normalized IMU heading to
  *                        the shared frame (0° facing +Y, +CCW), and reused the
@@ -244,7 +246,7 @@ public class Odometry {
         return normHeading(fieldFrame);
     }
 
-    private double normHeading(double h) {
+    private static double normHeading(double h) {
         double v = h % 360.0;
         if (v < -180) v += 360.0;
         if (v > 180) v -= 360.0;
@@ -273,11 +275,17 @@ public class Odometry {
 
     private List<Integer> getVisibleIds(LLResult result) {
         List<Integer> ids = new ArrayList<>();
+        if (result == null) return ids;
         try {
-            List<LLFiducialResult> fiducials = result.getFiducialResults();
-            if (fiducials != null) {
-                for (LLFiducialResult f : fiducials) {
-                    ids.add(f.getFiducialId());
+            Object rawList = result.getClass().getMethod("getFiducialResults").invoke(result);
+            if (rawList instanceof List<?>) {
+                for (Object f : (List<?>) rawList) {
+                    try {
+                        Object idObj = f.getClass().getMethod("getFiducialId").invoke(f);
+                        if (idObj instanceof Number) {
+                            ids.add(((Number) idObj).intValue());
+                        }
+                    } catch (Throwable ignoredInner) { }
                 }
             }
         } catch (Throwable ignored) { }

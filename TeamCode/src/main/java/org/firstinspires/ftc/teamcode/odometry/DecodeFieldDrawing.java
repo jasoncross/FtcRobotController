@@ -27,6 +27,8 @@ import java.util.Locale;
  * CHANGES (2025-12-13): Added FieldPose-aligned pose overlay text (inches/deg)
  *                        on the dashboard field drawing to mirror driver
  *                        telemetry and validate heading/origin alignment.
+ * CHANGES (2025-12-14): Updated strokeText call to match the current FTC
+ *                        Dashboard Canvas signature for overlay text.
  */
 public final class DecodeFieldDrawing {
 
@@ -210,7 +212,6 @@ public final class DecodeFieldDrawing {
         double textX = toDashX(OdometryConfig.LEFT_FIELD_X + 4.0);
         double textY = toDashY(OdometryConfig.TARGET_WALL_Y - 6.0);
         String text = String.format(Locale.US, "Pose x=%.1f y=%.1f h=%.1f", pose.x, pose.y, pose.headingDeg);
-        c.setStroke(COLOR_TILE);
-        c.strokeText(text, textX, textY);
+        c.strokeText(text, textX, textY, COLOR_TILE, 1.0, false);
     }
 }

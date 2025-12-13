@@ -109,6 +109,10 @@ public class Drivebase {
     //                        be retuned without editing Drivebase.java.
     // CHANGES (2025-11-25): Exposed wheel encoder helpers for odometry consumers while
     //                        keeping TeleOp safe-init guarantees; refreshed changelog dates to match release.
+    // CHANGES (2025-12-13): Reworked moveWithTwist to recompute the field-centric vector each loop so
+    //                        translation stays aligned to the requested heading while twisting, and replaced
+    //                        the fixed-direction tick target with encoder-derived translation accumulation to
+    //                        keep distance termination accurate during turns.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -307,39 +311,34 @@ public class Drivebase {
         translationSpeed = Math.max(minTranslationSpeed, translationSpeed);
         twistSpeed = clamp(twistSpeed, 0.1, 1.0);
 
-        double rad = toRadians(degrees);
-        double forwardRaw = cos(rad);
-        double lateralRaw = sin(rad);
-        double forward = -forwardRaw;
+        double targetDistanceAbs = abs(distanceInches);
+        if (targetDistanceAbs <= 1e-3) {
+            stopAll();
+            return;
+        }
 
-        // Normalize the translation vector so the speed cap applies uniformly.
-        double maxVec = max(1.0, max(abs(forward), abs(lateralRaw)));
-        forward /= maxVec;
-        lateralRaw /= maxVec;
+        int flLast = fl.getCurrentPosition();
+        int frLast = fr.getCurrentPosition();
+        int blLast = bl.getCurrentPosition();
+        int brLast = br.getCurrentPosition();
 
-        // Compute expected per-wheel scaling for progress tracking (mirrors move()).
-        double xAdj = lateralRaw * STRAFE_CORRECTION;
-        double yAdj = forward;
-        double flMult = yAdj + xAdj;
-        double frMult = yAdj - xAdj;
-        double blMult = yAdj - xAdj;
-        double brMult = yAdj + xAdj;
-        double norm = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
-        flMult /= norm; frMult /= norm; blMult /= norm; brMult /= norm;
-
-        double baseTicks = distanceInches * TICKS_PER_IN;
-        double absTargetMean = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * abs(baseTicks);
-
-        int flStart = fl.getCurrentPosition();
-        int frStart = fr.getCurrentPosition();
-        int blStart = bl.getCurrentPosition();
-        int brStart = br.getCurrentPosition();
+        double traveledInches = 0.0;
 
         ElapsedTime dt = new ElapsedTime();
         double lastErr = shortestDiff(targetHeadingDeg, heading());
 
         while (isActive()) {
             double curHeading = heading();
+            double fieldRelativeDeg = normDeg(degrees - curHeading);
+            double rad = toRadians(fieldRelativeDeg);
+            double forwardRaw = cos(rad);
+            double lateralRaw = sin(rad);
+            double forward = -forwardRaw;
+
+            double maxVec = max(1.0, max(abs(forward), abs(lateralRaw)));
+            forward /= maxVec;
+            lateralRaw /= maxVec;
+
             double err = shortestDiff(targetHeadingDeg, curHeading);
             double derr = (err - lastErr) / max(1e-3, dt.seconds());
             lastErr = err; dt.reset();
@@ -347,13 +346,29 @@ public class Drivebase {
             double twistCmd = TURN_KP * err + TURN_KD * derr;
             twistCmd = clamp(twistCmd, -twistSpeed, twistSpeed);
 
-            double flDelta = abs(fl.getCurrentPosition() - flStart);
-            double frDelta = abs(fr.getCurrentPosition() - frStart);
-            double blDelta = abs(bl.getCurrentPosition() - blStart);
-            double brDelta = abs(br.getCurrentPosition() - brStart);
-            double absMeanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
+            int flPos = fl.getCurrentPosition();
+            int frPos = fr.getCurrentPosition();
+            int blPos = bl.getCurrentPosition();
+            int brPos = br.getCurrentPosition();
 
-            double progress = (absTargetMean <= 1e-3) ? 0.0 : clamp(absMeanDelta / absTargetMean, 0.0, 1.0);
+            double flStep = flPos - flLast;
+            double frStep = frPos - frLast;
+            double blStep = blPos - blLast;
+            double brStep = brPos - brLast;
+
+            flLast = flPos;
+            frLast = frPos;
+            blLast = blPos;
+            brLast = brPos;
+
+            double driveStepTicks = (flStep + frStep + blStep + brStep) / 4.0;
+            double strafeStepTicks = (flStep - frStep - blStep + brStep) / 4.0;
+
+            double driveStepInches = driveStepTicks / TICKS_PER_IN;
+            double strafeStepInches = strafeStepTicks / TICKS_PER_IN;
+            traveledInches += abs(hypot(driveStepInches, strafeStepInches));
+
+            double progress = clamp(traveledInches / targetDistanceAbs, 0.0, 1.0);
             double remaining = 1.0 - progress;
             double transSpeed = minTranslationSpeed
                     + (translationSpeed - minTranslationSpeed) * remaining;
@@ -373,7 +388,7 @@ public class Drivebase {
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
 
-            if (absTargetMean <= 1e-3 || absMeanDelta >= absTargetMean) {
+            if (traveledInches >= targetDistanceAbs) {
                 break;
             }
 

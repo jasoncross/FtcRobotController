@@ -39,7 +39,10 @@ public final class DecodeFieldDrawing {
     public static void drawField(TelemetryPacket packet, FieldPose pose, Alliance alliance, ObeliskSignal.Order motif) {
         Canvas c = packet.fieldOverlay();
         drawStatic(c, motif);
-        if (pose != null) drawPose(c, pose);
+        if (pose != null) {
+            drawPose(c, pose);
+            drawPoseText(c, pose);
+        }
     }
 
     private static void drawStatic(Canvas c, ObeliskSignal.Order motif) {
@@ -179,6 +182,16 @@ public final class DecodeFieldDrawing {
         double hy = py + 8.0 * Math.cos(headingRad);
         c.setStroke("#000000");
         c.strokeLine(px, py, hx, hy);
+    }
+
+    /** Overlay the numeric pose values (inches, degrees) onto the field view. */
+    private static void drawPoseText(Canvas c, FieldPose pose) {
+        c.setStroke("#000000");
+        c.setFill("#000000");
+        double textX = toDashX(OdometryConfig.LEFT_FIELD_X) + 4;
+        double textY = toDashY(OdometryConfig.TARGET_WALL_Y) - 6;
+        c.strokeText(String.format("Pose: %.1f, %.1f, %.1f", pose.x, pose.y, pose.headingDeg),
+                textX, textY, "#000000", 12);
     }
 
     private static void drawTriangle(Canvas c, double x1, double y1, double x2, double y2, double x3, double y3) {

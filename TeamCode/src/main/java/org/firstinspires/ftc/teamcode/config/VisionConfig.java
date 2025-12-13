@@ -21,9 +21,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *   - LIMELIGHT_RANGE_SCALE
  *       • Multiplier applied to Limelight-derived distances to correct for
  *         mounting height or calibration drift.
- *   - LimelightFusion.*
+ *   - CameraFusion.*
  *       • Controls pose fusion enablement, quality gating, and XY correction
- *         smoothing when Limelight-based odometry updates are allowed.
+ *         smoothing when camera-based odometry updates are allowed.
  *
  * CHANGES (2025-12-11): Added Limelight pose-fusion tunables (quality, gating,
  *                        axis offsets) to support FTC field-center odometry.
@@ -50,24 +50,22 @@ public final class VisionConfig {
 
     public static final double LIMELIGHT_RANGE_SCALE = 1.0; // Scaling factor on Limelight distance output; adjust after calibration
 
-    public static final class LimelightFusion {
-        private LimelightFusion() {}
+    public static final class CameraFusion {
+        private CameraFusion() {}
 
         public static final int PIPELINE_INDEX = 0; // Default LL pipeline index for AprilTags/localization
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
-        public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
+        public static final boolean ENABLE_POSE_FUSION = true; // Enable camera XY fusion into odometry when selected
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
 
-        public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
-        public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)
-
-        public static final double MAX_POS_JUMP_IN_NORMAL = 18.0; // Reject vision if disagreement exceeds this (inches) while tracking
-        public static final long REACQUIRE_AFTER_MS = 600; // Enter reacquire mode if no accepted vision for this long (ms)
-        public static final double MAX_POS_JUMP_IN_REACQUIRE = 72.0; // Looser reject threshold after tag loss (inches)
+        public static final int CAMERA_POSE_WINDOW_FRAMES = 10; // Window size for stability gate (frames)
+        public static final int CAMERA_POSE_MIN_GOOD_FRAMES = 4; // Minimum frames required for a stable lock
+        public static final double CAMERA_POSE_MAX_STDDEV_IN = 6.0; // Max XY stddev inside the stability window (in)
+        public static final double CAMERA_POSE_MAX_STDDEV_DEG = 5.0; // Max heading stddev inside the stability window (deg)
+        public static final long CAMERA_POSE_MAX_AGE_MS = 200; // Max age of samples considered for stability (ms)
 
         public static final double MAX_CORRECTION_STEP_IN = 3.0; // Clamp per-update correction magnitude (inches)
-        public static final double FUSION_ALPHA_NORMAL = 0.35; // Blend factor for clamped corrections during normal tracking
-        public static final double FUSION_ALPHA_REACQUIRE = 0.25; // Blend factor for clamped corrections immediately after reacquire
+        public static final double FUSION_ALPHA = 0.15; // Blend factor for clamped corrections while stable
 
         public static final double MAX_SPEED_IN_PER_S = 35.0; // Skip fusion if robot is faster than this (in/s)
         public static final double MAX_TURN_RATE_DEG_PER_S = 140.0; // Skip fusion if turning faster than this (deg/s)

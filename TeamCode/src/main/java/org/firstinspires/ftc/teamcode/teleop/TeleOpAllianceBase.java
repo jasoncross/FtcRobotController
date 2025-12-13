@@ -1073,6 +1073,32 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
+
+        // --- ODOM DEBUG ---
+        mirrorLine(dashboardLines, "--- ODOM DEBUG ---");
+        FieldPose wheel = (odometry != null) ? odometry.getWheelPose() : new FieldPose();
+        mirrorData(dashboardLines, "wheelPose", "%.1f, %.1f, %.1f", wheel.x, wheel.y, wheel.headingDeg);
+        Odometry.CameraDebug cam = (odometry != null) ? odometry.getCameraDebug() : new Odometry.CameraDebug();
+        if (cam.rawMeters != null && cam.rawMeters.length >= 3) {
+            mirrorData(dashboardLines, "camRaw(m)", "%.2f, %.2f, %.1f", cam.rawMeters[0], cam.rawMeters[1], cam.rawMeters[2]);
+        }
+        if (cam.mappedPose != null) {
+            mirrorData(dashboardLines, "camIn(in)", "%.1f, %.1f, %.1f", cam.mappedPose.x, cam.mappedPose.y, cam.mappedPose.headingDeg);
+        }
+        mirrorData(dashboardLines, "camGate", String.format(Locale.US,
+                "%d/%d std=%.1f in, %.1f deg age=%d accepted=%s reason=%s",
+                cam.goodCount,
+                cam.windowCount,
+                cam.stddevPosIn,
+                cam.stddevHeadingDeg,
+                cam.ageMs,
+                cam.accepted,
+                (cam.rejectReason == null ? "-" : cam.rejectReason)));
+        mirrorData(dashboardLines, "camTags", String.format(Locale.US,
+                "goalVisible=%s obeliskOnly=%s ids=%s",
+                cam.goalVisible,
+                cam.obeliskOnly,
+                cam.tagIds));
         sendDashboard(fusedPose, "RUN", dashboardLines);
         telemetry.update();
     }
@@ -1230,20 +1256,20 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void applyLimelightPipeline(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
+            ll.pipelineSwitch(VisionConfig.CameraFusion.PIPELINE_INDEX);
             return;
         } catch (Throwable ignored) { }
 
         try {
             ll.getClass().getMethod("setPipelineIndex", int.class)
-                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
+                    .invoke(ll, VisionConfig.CameraFusion.PIPELINE_INDEX);
         } catch (Throwable ignored) { }
     }
 
     private void applyLimelightPollRate(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
+            ll.setPollRateHz(VisionConfig.CameraFusion.POLL_HZ);
         } catch (Throwable ignored) { }
     }
 

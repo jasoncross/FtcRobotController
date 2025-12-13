@@ -182,7 +182,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         if (tsMs == null) return true; // No timestamp available—assume current
 
         long ageMs = System.currentTimeMillis() - tsMs;
-        return ageMs <= VisionConfig.LimelightFusion.MAX_AGE_MS;
+        return ageMs <= VisionConfig.CameraFusion.CAMERA_POSE_MAX_AGE_MS;
     }
 
     private void latchObelisk(LLResult result) {

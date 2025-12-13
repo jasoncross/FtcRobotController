@@ -53,6 +53,11 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-12-13): Restored aim-window rumble while AutoAim is active so
+ *                       drivers still feel the lock window on target tags and
+ *                       tightened Limelight frame acceptance to keep rumble
+ *                       and AutoAim translation alive when timestamps report
+ *                       zero.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -831,6 +836,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (autoAimEnabled) {
                 aimActive = true;
                 aimRotAfterInvert = TagAimController.applyDriveTwistSign(aimRotRaw);
+                if (aimRumbleEnabled && aimRumbleDriver1 != null) {
+                    aimRumbleDriver1.update(headingDegRaw);
+                }
             }
         } else {
             // Manual aim-window rumble when AutoAim is OFF

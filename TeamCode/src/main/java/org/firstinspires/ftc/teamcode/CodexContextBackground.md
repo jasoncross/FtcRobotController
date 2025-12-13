@@ -90,6 +90,11 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.  
 - All new AutoAim, AutoSpeed, and OdometryFusion development must target the Limelight 3A pipeline.
 - A new `VisionTargetProvider` abstraction fronts heading + distance; Limelight is now the default source while a legacy webcam wrapper exists only for fallback builds. `TagAimController` and `AutoAimSpeed` both consume the provider so aim PD and RPM gating share the same source. `BaseAuto` and TeleOp construct the provider (Limelight default, webcam fallback), Limelight latches obelisk motifs, and AutoSequence `visionMode(...)` steps no-op when Limelight is active to avoid webcam-only swaps.
+- Fresh Limelight frames stay usable for goal locks even when validity bits flicker so AutoAim rumble, driver translation, and
+Auto tag scans keep running through metadata drops.
+- Limelight samples with zero/absent timestamps are treated as fresh, and fiducial-bearing frames remain usable even when
+`isValid()` reports false so AutoAim rumble, driver translation, and BaseAuto tag scans keep locking onto goal tags instead of
+timing out on stale metadata.
 
 ### **Legacy P480 AprilTag Pipeline (DEPRECATED)**  
 - Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).  

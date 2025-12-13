@@ -48,6 +48,6 @@ public final class AutoAimTuning {
     public static boolean LONG_SHOT_ENABLED = true;                                    // Master toggle for alliance-biased long-shot lock behavior
     public static double LONG_SHOT_DISTANCE_IN = 90.0;                                // Range cutover (in) for long-shot lock biasing
     // Twist inversion now applies only to AutoAim (manual rotation is never flipped).
-    public static boolean INVERT_TWIST = false;                                        // Legacy flag (kept for compatibility)
+    public static boolean INVERT_TWIST = true;                                        // Legacy flag (kept for compatibility)
     public static boolean INVERT_AIM_TWIST = INVERT_TWIST;                             // Flip AutoAim twist only
 }

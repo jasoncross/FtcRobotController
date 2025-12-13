@@ -137,6 +137,7 @@ public final class OdometryConfig {
     // ==== Odometry fusion parameters ====
     public static final double POSE_FILTER_STRENGTH = 0.3;              // Exponential smoothing factor for pose updates (0..1)
     public static final double IMU_HEADING_OFFSET_DEG = 0.0;            // Global heading offset applied to IMU yaw, degrees
+    public static final boolean USE_CAMERA_FUSION = true;               // Master enable for camera-based odometry fusion
 
     private OdometryConfig() { /* no instances */ }
 }

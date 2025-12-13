@@ -2,10 +2,19 @@ package org.firstinspires.ftc.teamcode.odometry;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
+import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
+import java.util.Set;
 
 import static java.lang.Math.*;
 
@@ -21,7 +30,10 @@ import static java.lang.Math.*;
  *
  * NOTES
  *   - Heading comes from Drivebase.heading() plus the configurable IMU offset.
- *   - Limelight corrections blend position only (X/Y); yaw is always IMU-only.
+ *   - Camera corrections blend position only (X/Y); yaw is always IMU-only.
+ *   - Coordinate frame (FieldPose): inches, origin at field center, +Y toward
+ *     the target wall, +X to the robot's right when facing the targets, heading
+ *     0° facing +Y with +CCW rotation.
  *
  * CHANGES (2025-11-26): Corrected odometry sign conventions so +X is right and
  *                        +Y is toward the targets, normalized IMU heading to
@@ -46,13 +58,16 @@ public class Odometry {
     private final double[] lastWheelInches = new double[4];
     private boolean initialized = false;
     private FieldPose pose = new FieldPose();
+    private FieldPose wheelPose = new FieldPose();
 
     private long lastUpdateNanos = -1L;
     private long lastAcceptedVisionMs = -1L;
-    private int validVisionStreak = 0;
     private FieldPose lastVisionPose = null;
+    private final CameraPoseGate cameraPoseGate = new CameraPoseGate();
+    private CameraDebug cameraDebug = new CameraDebug();
 
     private static final double M_TO_IN = 39.37007874;
+    private static final Set<Integer> OBELISK_TAGS = Set.of(21, 22, 23);
 
     public Odometry(Drivebase drive, Limelight3A limelight) {
         this.drive = drive;
@@ -73,6 +88,10 @@ public class Odometry {
 
     /** Returns the last accepted Limelight XY pose (field frame) if available. */
     public FieldPose getLastVisionPose() { return lastVisionPose == null ? null : lastVisionPose.copy(); }
+
+    public FieldPose getWheelPose() { return wheelPose.copy(); }
+
+    public CameraDebug getCameraDebug() { return cameraDebug.copy(); }
 
     /**
      * Update pose using wheel deltas + IMU heading. Optionally blend Limelight
@@ -115,85 +134,102 @@ public class Odometry {
                 pose.y + dy,
                 heading
         );
+        wheelPose = integrated.copy();
 
-        FieldPose blended = applyLimelightFusion(integrated, speedInPerS, turnRateDegPerS);
+        FieldPose blended = applyCameraFusion(integrated, speedInPerS, turnRateDegPerS);
         pose = lowPass(pose, blended, OdometryConfig.POSE_FILTER_STRENGTH);
         return pose.copy();
     }
 
-    private FieldPose applyLimelightFusion(FieldPose base, double speedInPerS, double turnRateDegPerS) {
-        if (!VisionConfig.LimelightFusion.ENABLE_POSE_FUSION || limelight == null) {
-            validVisionStreak = 0;
+    private FieldPose applyCameraFusion(FieldPose base, double speedInPerS, double turnRateDegPerS) {
+        cameraDebug = new CameraDebug();
+        if (!OdometryConfig.USE_CAMERA_FUSION || !VisionConfig.CameraFusion.ENABLE_POSE_FUSION || limelight == null) {
+            cameraPoseGate.clear();
             return base;
         }
 
-        if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S
-                || turnRateDegPerS > VisionConfig.LimelightFusion.MAX_TURN_RATE_DEG_PER_S) {
+        if (speedInPerS > VisionConfig.CameraFusion.MAX_SPEED_IN_PER_S
+                || turnRateDegPerS > VisionConfig.CameraFusion.MAX_TURN_RATE_DEG_PER_S) {
+            cameraDebug.rejectReason = "motionGate";
             return base;
         }
 
         LLResult result = limelight.getLatestResult();
         if (result == null || !result.isValid()) {
-            validVisionStreak = 0;
+            cameraPoseGate.clear();
+            cameraDebug.rejectReason = "noResult";
             return base;
         }
 
         Pose3D pose3D = selectPose(result);
         if (pose3D == null || pose3D.getPosition() == null) {
-            validVisionStreak = 0;
+            cameraPoseGate.clear();
+            cameraDebug.rejectReason = "noPose";
             return base;
         }
 
         long nowMs = System.currentTimeMillis();
         Long timestampMs = readTimestampMs(result);
-        if (timestampMs != null) {
-            long ageMs = nowMs - timestampMs;
-            if (ageMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
-                validVisionStreak = 0;
-                return base;
-            }
-        }
-
-        validVisionStreak++;
-        if (validVisionStreak < VisionConfig.LimelightFusion.MIN_VALID_FRAMES) {
+        long ageMs = (timestampMs != null) ? nowMs - timestampMs : 0;
+        if (timestampMs != null && ageMs > VisionConfig.CameraFusion.CAMERA_POSE_MAX_AGE_MS) {
+            cameraPoseGate.clear();
+            cameraDebug.rejectReason = "stale";
+            cameraDebug.ageMs = ageMs;
             return base;
         }
 
-        double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y);
-        double vx = xy[0];
-        double vy = xy[1];
-        lastVisionPose = new FieldPose(vx, vy, base.headingDeg);
-
-        long sinceLast = (lastAcceptedVisionMs < 0) ? Long.MAX_VALUE : nowMs - lastAcceptedVisionMs;
-        boolean reacquire = sinceLast > VisionConfig.LimelightFusion.REACQUIRE_AFTER_MS;
-        double maxJump = reacquire
-                ? VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_REACQUIRE
-                : VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_NORMAL;
-        double alpha = reacquire
-                ? VisionConfig.LimelightFusion.FUSION_ALPHA_REACQUIRE
-                : VisionConfig.LimelightFusion.FUSION_ALPHA_NORMAL;
-
-        double ex = vx - base.x;
-        double ey = vy - base.y;
-        double errorMag = hypot(ex, ey);
-        if (errorMag > maxJump) {
+        List<Integer> visibleIds = extractVisibleIds(result);
+        boolean goalVisible = visibleIds.contains(VisionAprilTag.TAG_BLUE_GOAL) || visibleIds.contains(VisionAprilTag.TAG_RED_GOAL);
+        boolean obeliskOnly = !visibleIds.isEmpty() && visibleIds.stream().allMatch(OBELISK_TAGS::contains);
+        if (obeliskOnly || !goalVisible) {
+            cameraPoseGate.clear();
+            cameraDebug.goalVisible = goalVisible;
+            cameraDebug.obeliskOnly = obeliskOnly;
+            cameraDebug.rejectReason = obeliskOnly ? "obeliskOnly" : "goalMissing";
+            cameraDebug.tagIds = visibleIds;
             return base;
         }
 
-        double[] step = clampMagnitude(ex, ey, VisionConfig.LimelightFusion.MAX_CORRECTION_STEP_IN);
+        FieldPose camPose = mapCameraPose(pose3D);
+        lastVisionPose = new FieldPose(camPose.x, camPose.y, base.headingDeg);
+        double yawDeg = (pose3D.getOrientation() != null)
+                ? pose3D.getOrientation().getYaw(AngleUnit.DEGREES)
+                : 0.0;
+        cameraDebug.rawMeters = new double[]{pose3D.getPosition().x, pose3D.getPosition().y, yawDeg};
+        cameraDebug.mappedPose = camPose.copy();
+        cameraDebug.goalVisible = goalVisible;
+        cameraDebug.obeliskOnly = obeliskOnly;
+        cameraDebug.tagIds = visibleIds;
+        cameraDebug.ageMs = ageMs;
+
+        CameraPoseGate.GateResult gate = cameraPoseGate.offer(camPose, timestampMs != null ? timestampMs : nowMs, nowMs);
+        cameraDebug.windowCount = gate.windowSize;
+        cameraDebug.goodCount = gate.goodCount;
+        cameraDebug.stddevPosIn = gate.stddevPosIn;
+        cameraDebug.stddevHeadingDeg = gate.stddevHeadingDeg;
+        if (!gate.stable) {
+            cameraDebug.rejectReason = gate.reason;
+            return base;
+        }
+
+        double ex = camPose.x - base.x;
+        double ey = camPose.y - base.y;
+        double[] step = clampMagnitude(ex, ey, VisionConfig.CameraFusion.MAX_CORRECTION_STEP_IN);
         FieldPose corrected = new FieldPose(
-                base.x + step[0] * alpha,
-                base.y + step[1] * alpha,
+                base.x + step[0] * VisionConfig.CameraFusion.FUSION_ALPHA,
+                base.y + step[1] * VisionConfig.CameraFusion.FUSION_ALPHA,
                 base.headingDeg
         );
         lastAcceptedVisionMs = nowMs;
+        cameraDebug.accepted = true;
+        cameraDebug.rejectReason = null;
         return corrected;
     }
 
     private Pose3D selectPose(LLResult result) {
         if (result == null) return null;
         Pose3D pose = null;
-        if (VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2) {
+        if (VisionConfig.CameraFusion.PREFER_MEGA_TAG_2) {
             pose = result.getBotpose_MT2();
         }
         if (pose == null) {
@@ -202,20 +238,93 @@ public class Odometry {
         return pose;
     }
 
-    private double[] transformVisionXY(double xMeters, double yMeters) {
-        double xIn = xMeters * M_TO_IN;
-        double yIn = yMeters * M_TO_IN;
+    private FieldPose mapCameraPose(Pose3D pose3D) {
+        double xIn = pose3D.getPosition().x * M_TO_IN;
+        double yIn = pose3D.getPosition().y * M_TO_IN;
 
-        double tx = VisionConfig.LimelightFusion.AXIS_SWAP_XY ? yIn : xIn;
-        double ty = VisionConfig.LimelightFusion.AXIS_SWAP_XY ? xIn : yIn;
+        double tx = VisionConfig.CameraFusion.AXIS_SWAP_XY ? yIn : xIn;
+        double ty = VisionConfig.CameraFusion.AXIS_SWAP_XY ? xIn : yIn;
 
-        tx *= VisionConfig.LimelightFusion.X_SIGN;
-        ty *= VisionConfig.LimelightFusion.Y_SIGN;
+        tx *= VisionConfig.CameraFusion.X_SIGN;
+        ty *= VisionConfig.CameraFusion.Y_SIGN;
 
-        tx += VisionConfig.LimelightFusion.X_OFFSET_IN;
-        ty += VisionConfig.LimelightFusion.Y_OFFSET_IN;
+        tx += VisionConfig.CameraFusion.X_OFFSET_IN;
+        ty += VisionConfig.CameraFusion.Y_OFFSET_IN;
 
-        return new double[]{tx, ty};
+        double heading = 0.0;
+        if (pose3D.getOrientation() != null) {
+            heading = pose3D.getOrientation().getYaw(AngleUnit.DEGREES);
+        }
+        heading = normHeading(heading);
+        return new FieldPose(tx, ty, heading);
+    }
+
+    private List<Integer> extractVisibleIds(LLResult result) {
+        List<Integer> ids = new ArrayList<>();
+        List<?> fiducialResults = readList(result, "getFiducialResults");
+        if (fiducialResults != null) {
+            for (Object entry : fiducialResults) {
+                Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
+                if (id != null) ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            int[] array = readIntArray(result, "getFiducialResults", "getFiducialIds", "getTargetIds", "getTidList");
+            if (array != null) {
+                for (int id : array) ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            double[] array = readDoubleArray(result, "getFiducialResults", "getFiducialIds", "getTargetIds", "getTidList");
+            if (array != null) {
+                for (double id : array) ids.add((int) Math.round(id));
+            }
+        }
+        if (ids.isEmpty()) {
+            Integer id = readSingleId(result, "getFiducialId", "getTid", "getTargetId");
+            if (id != null) ids.add(id);
+        }
+        return ids;
+    }
+
+    private List<?> readList(Object target, String... methods) {
+        for (String m : methods) {
+            try {
+                Object value = target.getClass().getMethod(m).invoke(target);
+                if (value instanceof List<?>) return (List<?>) value;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private Integer readSingleId(Object target, String... methods) {
+        for (String m : methods) {
+            try {
+                Object value = target.getClass().getMethod(m).invoke(target);
+                if (value instanceof Number) return ((Number) value).intValue();
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private int[] readIntArray(Object target, String... methods) {
+        for (String m : methods) {
+            try {
+                Object value = target.getClass().getMethod(m).invoke(target);
+                if (value instanceof int[]) return (int[]) value;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private double[] readDoubleArray(Object target, String... methods) {
+        for (String m : methods) {
+            try {
+                Object value = target.getClass().getMethod(m).invoke(target);
+                if (value instanceof double[]) return (double[]) value;
+            } catch (Throwable ignored) {}
+        }
+        return null;
     }
 
     private Long readTimestampMs(LLResult result) {
@@ -255,7 +364,7 @@ public class Odometry {
         return normHeading(fieldFrame);
     }
 
-    private double normHeading(double h) {
+    private static double normHeading(double h) {
         double v = h % 360.0;
         if (v < -180) v += 360.0;
         if (v > 180) v -= 360.0;
@@ -271,5 +380,110 @@ public class Odometry {
 
     private double clampValue(double v, double min, double max) {
         return Math.max(min, Math.min(max, v));
+    }
+
+    public static class CameraDebug {
+        public double[] rawMeters = null;
+        public FieldPose mappedPose = null;
+        public boolean accepted = false;
+        public boolean goalVisible = false;
+        public boolean obeliskOnly = false;
+        public String rejectReason = "notRun";
+        public int windowCount = 0;
+        public int goodCount = 0;
+        public double stddevPosIn = 0.0;
+        public double stddevHeadingDeg = 0.0;
+        public long ageMs = 0;
+        public List<Integer> tagIds = Collections.emptyList();
+
+        public CameraDebug copy() {
+            CameraDebug c = new CameraDebug();
+            c.rawMeters = rawMeters;
+            c.mappedPose = (mappedPose == null) ? null : mappedPose.copy();
+            c.accepted = accepted;
+            c.goalVisible = goalVisible;
+            c.obeliskOnly = obeliskOnly;
+            c.rejectReason = rejectReason;
+            c.windowCount = windowCount;
+            c.goodCount = goodCount;
+            c.stddevPosIn = stddevPosIn;
+            c.stddevHeadingDeg = stddevHeadingDeg;
+            c.ageMs = ageMs;
+            c.tagIds = new ArrayList<>(tagIds);
+            return c;
+        }
+    }
+
+    private static class CameraPoseGate {
+        private final Deque<StampedPose> window = new ArrayDeque<>();
+
+        public void clear() { window.clear(); }
+
+        public GateResult offer(FieldPose pose, long poseMs, long nowMs) {
+            window.addLast(new StampedPose(pose.copy(), poseMs));
+            while (window.size() > VisionConfig.CameraFusion.CAMERA_POSE_WINDOW_FRAMES ||
+                    (!window.isEmpty() && nowMs - window.getFirst().timestampMs > VisionConfig.CameraFusion.CAMERA_POSE_MAX_AGE_MS)) {
+                window.removeFirst();
+            }
+
+            double stdPos = 0.0;
+            double stdHead = 0.0;
+            if (!window.isEmpty()) {
+                double meanX = 0, meanY = 0;
+                double meanSin = 0, meanCos = 0;
+                for (StampedPose sp : window) {
+                    meanX += sp.pose.x;
+                    meanY += sp.pose.y;
+                    double rad = toRadians(sp.pose.headingDeg);
+                    meanSin += Math.sin(rad);
+                    meanCos += Math.cos(rad);
+                }
+                int n = window.size();
+                meanX /= n; meanY /= n;
+                meanSin /= n; meanCos /= n;
+                double meanHeading = Math.atan2(meanSin, meanCos);
+
+                double varPos = 0.0;
+                double varHead = 0.0;
+                for (StampedPose sp : window) {
+                    varPos += pow(sp.pose.x - meanX, 2) + pow(sp.pose.y - meanY, 2);
+                    double d = normHeading(sp.pose.headingDeg - toDegrees(meanHeading));
+                    varHead += d * d;
+                }
+                stdPos = Math.sqrt(varPos / n);
+                stdHead = Math.sqrt(varHead / n);
+            }
+
+            boolean stable = window.size() >= VisionConfig.CameraFusion.CAMERA_POSE_MIN_GOOD_FRAMES
+                    && stdPos <= VisionConfig.CameraFusion.CAMERA_POSE_MAX_STDDEV_IN
+                    && stdHead <= VisionConfig.CameraFusion.CAMERA_POSE_MAX_STDDEV_DEG;
+            String reason = stable ? null : "unstable";
+
+            return new GateResult(window.size(), window.size(), stdPos, stdHead, stable, reason);
+        }
+
+        public static class GateResult {
+            public final int windowSize;
+            public final int goodCount;
+            public final double stddevPosIn;
+            public final double stddevHeadingDeg;
+            public final boolean stable;
+            public final String reason;
+
+            public GateResult(int windowSize, int goodCount, double stddevPosIn, double stddevHeadingDeg, boolean stable, String reason) {
+                this.windowSize = windowSize;
+                this.goodCount = goodCount;
+                this.stddevPosIn = stddevPosIn;
+                this.stddevHeadingDeg = stddevHeadingDeg;
+                this.stable = stable;
+                this.reason = reason;
+            }
+        }
+
+        private static class StampedPose {
+            final FieldPose pose;
+            final long timestampMs;
+            StampedPose(FieldPose pose, long timestampMs) { this.pose = pose; this.timestampMs = timestampMs; }
+        }
     }
 }

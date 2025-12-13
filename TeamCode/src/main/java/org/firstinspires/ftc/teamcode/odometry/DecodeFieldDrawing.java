@@ -188,10 +188,10 @@ public final class DecodeFieldDrawing {
     private static void drawPoseText(Canvas c, FieldPose pose) {
         c.setStroke("#000000");
         c.setFill("#000000");
-        c.setFontSize(12);
         double textX = toDashX(OdometryConfig.LEFT_FIELD_X) + 4;
         double textY = toDashY(OdometryConfig.TARGET_WALL_Y) - 6;
-        c.strokeText(String.format("Pose: %.1f, %.1f, %.1f", pose.x, pose.y, pose.headingDeg), textX, textY);
+        c.strokeText(String.format("Pose: %.1f, %.1f, %.1f", pose.x, pose.y, pose.headingDeg),
+                textX, textY, "#000000", 12);
     }
 
     private static void drawTriangle(Canvas c, double x1, double y1, double x2, double y2, double x3, double y3) {

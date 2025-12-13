@@ -60,6 +60,9 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 ### 🧭 Drivebase ([`drive/Drivebase.java`](./drive/Drivebase.java))
 - Field/robot-centric mecanum with IMU-backed turning.
 - Encoder-based translation with controlled tapering.
+- `moveWithTwist(...)` re-computes the field-centric translation vector on every loop while steering toward the twist target so
+  heading changes no longer skew the requested field heading; progress now tracks holonomic translation distance to finish near
+  the commanded inches even while rotating.
 - Shared across TeleOp and Auto.
 
 ### 🚀 Launcher ([`subsystems/Launcher.java`](./subsystems/Launcher.java))

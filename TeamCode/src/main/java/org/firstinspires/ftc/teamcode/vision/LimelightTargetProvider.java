@@ -56,6 +56,8 @@ import java.util.function.Supplier;
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
     private static final long OBELISK_STALE_MS = 1500L;
+    private static final long AIM_LOCK_STALE_MS = 250L;          // How long to retain a goal lock after loss
+    private static final double AIM_SWITCH_TX_HYST_DEG = 2.0;    // Margin needed to switch aim target
 
     private final Limelight3A limelight;
     private final Supplier<Alliance> allianceSupplier;
@@ -66,6 +68,9 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private long lastObeliskUpdateMs = 0L;
     private Long lastLatchedTimestampMs = null;
     private DistanceEstimate lastDistanceEstimate = DistanceEstimate.empty();
+    private int lockedAimTagId = -1;
+    private long lockedAimLastSeenMs = 0L;
+    private Double lockedAimLastTx = null;
 
     public LimelightTargetProvider(Limelight3A limelight, Supplier<Alliance> allianceSupplier) {
         this.limelight = limelight;
@@ -96,8 +101,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public double getHeadingErrorDeg() {
         TargetSnapshot snap = snapshot();
-        if (!snap.hasGoalTag || snap.result == null) return Double.NaN;
-        return snap.result.getTx();
+        if (!snap.hasGoalTag) return Double.NaN;
+        return snap.aimTxDegUsed != null ? snap.aimTxDegUsed : Double.NaN;
     }
 
     @Override
@@ -126,6 +131,22 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             ids.add(obs.id);
         }
         return ids;
+    }
+
+    /** Telemetry helper exposing the latest aim lock state and selected tx sample. */
+    public AimTelemetry getAimTelemetry() {
+        TargetSnapshot snap = snapshot();
+        long now = System.currentTimeMillis();
+        long ageMs = (lockedAimTagId < 0 || lockedAimLastSeenMs <= 0L)
+                ? -1L
+                : Math.max(0L, now - lockedAimLastSeenMs);
+
+        List<Integer> ids = new ArrayList<>();
+        for (FiducialObservation obs : snap.observations) {
+            ids.add(obs.id);
+        }
+
+        return new AimTelemetry(ids, snap.hasGoalTag, lockedAimTagId, snap.aimTxDegUsed, ageMs);
     }
 
     private LLResult latest() {
@@ -226,19 +247,71 @@ public class LimelightTargetProvider implements VisionTargetProvider {
 
     private TargetSnapshot snapshot() {
         LLResult result = latest();
+        long now = System.currentTimeMillis();
         List<FiducialObservation> observations = extractFiducials(result);
         boolean resultValid = result != null && result.isValid();
 
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
 
-        boolean hasGoal = resultValid && containsId(observations, allianceGoalId);
+        FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observations);
+        updateAimLock(now, allianceGoalId, goalObs);
+
+        boolean hasGoal = resultValid && goalObs != null;
         int bestId = (resultValid && !observations.isEmpty()) ? observations.get(0).id : -1;
         if (hasGoal) {
             bestId = allianceGoalId;
         }
 
-        return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations);
+        Double aimTxDeg = null;
+        if (hasGoal) {
+            if (goalObs != null && goalObs.txDeg != null) {
+                aimTxDeg = goalObs.txDeg;
+            } else if (result != null) {
+                aimTxDeg = result.getTx();
+            }
+        }
+
+        return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations, goalObs, aimTxDeg, now);
+    }
+
+    private void updateAimLock(long nowMs, int allianceGoalId, FiducialObservation goalObs) {
+        // Prefer the alliance goal immediately when seen.
+        if (goalObs != null) {
+            lockedAimTagId = allianceGoalId;
+            lockedAimLastSeenMs = nowMs;
+            lockedAimLastTx = goalObs.txDeg != null ? goalObs.txDeg : lockedAimLastTx;
+            return;
+        }
+
+        // Expire the lock quickly when goal disappears.
+        if (lockedAimTagId == allianceGoalId && (nowMs - lockedAimLastSeenMs) > AIM_LOCK_STALE_MS) {
+            lockedAimTagId = -1;
+            lockedAimLastTx = null;
+        }
+    }
+
+    private FiducialObservation selectBestGoalObservation(int allianceGoalId, List<FiducialObservation> observations) {
+        FiducialObservation best = null;
+
+        for (FiducialObservation obs : observations) {
+            if (obs.id != allianceGoalId) continue;
+
+            if (best == null) {
+                best = obs;
+                continue;
+            }
+
+            Double obsAbs = obs.txDeg != null ? Math.abs(obs.txDeg) : null;
+            Double bestAbs = best.txDeg != null ? Math.abs(best.txDeg) : null;
+
+            if (obsAbs == null) continue;
+            if (bestAbs == null || obsAbs + AIM_SWITCH_TX_HYST_DEG < bestAbs) {
+                best = obs;
+            }
+        }
+
+        return best;
     }
 
     private DistanceEstimate computeDistanceMeters(TargetSnapshot snap) {
@@ -348,13 +421,6 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         }
 
         return out;
-    }
-
-    private boolean containsId(List<FiducialObservation> observations, int id) {
-        for (FiducialObservation obs : observations) {
-            if (obs.id == id) return true;
-        }
-        return false;
     }
 
     private FiducialObservation selectBestObelisk(List<FiducialObservation> observations) {
@@ -498,19 +564,49 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         final int allianceGoalId;
         final int bestVisibleId;
         final List<FiducialObservation> observations;
+        final FiducialObservation goalObservation;
+        final Double aimTxDegUsed;
+        final long snapshotMs;
 
         TargetSnapshot(LLResult result,
                        boolean resultValid,
                        boolean hasGoalTag,
                        int allianceGoalId,
                        int bestVisibleId,
-                       List<FiducialObservation> observations) {
+                       List<FiducialObservation> observations,
+                       FiducialObservation goalObservation,
+                       Double aimTxDegUsed,
+                       long snapshotMs) {
             this.result = result;
             this.resultValid = resultValid;
             this.hasGoalTag = hasGoalTag;
             this.allianceGoalId = allianceGoalId;
             this.bestVisibleId = bestVisibleId;
             this.observations = observations;
+            this.goalObservation = goalObservation;
+            this.aimTxDegUsed = aimTxDegUsed;
+            this.snapshotMs = snapshotMs;
+        }
+    }
+
+    /** Telemetry bundle for aim lock state. */
+    public static final class AimTelemetry {
+        public final List<Integer> visibleIds;
+        public final boolean goalVisible;
+        public final int lockedAimTagId;
+        public final Double aimTxDeg;
+        public final long lockAgeMs;
+
+        AimTelemetry(List<Integer> visibleIds,
+                     boolean goalVisible,
+                     int lockedAimTagId,
+                     Double aimTxDeg,
+                     long lockAgeMs) {
+            this.visibleIds = visibleIds;
+            this.goalVisible = goalVisible;
+            this.lockedAimTagId = lockedAimTagId;
+            this.aimTxDeg = aimTxDeg;
+            this.lockAgeMs = lockAgeMs;
         }
     }
 

@@ -16,6 +16,10 @@ package org.firstinspires.ftc.teamcode.config;
  *     practice field; every constant includes units and an inline description
  *     for quick pit-side edits.
  *
+ * CHANGES (2025-12-13): Added camera-fusion enable plus stability gate tunables
+ *                        (window, stddev, age, blend) for Limelight pose
+ *                        corrections so odometry only accepts stable, non-
+ *                        obelisk-assisted measurements aligned to FieldPose.
  * CHANGES (2025-11-26): Switched launch zones to triangle vertices, replaced
  *                        artifact row anchors with alliance-aware row starts,
  *                        spacing, and radius, and documented the +X/+Y field
@@ -137,6 +141,14 @@ public final class OdometryConfig {
     // ==== Odometry fusion parameters ====
     public static final double POSE_FILTER_STRENGTH = 0.3;              // Exponential smoothing factor for pose updates (0..1)
     public static final double IMU_HEADING_OFFSET_DEG = 0.0;            // Global heading offset applied to IMU yaw, degrees
+
+    public static final boolean USE_CAMERA_FUSION = true;               // Master enable for Limelight XY fusion into odometry
+    public static final int CAMERA_POSE_WINDOW_FRAMES = 10;             // Rolling window size for camera pose stability gate (frames)
+    public static final int CAMERA_POSE_MIN_GOOD_FRAMES = 4;            // Minimum frames required in the stability window before fusion
+    public static final double CAMERA_POSE_MAX_STDDEV_IN = 6.0;         // Max allowed position stddev inside the stability gate (inches)
+    public static final double CAMERA_POSE_MAX_STDDEV_DEG = 5.0;        // Max allowed heading stddev inside the stability gate (deg)
+    public static final long CAMERA_POSE_MAX_AGE_MS = 200;              // Max age of camera samples kept in the gate (ms)
+    public static final double CAMERA_FUSE_ALPHA = 0.15;                // Blend factor applied when a stable camera pose is accepted
 
     private OdometryConfig() { /* no instances */ }
 }

@@ -775,10 +775,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         double driveY  = cap * gamepad1.left_stick_y;
         double strafeX = cap * -gamepad1.left_stick_x;
-        double driverTwistRaw = cap * -gamepad1.right_stick_x;
-        double twistRaw = driverTwistRaw; // Updated below by AutoAim/test overrides
+        double driverRot = cap * -gamepad1.right_stick_x;
         double appliedAimSpeedScale = 1.0;
-        double aimTwistRaw = Double.NaN;  // Captures aim suggestion pre-sign for telemetry
+        double aimRotRaw = Double.NaN;     // Captures aim suggestion pre-sign for telemetry
+        double aimRotAfterInvert = Double.NaN;
+        boolean aimActive = false;
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
         boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
@@ -796,7 +797,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             smRangeMeters = (smRangeMeters == null) ? rangeMetersRaw : (smoothA * rangeMetersRaw + (1 - smoothA) * smRangeMeters);
         }
 
-        updateAutoAimNudge(null);
+        updateAutoAimNudge(goalVisibleForAim);
+        boolean shotAssistActive = autoAimNudgeActive;
 
         Double distanceForLockIn = goalVisibleForAim && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)
                 ? rangeMetersRaw * M_TO_IN : null;
@@ -815,8 +817,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             strafeX *= appliedAimSpeedScale;
             if (goalVisibleSmoothed && goalVisibleForAim) {
                 aimLossStartMs = -1L;
-                aimTwistRaw = aim.turnPower(); // ignore right stick
-                twistRaw = aimTwistRaw;
+                aimRotRaw = aim.turnPower(); // ignore right stick
             } else {
                 if (aimLossStartMs < 0) aimLossStartMs = now;
                 if ((now - aimLossStartMs) >= autoAimLossGraceMs) {
@@ -824,8 +825,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     aimLossStartMs = -1L;
                     pulseSingle(gamepad1); // disabled after grace
                 } else {
-                    twistRaw = 0.0; // hold heading during grace
+                    aimRotRaw = 0.0; // hold heading during grace
                 }
+            }
+            if (autoAimEnabled) {
+                aimActive = true;
+                aimRotAfterInvert = TagAimController.applyDriveTwistSign(aimRotRaw);
             }
         } else {
             // Manual aim-window rumble when AutoAim is OFF
@@ -835,7 +840,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         if (twistSignTestMode) {
-            twistRaw = 0.2; // Positive rotation diagnostic (+ should turn robot clockwise/right)
+            aimActive = false;
+            aimRotRaw = Double.NaN;
+            aimRotAfterInvert = Double.NaN;
+            driverRot = 0.2; // Positive rotation diagnostic (+ should turn robot clockwise/right)
         }
 
         if (reverseDriveMode) {
@@ -844,9 +852,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         // Drive it
-        double twistAfterSign = TagAimController.applyDriveTwistSign(twistRaw);
-        double driveRotCommand = twistAfterSign;
-        drive.drive(driveY, strafeX, driveRotCommand);
+        double finalRot = aimActive ? aimRotAfterInvert : driverRot;
+        drive.drive(driveY, strafeX, finalRot);
 
         if (odometry != null) {
             fusedPose = odometry.update();
@@ -947,14 +954,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
         mirrorData(dashboardLines, "Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO");
         mirrorData(dashboardLines, "Tag Visible (any)", anyTagVisible ? "YES" : "NO");
-        mirrorData(dashboardLines, "Aim Sign Debug", String.format(Locale.US,
-                "errDeg=%.1f raw=%.3f signed=%.3f driveRot=%.3f test=%s aimRaw=%s",
+        mirrorData(dashboardLines, "Aim Debug", String.format(Locale.US,
+                "shotAssist=%s aimActive=%s hasGoalTarget=%s errDeg=%.1f aimRaw=%s aimInv=%s driverRot=%.3f finalRot=%.3f",
+                shotAssistActive,
+                aimActive,
+                goalVisibleForAim,
                 (Double.isFinite(headingDegRaw) ? headingDegRaw : Double.NaN),
-                twistRaw,
-                twistAfterSign,
-                driveRotCommand,
-                twistSignTestMode ? "ON" : "OFF",
-                Double.isNaN(aimTwistRaw) ? "-" : String.format(Locale.US, "%.3f", aimTwistRaw)));
+                Double.isNaN(aimRotRaw) ? "-" : String.format(Locale.US, "%.3f", aimRotRaw),
+                Double.isNaN(aimRotAfterInvert) ? "-" : String.format(Locale.US, "%.3f", aimRotAfterInvert),
+                driverRot,
+                finalRot));
         mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
                 "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
                 anyTagVisible,
@@ -1607,10 +1616,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     /** Enables a temporary AutoAim assist when a tag is visible, then restores the prior setting after firing. */
-    private void updateAutoAimNudge(AprilTagDetection goalDet) {
+    private void updateAutoAimNudge(boolean hasGoalTarget) {
         boolean firingActive = feed != null && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
 
-        if (pendingAutoAimNudge && goalDet != null) {
+        if (pendingAutoAimNudge && hasGoalTarget) {
             autoAimNudgeRestoreState = autoAimEnabled;
             autoAimEnabled = true;
             autoAimNudgeActive = true;

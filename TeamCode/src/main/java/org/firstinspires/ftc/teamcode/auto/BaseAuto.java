@@ -162,6 +162,11 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        default start poses accordingly, and enabled Limelight-only XY fusion with
     //                        MT2 preference, reacquire-friendly outlier gates, motion gating, and
     //                        clamped correction steps (IMU-only heading).
+    // CHANGES (2025-12-13): Added Limelight freshness telemetry and continuous polling during Auto scans
+    //                        so sweep loops visibly track tag visibility and data age while rotating.
+    // CHANGES (2025-12-13): Added FieldPose telemetry plus odometry/camera fusion debug lines (gate
+    //                        stability, obelisk exclusion, raw vs. mapped pose) so autos show the same
+    //                        FieldPose-aligned diagnostics as TeleOp while honoring the FieldPose frame.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -417,6 +422,11 @@ public abstract class BaseAuto extends LinearOpMode {
             VisionTargetProvider provider = visionTargetProvider;
             double bearing = Double.NaN;
             boolean lockedNow = false;
+            LimelightTargetProvider.VisionDebug visionDebug = null;
+
+            if (provider instanceof LimelightTargetProvider) {
+                visionDebug = ((LimelightTargetProvider) provider).getVisionDebug();
+            }
 
             if (provider != null && provider.hasGoalTarget()) {
                 Double distanceIn = distanceInchesFromProvider(provider);
@@ -501,6 +511,13 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addData("Sweep offsets (deg)", sweepSummary);
             if (timeoutMs > 0) {
                 telemetry.addData("Time remaining (ms)", Math.max(0, timeoutMs - (now - startMs)));
+            }
+            if (visionDebug != null) {
+                telemetry.addData("LL resultValid", visionDebug.resultValid);
+                telemetry.addData("LL age (ms)", visionDebug.ageMs);
+                telemetry.addData("LL fresh", visionDebug.fresh);
+                telemetry.addData("LL ids", visionDebug.visibleIds);
+                telemetry.addData("Goal visible", visionDebug.goalVisible);
             }
             telemetry.update();
             idle();
@@ -946,6 +963,12 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         List<String> mirroredLines = new ArrayList<>();
 
+        FieldPose fusedPose = (odometry != null) ? odometry.getPose() : startPose;
+        Odometry.CameraFusionTelemetry fusionTelemetry = (odometry != null) ? odometry.getFusionTelemetry() : null;
+        FieldPose wheelPose = (fusionTelemetry != null && fusionTelemetry.wheelPose != null) ? fusionTelemetry.wheelPose : fusedPose;
+        FieldPose cameraPose = (fusionTelemetry != null) ? fusionTelemetry.cameraPoseInches : null;
+        double[] camRawMeters = (fusionTelemetry != null) ? fusionTelemetry.cameraRawMeters : null;
+
         telemetry.addData("Phase", statusPhase);
         mirroredLines.add("Phase: " + statusPhase);
 
@@ -957,6 +980,9 @@ public abstract class BaseAuto extends LinearOpMode {
 
         telemetry.addData("Auto", autoOpModeName);
         mirroredLines.add("Auto: " + autoOpModeName);
+
+        telemetry.addData("Pose (X,Y,H)", String.format(Locale.US, "%.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg));
+        mirroredLines.add(String.format(Locale.US, "Pose (X,Y,H): %.1f, %.1f, %.1f", fusedPose.x, fusedPose.y, fusedPose.headingDeg));
 
         String startPoseText = startPoseDescription();
         telemetry.addData("Start Pose", startPoseText);
@@ -1026,6 +1052,46 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addLine(summary);
             mirroredLines.add(summary);
         }
+        telemetry.addLine("--- ODOM DEBUG ---");
+        mirroredLines.add("--- ODOM DEBUG ---");
+        telemetry.addData("wheelPose", String.format(Locale.US, "%.1f, %.1f, %.1f", wheelPose.x, wheelPose.y, wheelPose.headingDeg));
+        mirroredLines.add(String.format(Locale.US, "wheelPose: %.1f, %.1f, %.1f", wheelPose.x, wheelPose.y, wheelPose.headingDeg));
+        String camRawStr = (camRawMeters == null) ? "-" : String.format(Locale.US, "%.2f, %.2f, %.1f", camRawMeters[0], camRawMeters[1], camRawMeters.length > 2 ? camRawMeters[2] : Double.NaN);
+        telemetry.addData("camRaw(m)", camRawStr);
+        mirroredLines.add("camRaw(m): " + camRawStr);
+        String camInStr = (cameraPose == null) ? "-" : String.format(Locale.US, "%.1f, %.1f, %.1f", cameraPose.x, cameraPose.y, cameraPose.headingDeg);
+        telemetry.addData("camIn(in)", camInStr);
+        mirroredLines.add("camIn(in): " + camInStr);
+        if (fusionTelemetry != null) {
+            telemetry.addData("camGate", String.format(Locale.US,
+                    "good=%d/%d stdIn=%.1f stdDeg=%.1f ageMs=%d accepted=%s reject=%s",
+                    fusionTelemetry.gateGoodFrames,
+                    fusionTelemetry.gateWindowCount,
+                    fusionTelemetry.gateStddevIn,
+                    fusionTelemetry.gateStddevDeg,
+                    fusionTelemetry.gateAgeMs,
+                    fusionTelemetry.accepted,
+                    fusionTelemetry.gateRejectReason));
+            mirroredLines.add(String.format(Locale.US,
+                    "camGate: good=%d/%d stdIn=%.1f stdDeg=%.1f ageMs=%d accepted=%s reject=%s",
+                    fusionTelemetry.gateGoodFrames,
+                    fusionTelemetry.gateWindowCount,
+                    fusionTelemetry.gateStddevIn,
+                    fusionTelemetry.gateStddevDeg,
+                    fusionTelemetry.gateAgeMs,
+                    fusionTelemetry.accepted,
+                    fusionTelemetry.gateRejectReason));
+            telemetry.addData("camTags", String.format(Locale.US,
+                    "goalVisible=%s obeliskOnly=%s ids=%s",
+                    fusionTelemetry.goalVisible,
+                    fusionTelemetry.obeliskOnly,
+                    joinIds(fusionTelemetry.visibleIds)));
+            mirroredLines.add(String.format(Locale.US,
+                    "camTags: goalVisible=%s obeliskOnly=%s ids=%s",
+                    fusionTelemetry.goalVisible,
+                    fusionTelemetry.obeliskOnly,
+                    joinIds(fusionTelemetry.visibleIds)));
+        }
         FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
         sendDashboard(poseForDashboard, statusPhase, mirroredLines);
     }
@@ -1044,6 +1110,16 @@ public abstract class BaseAuto extends LinearOpMode {
 
     private int allianceGoalTagId() {
         return (alliance() == Alliance.BLUE) ? VisionAprilTag.TAG_BLUE_GOAL : VisionAprilTag.TAG_RED_GOAL;
+    }
+
+    private String joinIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return "-";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(ids.get(i));
+        }
+        return sb.toString();
     }
 
     private static double clamp(double v, double lo, double hi) { return Math.max(lo, Math.min(hi, v)); }

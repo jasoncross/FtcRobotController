@@ -18,6 +18,7 @@ Match strategy centers on consistent scoring of **ARTIFACTS** into **GOALS**, ra
   **All new targeting, heading, distance, and pose code must use the Limelight 3A exclusively.**
 - **Shared TeleOp and Auto frameworks** that reuse the same subsystems, tunables, and safety guards ([`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java), [`auto/BaseAuto.java`](./auto/BaseAuto.java)).
 - **StopAll latch with optional auto-stop timer** orchestrated inside [`teleop/TeleOpAllianceBase.java`](./teleop/TeleOpAllianceBase.java) for end-of-match compliance.
+- **Autonomous tag sweeps now poll Limelight every loop with local freshness gating** so scan telemetry shows live result validity, age, and visible IDs during rotations.
 
 All OpModes run on centralized configuration tables ([`config/*.java`](./config)) so drivetrain geometry, launcher tuning, rumble envelopes, and driver defaults remain aligned between TeleOp and Autonomous. See the [TeamCode Tunable Directory](./TunableDirectory.md) for the authoritative list.
 
@@ -107,8 +108,9 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 
 ## 🛰 Odometry & AprilTag Fusion ([`odometry/Odometry.java`](./odometry/Odometry.java))
 - Uses the FTC-standard field-center frame (0,0 in the middle; +X right, +Y toward targets) with IMU-only heading and mecanum wheel deltas.
-- Optionally fuses Limelight botpose XY (MegaTag2 preferred) with two-phase gating: tight outlier rejection while tracking, a larger window after `reacquireAfterMs`, per-step correction clamps, and motion gates on speed/turn rate. Yaw is never fused.
-- Webcam pose fusion has been removed entirely; Limelight is the only vision source allowed to influence odometry.
+- Optionally fuses Limelight botpose XY (MegaTag2 preferred) through a stability gate: meters→inches mapping into the FieldPose frame, obelisk-only frames are rejected, samples are trimmed by age, and fusion only applies when a rolling window stays within position/heading stddev thresholds; blend alpha is tunable. Yaw is never fused.
+- Webcam pose fusion has been removed entirely; Limelight is the only vision source allowed to influence odometry, and fusion can be disabled via `OdometryConfig.USE_CAMERA_FUSION` when validating wheel/IMU-only poses.
+- FTC Dashboard field overlay draws the same FieldPose (inches/degrees) used in driver telemetry, with an on-field pose label to validate heading/origin alignment visually.
 
 ---
 

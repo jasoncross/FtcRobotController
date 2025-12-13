@@ -105,7 +105,11 @@ public class TagAimController {
      */
     public static double applyDriveTwistSign(double twist) {
         boolean invert = false;
-        try { invert = AutoAimTuning.INVERT_TWIST; } catch (Throwable ignored) {}
+        try {
+            invert = AutoAimTuning.INVERT_AIM_TWIST;
+        } catch (Throwable ignored) {
+            try { invert = AutoAimTuning.INVERT_TWIST; } catch (Throwable ignoredToo) {}
+        }
         return invert ? -twist : twist;
     }
 

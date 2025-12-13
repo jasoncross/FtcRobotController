@@ -47,5 +47,7 @@ public final class AutoAimTuning {
     public static double AUTO_AIM_SPEED_SCALE = 0.25;                                 // Translation multiplier (0-1) while AutoAim is active
     public static boolean LONG_SHOT_ENABLED = true;                                    // Master toggle for alliance-biased long-shot lock behavior
     public static double LONG_SHOT_DISTANCE_IN = 90.0;                                // Range cutover (in) for long-shot lock biasing
-    public static boolean INVERT_TWIST = false;                                        // Flip once at drivebase input if drive rotation sign is opposite of aim convention
+    // Twist inversion now applies only to AutoAim (manual rotation is never flipped).
+    public static boolean INVERT_TWIST = false;                                        // Legacy flag (kept for compatibility)
+    public static boolean INVERT_AIM_TWIST = INVERT_TWIST;                             // Flip AutoAim twist only
 }

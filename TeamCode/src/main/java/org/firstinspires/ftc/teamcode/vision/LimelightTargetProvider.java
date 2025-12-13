@@ -3,6 +3,10 @@ package org.firstinspires.ftc.teamcode.vision;
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
@@ -35,8 +39,8 @@ import java.util.function.Supplier;
  *       • Returns Limelight tx (degrees, + right / – left) or NaN when no
  *         target is available.
  *   - getDistanceMeters()
- *       • Computes planar distance from the robot pose to the alliance goal
- *         tag using Limelight botpose (MT2 preferred) scaled by
+ *       • Returns the alliance goal tag's forward (TZ) component from
+ *         Limelight target pose in ROBOT SPACE scaled by
  *         VisionConfig.LIMELIGHT_RANGE_SCALE. Returns NaN when no pose is
  *         available.
  *
@@ -61,6 +65,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private int pendingObeliskCount = 0;
     private long lastObeliskUpdateMs = 0L;
     private Long lastLatchedTimestampMs = null;
+    private DistanceEstimate lastDistanceEstimate = DistanceEstimate.empty();
 
     public LimelightTargetProvider(Limelight3A limelight, Supplier<Alliance> allianceSupplier) {
         this.limelight = limelight;
@@ -98,20 +103,14 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public double getDistanceMeters() {
         TargetSnapshot snap = snapshot();
-        if (!snap.hasGoalTag || snap.result == null) return Double.NaN;
-
-        Pose3D pose = selectPose(snap.result);
-        if (pose == null || pose.getPosition() == null) return Double.NaN;
-
-        Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
-        double goalX = VisionConfig.goalXMeters(alliance);
-        double goalY = VisionConfig.goalYMeters(alliance);
-        double dx = goalX - pose.getPosition().x;
-        double dy = goalY - pose.getPosition().y;
-        double distance = Math.hypot(dx, dy);
-
-        return distance * VisionConfig.LIMELIGHT_RANGE_SCALE;
+        DistanceEstimate estimate = computeDistanceMeters(snap);
+        lastDistanceEstimate = estimate;
+        if (estimate.distanceMeters == null) return Double.NaN;
+        return estimate.distanceMeters;
     }
+
+    /** Latest distance breakdown for telemetry (robot-space TZ + optional field-space compare). */
+    public DistanceEstimate getLastDistanceEstimate() { return lastDistanceEstimate; }
 
     /** Debug helper: returns the alliance goal ID associated with this provider. */
     public int getAllianceGoalId() {
@@ -242,6 +241,71 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations);
     }
 
+    private DistanceEstimate computeDistanceMeters(TargetSnapshot snap) {
+        if (snap == null || !snap.hasGoalTag || snap.result == null) {
+            return DistanceEstimate.empty();
+        }
+
+        Pose3D robotSpacePose = selectTargetPoseRobotSpace(snap.result, snap.allianceGoalId);
+        Double forwardMeters = extractForwardMeters(robotSpacePose);
+        Double scaledMeters = (forwardMeters != null) ? forwardMeters * VisionConfig.LIMELIGHT_RANGE_SCALE : null;
+
+        Double fieldMeters = null;
+        Pose3D botpose = selectPose(snap.result);
+        if (botpose != null && botpose.getPosition() != null) {
+            Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
+            double goalX = VisionConfig.goalXMeters(alliance);
+            double goalY = VisionConfig.goalYMeters(alliance);
+            double dx = goalX - botpose.getPosition().x;
+            double dy = goalY - botpose.getPosition().y;
+            fieldMeters = Math.hypot(dx, dy) * VisionConfig.LIMELIGHT_RANGE_SCALE;
+        }
+
+        return new DistanceEstimate(forwardMeters, scaledMeters, fieldMeters);
+    }
+
+    private Pose3D selectTargetPoseRobotSpace(LLResult result, int allianceGoalId) {
+        if (result == null) return null;
+
+        // First preference: fiducial entry matching the alliance goal ID.
+        Pose3D fiducialPose = findFiducialPose(result, allianceGoalId);
+        if (fiducialPose != null) {
+            return fiducialPose;
+        }
+
+        // Fallback: whatever pose the result exposes as the primary target pose.
+        return readPose(result, "getTargetPose_RobotSpace", "getTargetPoseRobotSpace", "getTargetPose_robotSpace");
+    }
+
+    private Pose3D findFiducialPose(LLResult result, int allianceGoalId) {
+        List<?> fiducialResults = readList(result, "getFiducialResults");
+        if (fiducialResults == null) return null;
+
+        for (Object entry : fiducialResults) {
+            Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
+            if (id == null || id != allianceGoalId) continue;
+
+            Pose3D pose = readPose(entry,
+                    "getTargetPose_RobotSpace",
+                    "getTargetPoseRobotSpace",
+                    "getTargetPose_robotSpace",
+                    "getRobotPoseTargetSpace",
+                    "getRobotSpacePose");
+            if (pose != null) {
+                return pose;
+            }
+        }
+
+        return null;
+    }
+
+    private Double extractForwardMeters(Pose3D pose) {
+        if (pose == null || pose.getPosition() == null) return null;
+        double tz = pose.getPosition().z;
+        if (Double.isNaN(tz) || !Double.isFinite(tz)) return null;
+        return tz;
+    }
+
     private List<FiducialObservation> extractFiducials(LLResult result) {
         if (result == null) return Collections.emptyList();
 
@@ -325,6 +389,26 @@ public class LimelightTargetProvider implements VisionTargetProvider {
                 Object value = owner.getClass().getMethod(method).invoke(owner);
                 if (value instanceof Number) {
                     return ((Number) value).intValue();
+                }
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private Pose3D readPose(Object owner, String... methods) {
+        for (String method : methods) {
+            try {
+                Object value = owner.getClass().getMethod(method).invoke(owner);
+                if (value instanceof Pose3D) {
+                    return (Pose3D) value;
+                }
+                if (value instanceof double[]) {
+                    double[] arr = (double[]) value;
+                    if (arr.length >= 3) {
+                        return new Pose3D(
+                                new Position(DistanceUnit.METER, arr[0], arr[1], arr[2], 0L),
+                                new YawPitchRollAngles(AngleUnit.RADIANS, 0, 0, 0, 0L));
+                    }
                 }
             } catch (Throwable ignored) { }
         }
@@ -428,5 +512,20 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             this.bestVisibleId = bestVisibleId;
             this.observations = observations;
         }
+    }
+
+    /** Struct capturing the latest Limelight distance breakdown for telemetry. */
+    public static final class DistanceEstimate {
+        public final Double targetForwardMeters;
+        public final Double distanceMeters;
+        public final Double fieldDistanceMeters;
+
+        DistanceEstimate(Double targetForwardMeters, Double distanceMeters, Double fieldDistanceMeters) {
+            this.targetForwardMeters = targetForwardMeters;
+            this.distanceMeters = distanceMeters;
+            this.fieldDistanceMeters = fieldDistanceMeters;
+        }
+
+        static DistanceEstimate empty() { return new DistanceEstimate(null, null, null); }
     }
 }

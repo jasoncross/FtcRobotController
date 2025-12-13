@@ -962,6 +962,39 @@ public abstract class BaseAuto extends LinearOpMode {
         telemetry.addData("Start Pose", startPoseText);
         mirroredLines.add("Start Pose: " + startPoseText);
 
+        Double tagDistanceIn = null;
+        Double rawTzM = null;
+        Double rawTzIn = null;
+        Double fieldIn = null;
+        if (visionTargetProvider != null && visionTargetProvider.hasAnyTarget()) {
+            double rangeM = visionTargetProvider.getDistanceMeters();
+            if (Double.isFinite(rangeM)) {
+                tagDistanceIn = rangeM * M_TO_IN;
+            }
+            if (visionTargetProvider instanceof LimelightTargetProvider) {
+                LimelightTargetProvider.DistanceEstimate dist =
+                        ((LimelightTargetProvider) visionTargetProvider).getLastDistanceEstimate();
+                if (dist != null) {
+                    if (dist.targetForwardMeters != null && Double.isFinite(dist.targetForwardMeters)) {
+                        rawTzM = dist.targetForwardMeters;
+                        rawTzIn = rawTzM * M_TO_IN;
+                    }
+                    if (dist.fieldDistanceMeters != null && Double.isFinite(dist.fieldDistanceMeters)) {
+                        fieldIn = dist.fieldDistanceMeters * M_TO_IN;
+                    }
+                }
+            }
+        }
+
+        telemetry.addData("Tag Distance (in)", (tagDistanceIn == null) ? "---" : String.format(Locale.US, "%.1f", tagDistanceIn));
+        mirroredLines.add("Tag Distance (in): " + ((tagDistanceIn == null) ? "---" : String.format(Locale.US, "%.1f", tagDistanceIn)));
+        telemetry.addData("rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM));
+        mirroredLines.add("rawTZ_m: " + ((rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM)));
+        telemetry.addData("rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn));
+        mirroredLines.add("rawTZ_in: " + ((rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn)));
+        telemetry.addData("fieldDistanceIn", (fieldIn == null) ? "---" : String.format(Locale.US, "%.1f", fieldIn));
+        mirroredLines.add("fieldDistanceIn: " + ((fieldIn == null) ? "---" : String.format(Locale.US, "%.1f", fieldIn)));
+
         String obeliskLine = ObeliskSignal.getDisplay();
         telemetry.addData("Obelisk", obeliskLine);
         mirroredLines.add("Obelisk: " + obeliskLine.replace("Obelisk: ", ""));

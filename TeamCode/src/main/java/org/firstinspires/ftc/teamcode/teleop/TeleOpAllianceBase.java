@@ -773,6 +773,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean goalVisibleSmoothed = goalVisibleForAim;
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
+        LimelightTargetProvider.DistanceEstimate llDistance = null;
+        if (visionTargetProvider instanceof LimelightTargetProvider) {
+            llDistance = ((LimelightTargetProvider) visionTargetProvider).getLastDistanceEstimate();
+        }
         if (!Double.isNaN(headingDegRaw) && Double.isFinite(headingDegRaw)) {
             smHeadingDeg = (smHeadingDeg == null) ? headingDegRaw : (smoothA * headingDegRaw + (1 - smoothA) * smHeadingDeg);
         }
@@ -834,6 +838,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         Double autoDistIn = null;
         double autoOutRpm = launcher.targetRpm;
         double autoOutRpmCommanded = launcher.targetRpm;
+        Double currentDistanceInches = null;
 
         if (autoRpmActive && !ejectActive) {
             ensureAutoCtrl();
@@ -860,6 +865,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 double currentCmd = launcher.targetRpm;
                 if (rpmBottom > 0 && currentCmd < rpmBottom) launcher.setTargetRpm(rpmBottom);
             }
+        }
+
+        if (autoDistIn != null) {
+            currentDistanceInches = autoDistIn;
+        } else if (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) {
+            currentDistanceInches = rangeMetersRaw * M_TO_IN;
         }
 
         // --- Observe obelisk tags (IDs 21..23) and persist optimal order ---
@@ -941,10 +952,19 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         mirrorData(dashboardLines, "Tag Heading (deg)", (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg));
         Double rawIn = (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) ? rangeMetersRaw * M_TO_IN : null;
+        Double rawTzM = (llDistance != null) ? llDistance.targetForwardMeters : null;
+        Double rawTzIn = (rawTzM != null) ? rawTzM * M_TO_IN : null;
+        Double fieldIn = (llDistance != null && llDistance.fieldDistanceMeters != null)
+                ? llDistance.fieldDistanceMeters * M_TO_IN
+                : null;
         updateLimelightTelemetry();
         if (limelightStatusLine != null) mirrorLine(dashboardLines, limelightStatusLine);
         if (limelightHealthLine != null) mirrorLine(dashboardLines, limelightHealthLine);
         updateVisionTelemetry(null, rawIn);
+        mirrorData(dashboardLines, "rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM));
+        mirrorData(dashboardLines, "rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn));
+        mirrorData(dashboardLines, "currentDistanceInches", (currentDistanceInches == null) ? "---" : String.format(Locale.US, "%.1f", currentDistanceInches));
+        mirrorData(dashboardLines, "fieldDistanceIn", (fieldIn == null) ? "---" : String.format(Locale.US, "%.1f", fieldIn));
         mirrorData(dashboardLines, "Tag Distance (in)", (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn));
         mirrorData(dashboardLines, "Tag Dist (in, sm)", (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN));
         mirrorData(dashboardLines, "ShotRangeMode", longShotMode ? "LONG" : "NORMAL");

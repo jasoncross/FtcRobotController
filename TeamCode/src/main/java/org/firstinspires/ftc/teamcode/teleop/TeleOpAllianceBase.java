@@ -53,11 +53,6 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
- * CHANGES (2025-12-13): Restored aim-window rumble while AutoAim is active so
- *                       drivers still feel the lock window on target tags and
- *                       tightened Limelight frame acceptance to keep rumble
- *                       and AutoAim translation alive when timestamps report
- *                       zero.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -836,9 +831,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (autoAimEnabled) {
                 aimActive = true;
                 aimRotAfterInvert = TagAimController.applyDriveTwistSign(aimRotRaw);
-                if (aimRumbleEnabled && aimRumbleDriver1 != null) {
-                    aimRumbleDriver1.update(headingDegRaw);
-                }
             }
         } else {
             // Manual aim-window rumble when AutoAim is OFF
@@ -987,16 +979,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (aimTelemetry != null) {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
             String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
-            String aimTxGlobal = aimTelemetry.aimTxGlobalDeg != null
-                    ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxGlobalDeg)
-                    : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s txUsed=%s txGlobal=%s ageMs=%s ids=%s",
+                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
                     aimTelemetry.goalVisible,
                     lockedId,
                     aimTxUsed,
-                    aimTxGlobal,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }
@@ -1081,32 +1069,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
-
-        // --- ODOM DEBUG ---
-        mirrorLine(dashboardLines, "--- ODOM DEBUG ---");
-        FieldPose wheel = (odometry != null) ? odometry.getWheelPose() : new FieldPose();
-        mirrorData(dashboardLines, "wheelPose", "%.1f, %.1f, %.1f", wheel.x, wheel.y, wheel.headingDeg);
-        Odometry.CameraDebug cam = (odometry != null) ? odometry.getCameraDebug() : new Odometry.CameraDebug();
-        if (cam.rawMeters != null && cam.rawMeters.length >= 3) {
-            mirrorData(dashboardLines, "camRaw(m)", "%.2f, %.2f, %.1f", cam.rawMeters[0], cam.rawMeters[1], cam.rawMeters[2]);
-        }
-        if (cam.mappedPose != null) {
-            mirrorData(dashboardLines, "camIn(in)", "%.1f, %.1f, %.1f", cam.mappedPose.x, cam.mappedPose.y, cam.mappedPose.headingDeg);
-        }
-        mirrorData(dashboardLines, "camGate", String.format(Locale.US,
-                "%d/%d std=%.1f in, %.1f deg age=%d accepted=%s reason=%s",
-                cam.goodCount,
-                cam.windowCount,
-                cam.stddevPosIn,
-                cam.stddevHeadingDeg,
-                cam.ageMs,
-                cam.accepted,
-                (cam.rejectReason == null ? "-" : cam.rejectReason)));
-        mirrorData(dashboardLines, "camTags", String.format(Locale.US,
-                "goalVisible=%s obeliskOnly=%s ids=%s",
-                cam.goalVisible,
-                cam.obeliskOnly,
-                cam.tagIds));
         sendDashboard(fusedPose, "RUN", dashboardLines);
         telemetry.update();
     }
@@ -1264,20 +1226,20 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void applyLimelightPipeline(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.pipelineSwitch(VisionConfig.CameraFusion.PIPELINE_INDEX);
+            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
             return;
         } catch (Throwable ignored) { }
 
         try {
             ll.getClass().getMethod("setPipelineIndex", int.class)
-                    .invoke(ll, VisionConfig.CameraFusion.PIPELINE_INDEX);
+                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
         } catch (Throwable ignored) { }
     }
 
     private void applyLimelightPollRate(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.setPollRateHz(VisionConfig.CameraFusion.POLL_HZ);
+            ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
         } catch (Throwable ignored) { }
     }
 

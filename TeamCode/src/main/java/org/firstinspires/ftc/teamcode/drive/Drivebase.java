@@ -109,11 +109,6 @@ public class Drivebase {
     //                        be retuned without editing Drivebase.java.
     // CHANGES (2025-11-25): Exposed wheel encoder helpers for odometry consumers while
     //                        keeping TeleOp safe-init guarantees; refreshed changelog dates to match release.
-    // CHANGES (2025-12-13): Reworked moveWithTwist(...) so translation remains field-centric while
-    //                        turning and progress uses holonomic translation distance, keeping twist
-    //                        moves aligned to the requested field heading.
-    // CHANGES (2025-12-13): Restored signed-distance support for move()/moveWithTwist(...) so
-    //                        negative distances drive opposite the requested field heading again.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -222,13 +217,11 @@ public class Drivebase {
         double maxSpeed = clamp(speed, 0.1, 1.0);
         maxSpeed = Math.max(minSpeed, maxSpeed);
 
-        double distanceSign = (distanceInches >= 0) ? 1.0 : -1.0;
-
         double rad = toRadians(degrees);
         double forwardRaw = cos(rad);
         double lateralRaw = sin(rad);
-        double forward = -forwardRaw * distanceSign;
-        double lateral = lateralRaw * distanceSign;
+        double forward = -forwardRaw;
+        double lateral = lateralRaw;
 
         // Normalize vector so the speed cap applies uniformly across headings
         double vecNorm = max(1.0, max(abs(forward), abs(lateral)));
@@ -245,8 +238,8 @@ public class Drivebase {
         double multNorm = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
         flMult /= multNorm; frMult /= multNorm; blMult /= multNorm; brMult /= multNorm;
 
-        double baseTicks = abs(distanceInches) * TICKS_PER_IN;
-        double targetTicks = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * baseTicks;
+        double baseTicks = distanceInches * TICKS_PER_IN;
+        double targetTicks = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * abs(baseTicks);
         if (targetTicks < 5.0) {
             stopAll();
             return;
@@ -314,8 +307,28 @@ public class Drivebase {
         translationSpeed = Math.max(minTranslationSpeed, translationSpeed);
         twistSpeed = clamp(twistSpeed, 0.1, 1.0);
 
-        double distanceSign = (distanceInches >= 0) ? 1.0 : -1.0;
-        double targetTranslationTicks = abs(distanceInches) * TICKS_PER_IN;
+        double rad = toRadians(degrees);
+        double forwardRaw = cos(rad);
+        double lateralRaw = sin(rad);
+        double forward = -forwardRaw;
+
+        // Normalize the translation vector so the speed cap applies uniformly.
+        double maxVec = max(1.0, max(abs(forward), abs(lateralRaw)));
+        forward /= maxVec;
+        lateralRaw /= maxVec;
+
+        // Compute expected per-wheel scaling for progress tracking (mirrors move()).
+        double xAdj = lateralRaw * STRAFE_CORRECTION;
+        double yAdj = forward;
+        double flMult = yAdj + xAdj;
+        double frMult = yAdj - xAdj;
+        double blMult = yAdj - xAdj;
+        double brMult = yAdj + xAdj;
+        double norm = max(1.0, max(abs(flMult), max(abs(frMult), max(abs(blMult), abs(brMult)))));
+        flMult /= norm; frMult /= norm; blMult /= norm; brMult /= norm;
+
+        double baseTicks = distanceInches * TICKS_PER_IN;
+        double absTargetMean = (abs(flMult) + abs(frMult) + abs(blMult) + abs(brMult)) / 4.0 * abs(baseTicks);
 
         int flStart = fl.getCurrentPosition();
         int frStart = fr.getCurrentPosition();
@@ -334,33 +347,20 @@ public class Drivebase {
             double twistCmd = TURN_KP * err + TURN_KD * derr;
             twistCmd = clamp(twistCmd, -twistSpeed, twistSpeed);
 
-            double currentHeadingDeg = heading();
-            double relativeDeg = normDeg(degrees - currentHeadingDeg);
-            double relativeRad = toRadians(relativeDeg);
-            double forward = -cos(relativeRad) * distanceSign;
-            double lateral = sin(relativeRad) * distanceSign;
+            double flDelta = abs(fl.getCurrentPosition() - flStart);
+            double frDelta = abs(fr.getCurrentPosition() - frStart);
+            double blDelta = abs(bl.getCurrentPosition() - blStart);
+            double brDelta = abs(br.getCurrentPosition() - brStart);
+            double absMeanDelta = (flDelta + frDelta + blDelta + brDelta) / 4.0;
 
-            double maxVec = max(1.0, max(abs(forward), abs(lateral)));
-            forward /= maxVec;
-            lateral /= maxVec;
-
-            double flDelta = fl.getCurrentPosition() - flStart;
-            double frDelta = fr.getCurrentPosition() - frStart;
-            double blDelta = bl.getCurrentPosition() - blStart;
-            double brDelta = br.getCurrentPosition() - brStart;
-
-            double forwardTicks = (flDelta + frDelta + blDelta + brDelta) / 4.0;
-            double strafeTicks = (flDelta - frDelta - blDelta + brDelta) / 4.0;
-            double translationTicks = hypot(forwardTicks, strafeTicks);
-
-            double progress = (targetTranslationTicks <= 1e-3) ? 0.0 : clamp(translationTicks / targetTranslationTicks, 0.0, 1.0);
+            double progress = (absTargetMean <= 1e-3) ? 0.0 : clamp(absMeanDelta / absTargetMean, 0.0, 1.0);
             double remaining = 1.0 - progress;
             double transSpeed = minTranslationSpeed
                     + (translationSpeed - minTranslationSpeed) * remaining;
             transSpeed = clamp(transSpeed, minTranslationSpeed, translationSpeed);
 
             double driveCmd = transSpeed * forward;
-            double strafeCmd = transSpeed * lateral;
+            double strafeCmd = transSpeed * lateralRaw;
 
             double flP = driveCmd + strafeCmd + twistCmd;
             double frP = driveCmd - strafeCmd - twistCmd;
@@ -373,7 +373,7 @@ public class Drivebase {
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
 
-            if (targetTranslationTicks <= 1e-3 || translationTicks >= targetTranslationTicks) {
+            if (absTargetMean <= 1e-3 || absMeanDelta >= absTargetMean) {
                 break;
             }
 

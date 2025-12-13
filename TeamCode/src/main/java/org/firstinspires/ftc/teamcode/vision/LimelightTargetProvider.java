@@ -52,20 +52,10 @@ import java.util.function.Supplier;
  *                       disabled.
  * CHANGES (2025-12-12): Updated pose field accessors to match current Limelight
  *                       Pose3D API fields for build compatibility.
- * CHANGES (2025-12-19): Per-fiducial aim uses the locked tag's tx/tz instead of
- *                       Limelight's global best target output, and obelisk
- *                       motif memory remains latched when tags leave view.
- * CHANGES (2025-12-13): Treat zero/absent timestamps as current samples and
- *                       accept fiducial-bearing frames even when isValid()
- *                       returns false so Auto/TeleOp can keep locking tags,
- *                       rumbling, and driving while AutoAim is enabled.
- * CHANGES (2025-12-14): Treat any fresh Limelight sample as usable for goal
- *                       targeting so AutoAim/Auto searches keep running even
- *                       when validity flags drop during scans.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
-    private static final long OBELISK_STALE_MS = -1L;               // -1 → never clear automatically
+    private static final long OBELISK_STALE_MS = 1500L;
     private static final long AIM_LOCK_STALE_MS = 250L;          // How long to retain a goal lock after loss
     private static final double AIM_SWITCH_TX_HYST_DEG = 2.0;    // Margin needed to switch aim target
 
@@ -156,7 +146,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             ids.add(obs.id);
         }
 
-        return new AimTelemetry(ids, snap.hasGoalTag, lockedAimTagId, snap.aimTxDegUsed, snap.globalTxDeg, ageMs);
+        return new AimTelemetry(ids, snap.hasGoalTag, lockedAimTagId, snap.aimTxDegUsed, ageMs);
     }
 
     private LLResult latest() {
@@ -186,10 +176,10 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private boolean isFresh(LLResult result) {
         if (result == null) return false;
         Long tsMs = readTimestampMs(result);
-        if (tsMs == null || tsMs <= 0L) return true; // No timestamp available—assume current
+        if (tsMs == null) return true; // No timestamp available—assume current
 
         long ageMs = System.currentTimeMillis() - tsMs;
-        return ageMs <= VisionConfig.CameraFusion.CAMERA_POSE_MAX_AGE_MS;
+        return ageMs <= VisionConfig.LimelightFusion.MAX_AGE_MS;
     }
 
     private void latchObelisk(LLResult result) {
@@ -229,7 +219,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             return;
         }
 
-        if (latchedObeliskId != null && OBELISK_STALE_MS > 0 && (now - lastObeliskUpdateMs) > OBELISK_STALE_MS) {
+        if (latchedObeliskId != null && (now - lastObeliskUpdateMs) > OBELISK_STALE_MS) {
             latchedObeliskId = null;
             pendingObeliskId = null;
             pendingObeliskCount = 0;
@@ -259,8 +249,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         LLResult result = latest();
         long now = System.currentTimeMillis();
         List<FiducialObservation> observations = extractFiducials(result);
-        boolean hasFiducials = !observations.isEmpty();
-        boolean resultValid = result != null; // Treat any fresh sample as usable for aim/rumble even if marked invalid
+        boolean resultValid = result != null && result.isValid();
 
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
@@ -268,33 +257,22 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observations);
         updateAimLock(now, allianceGoalId, goalObs);
 
-        FiducialObservation lockedObs = findObservationById((lockedAimTagId >= 0) ? lockedAimTagId : allianceGoalId, observations);
-        boolean lockedFresh = lockedAimTagId == allianceGoalId && lockedAimLastSeenMs > 0L
-                && (now - lockedAimLastSeenMs) <= AIM_LOCK_STALE_MS;
-
-        boolean hasGoal = resultValid && ((lockedObs != null && lockedObs.id == allianceGoalId)
-                || (lockedFresh && lockedAimLastTx != null));
-
-        int bestId = (lockedObs != null) ? lockedObs.id : (resultValid && !observations.isEmpty()) ? observations.get(0).id : -1;
-        if (hasGoal && bestId < 0) {
+        boolean hasGoal = resultValid && goalObs != null;
+        int bestId = (resultValid && !observations.isEmpty()) ? observations.get(0).id : -1;
+        if (hasGoal) {
             bestId = allianceGoalId;
         }
 
         Double aimTxDeg = null;
         if (hasGoal) {
-            if (lockedObs != null && lockedObs.txDeg != null) {
-                aimTxDeg = lockedObs.txDeg;
-            } else if (lockedFresh) {
-                aimTxDeg = lockedAimLastTx;
+            if (goalObs != null && goalObs.txDeg != null) {
+                aimTxDeg = goalObs.txDeg;
+            } else if (result != null) {
+                aimTxDeg = result.getTx();
             }
         }
 
-        Double globalTxDeg = null;
-        if (result != null) {
-            try { globalTxDeg = result.getTx(); } catch (Throwable ignored) { }
-        }
-
-        return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations, goalObs, aimTxDeg, globalTxDeg, lockedObs, now);
+        return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations, goalObs, aimTxDeg, now);
     }
 
     private void updateAimLock(long nowMs, int allianceGoalId, FiducialObservation goalObs) {
@@ -341,11 +319,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             return DistanceEstimate.empty();
         }
 
-        Double forwardMeters = (snap.lockedObservation != null) ? snap.lockedObservation.tzMeters : null;
         Pose3D robotSpacePose = selectTargetPoseRobotSpace(snap.result, snap.allianceGoalId);
-        if (forwardMeters == null) {
-            forwardMeters = extractForwardMeters(robotSpacePose);
-        }
+        Double forwardMeters = extractForwardMeters(robotSpacePose);
         Double scaledMeters = (forwardMeters != null) ? forwardMeters * VisionConfig.LIMELIGHT_RANGE_SCALE : null;
 
         Double fieldMeters = null;
@@ -414,18 +389,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             for (Object entry : fiducialResults) {
                 Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
                 Double tx = readSingleDouble(entry, "getTx", "getTxDegrees", "getTxRadians");
-                Double tz = readSingleDouble(entry, "getTz", "getZ", "getZDistance");
-                if (tz == null) {
-                    Pose3D pose = readPose(entry,
-                            "getTargetPose_RobotSpace",
-                            "getTargetPoseRobotSpace",
-                            "getTargetPose_robotSpace",
-                            "getRobotPoseTargetSpace",
-                            "getRobotSpacePose");
-                    tz = extractForwardMeters(pose);
-                }
                 if (id != null) {
-                    out.add(new FiducialObservation(id, tx, tz));
+                    out.add(new FiducialObservation(id, tx));
                 }
             }
         }
@@ -434,7 +399,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             int[] idArray = readIntArray(result, "getFiducialResults", "getFiducialIds", "getTargetIds", "getTidList");
             if (idArray != null) {
                 for (int id : idArray) {
-                    out.add(new FiducialObservation(id, null, null));
+                    out.add(new FiducialObservation(id, null));
                 }
             }
         }
@@ -443,7 +408,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             double[] doubleArray = readDoubleArray(result, "getFiducialResults", "getFiducialIds", "getTargetIds", "getTidList");
             if (doubleArray != null) {
                 for (double id : doubleArray) {
-                    out.add(new FiducialObservation((int) Math.round(id), null, null));
+                    out.add(new FiducialObservation((int) Math.round(id), null));
                 }
             }
         }
@@ -451,19 +416,11 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         if (out.isEmpty()) {
             Integer fiducial = readSingleId(result, "getFiducialId", "getTid", "getTargetId");
             if (fiducial != null) {
-                out.add(new FiducialObservation(fiducial, null, null));
+                out.add(new FiducialObservation(fiducial, null));
             }
         }
 
         return out;
-    }
-
-    private FiducialObservation findObservationById(int id, List<FiducialObservation> observations) {
-        if (observations == null) return null;
-        for (FiducialObservation obs : observations) {
-            if (obs.id == id) return obs;
-        }
-        return null;
     }
 
     private FiducialObservation selectBestObelisk(List<FiducialObservation> observations) {
@@ -593,12 +550,10 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private static final class FiducialObservation {
         final int id;
         final Double txDeg;
-        final Double tzMeters;
 
-        FiducialObservation(int id, Double txDeg, Double tzMeters) {
+        FiducialObservation(int id, Double txDeg) {
             this.id = id;
             this.txDeg = txDeg;
-            this.tzMeters = tzMeters;
         }
     }
 
@@ -610,9 +565,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         final int bestVisibleId;
         final List<FiducialObservation> observations;
         final FiducialObservation goalObservation;
-        final FiducialObservation lockedObservation;
         final Double aimTxDegUsed;
-        final Double globalTxDeg;
         final long snapshotMs;
 
         TargetSnapshot(LLResult result,
@@ -623,8 +576,6 @@ public class LimelightTargetProvider implements VisionTargetProvider {
                        List<FiducialObservation> observations,
                        FiducialObservation goalObservation,
                        Double aimTxDegUsed,
-                       Double globalTxDeg,
-                       FiducialObservation lockedObservation,
                        long snapshotMs) {
             this.result = result;
             this.resultValid = resultValid;
@@ -634,8 +585,6 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             this.observations = observations;
             this.goalObservation = goalObservation;
             this.aimTxDegUsed = aimTxDegUsed;
-            this.globalTxDeg = globalTxDeg;
-            this.lockedObservation = lockedObservation;
             this.snapshotMs = snapshotMs;
         }
     }
@@ -646,20 +595,17 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         public final boolean goalVisible;
         public final int lockedAimTagId;
         public final Double aimTxDeg;
-        public final Double aimTxGlobalDeg;
         public final long lockAgeMs;
 
         AimTelemetry(List<Integer> visibleIds,
                      boolean goalVisible,
                      int lockedAimTagId,
                      Double aimTxDeg,
-                     Double aimTxGlobalDeg,
                      long lockAgeMs) {
             this.visibleIds = visibleIds;
             this.goalVisible = goalVisible;
             this.lockedAimTagId = lockedAimTagId;
             this.aimTxDeg = aimTxDeg;
-            this.aimTxGlobalDeg = aimTxGlobalDeg;
             this.lockAgeMs = lockAgeMs;
         }
     }

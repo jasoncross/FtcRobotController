@@ -900,20 +900,20 @@ public abstract class BaseAuto extends LinearOpMode {
     private void applyLimelightPipeline(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.pipelineSwitch(VisionConfig.CameraFusion.PIPELINE_INDEX);
+            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
             return;
         } catch (Throwable ignored) { }
 
         try {
             ll.getClass().getMethod("setPipelineIndex", int.class)
-                    .invoke(ll, VisionConfig.CameraFusion.PIPELINE_INDEX);
+                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
         } catch (Throwable ignored) { }
     }
 
     private void applyLimelightPollRate(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.setPollRateHz(VisionConfig.CameraFusion.POLL_HZ);
+            ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
         } catch (Throwable ignored) { }
     }
     /** Shutdown the vision portal safely if it was created. */
@@ -1026,35 +1026,6 @@ public abstract class BaseAuto extends LinearOpMode {
             telemetry.addLine(summary);
             mirroredLines.add(summary);
         }
-        telemetry.addLine("--- ODOM DEBUG ---"); mirroredLines.add("--- ODOM DEBUG ---");
-        FieldPose wheel = (odometry != null) ? odometry.getWheelPose() : new FieldPose();
-        String wheelLine = String.format(Locale.US, "wheelPose: %.1f, %.1f, %.1f", wheel.x, wheel.y, wheel.headingDeg);
-        telemetry.addLine(wheelLine); mirroredLines.add(wheelLine);
-        Odometry.CameraDebug cam = (odometry != null) ? odometry.getCameraDebug() : new Odometry.CameraDebug();
-        if (cam.rawMeters != null && cam.rawMeters.length >= 3) {
-            String rawLine = String.format(Locale.US, "camRaw(m): %.2f, %.2f, %.1f", cam.rawMeters[0], cam.rawMeters[1], cam.rawMeters[2]);
-            telemetry.addLine(rawLine); mirroredLines.add(rawLine);
-        }
-        if (cam.mappedPose != null) {
-            String mappedLine = String.format(Locale.US, "camIn(in): %.1f, %.1f, %.1f", cam.mappedPose.x, cam.mappedPose.y, cam.mappedPose.headingDeg);
-            telemetry.addLine(mappedLine); mirroredLines.add(mappedLine);
-        }
-        String gateLine = String.format(Locale.US,
-                "camGate: %d/%d std=%.1f in, %.1f deg age=%d accepted=%s reason=%s",
-                cam.goodCount,
-                cam.windowCount,
-                cam.stddevPosIn,
-                cam.stddevHeadingDeg,
-                cam.ageMs,
-                cam.accepted,
-                (cam.rejectReason == null ? "-" : cam.rejectReason));
-        telemetry.addLine(gateLine); mirroredLines.add(gateLine);
-        String tagLine = String.format(Locale.US,
-                "camTags: goalVisible=%s obeliskOnly=%s ids=%s",
-                cam.goalVisible,
-                cam.obeliskOnly,
-                cam.tagIds);
-        telemetry.addLine(tagLine); mirroredLines.add(tagLine);
         FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
         sendDashboard(poseForDashboard, statusPhase, mirroredLines);
     }

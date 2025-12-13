@@ -979,12 +979,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (aimTelemetry != null) {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
             String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
+            String aimTxGlobal = aimTelemetry.aimTxGlobalDeg != null
+                    ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxGlobalDeg)
+                    : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
+                    "goalVisible=%s locked=%s txUsed=%s txGlobal=%s ageMs=%s ids=%s",
                     aimTelemetry.goalVisible,
                     lockedId,
                     aimTxUsed,
+                    aimTxGlobal,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }

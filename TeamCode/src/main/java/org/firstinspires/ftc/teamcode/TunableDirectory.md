@@ -2,6 +2,8 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
+`drive/Drivebase.moveWithTwist(...)` now re-computes the field-centric translation vector each loop while twisting and measures progress using holonomic translation distance. It continues to honor `DriveTuning.AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED` and the shared drive/twist caps in `SharedRobotTuning` without adding new tunables.
+
 > **How to read the tables**
 >
 > * **Parameter** — Name of the constant, field, or call that you edit in code.

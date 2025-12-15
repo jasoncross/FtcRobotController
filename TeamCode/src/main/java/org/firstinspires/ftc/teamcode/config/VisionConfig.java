@@ -29,12 +29,6 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *                        axis offsets) to support FTC field-center odometry.
  * CHANGES (2025-12-12): Cleaned imports after odometry package move to keep
  *                        build compatibility with field-center frame updates.
- * CHANGES (2025-12-13): Added Limelight aim lock tunables (stale hold, tx
- *                        hysteresis, confirm frames) for per-fiducial goal
- *                        targeting stability.
- * CHANGES (2025-12-13): Added obelisk latch stale timeout tunable so motif
- *                        memory can persist between sightings or expire on a
- *                        configurable delay.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -83,20 +77,6 @@ public final class VisionConfig {
         public static final int Y_SIGN = 1; // Flip Y axis if needed (+1 normal)
         public static final double X_OFFSET_IN = 0.0; // Additive X offset if needed (inches)
         public static final double Y_OFFSET_IN = 0.0; // Additive Y offset if needed (inches)
-    }
-
-    public static final class LimelightAim {
-        private LimelightAim() {}
-
-        public static final long AIM_LOCK_STALE_MS = 250L;       // How long to retain a goal lock after loss (ms)
-        public static final double AIM_SWITCH_TX_HYST_DEG = 2.0; // Extra margin before switching goal samples (deg)
-        public static final int AIM_SWITCH_CONFIRM_FRAMES = 2;   // Frames required before switching between competing goal obs
-    }
-
-    public static final class ObeliskMemory {
-        private ObeliskMemory() {}
-
-        public static final long OBELISK_STALE_MS = -1L; // How long to retain a latched obelisk motif; -1 keeps it for the match
     }
 
     public static int goalTagIdForAlliance(Alliance alliance) {

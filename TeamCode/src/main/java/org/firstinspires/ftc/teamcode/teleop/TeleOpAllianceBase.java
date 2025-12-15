@@ -89,15 +89,6 @@
  *                       keeping field overlays; Obelisk scanning now falls back
  *                       to raw detections so motifs latch even when filtered
  *                       frames drop below the margin gate.
- * CHANGES (2025-12-13): Added Limelight aim-lock telemetry showing per-fiducial
- *                       tx vs. global tx to diagnose multi-tag thrash.
- * CHANGES (2025-12-13): Surfaced obelisk seen/latched/age telemetry using the
- *                       Limelight latch state so motifs stay visible between
- *                       sightings during Phase 3 retask validation.
- * CHANGES (2025-12-13): Added FieldPose-aligned odometry + camera fusion debug
- *                       block (wheel pose, raw/mapped camera pose, gate stats,
- *                       obelisk exclusions) to keep bottom telemetry focused on
- *                       fusion stability while preserving the FieldPose frame.
  * CHANGES (2025-12-03): AutoAim + AutoSpeed now rely solely on the
  *                       alliance-correct goal tag; non-alliance tags remain
  *                       limited to odometry blending so shooter targets stay
@@ -867,7 +858,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (odometry != null) {
             fusedPose = odometry.update();
         }
-        Odometry.CameraFusionTelemetry fusionTelemetry = (odometry != null) ? odometry.getFusionTelemetry() : null;
 
         // AutoSpeed update
         boolean autoRpmActive = (autoSpeedEnabled && !rpmTestEnabled);
@@ -921,13 +911,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         int allianceGoalId = allianceGoalTagId();
         List<Integer> visibleIds = new ArrayList<>();
         LimelightTargetProvider.AimTelemetry aimTelemetry = null;
-        LimelightTargetProvider.ObeliskTelemetry obeliskTelemetry = null;
         if (visionTargetProvider instanceof LimelightTargetProvider) {
             LimelightTargetProvider llProvider = (LimelightTargetProvider) visionTargetProvider;
             allianceGoalId = llProvider.getAllianceGoalId();
             visibleIds = llProvider.getVisibleTagIds();
             aimTelemetry = llProvider.getAimTelemetry();
-            obeliskTelemetry = llProvider.getObeliskTelemetry();
         } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
             visibleIds.add(allianceGoalId);
         }
@@ -937,13 +925,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         for (int id : visibleIds) {
             if (id >= 21 && id <= 23) obeliskIds.add(id);
         }
-        boolean obeliskSeen = (obeliskTelemetry != null) ? obeliskTelemetry.seenThisFrame : !obeliskIds.isEmpty();
+        boolean obeliskSeen = !obeliskIds.isEmpty();
         String obeliskIdsStr = joinIds(obeliskIds);
-        int latchedObeliskId = (obeliskTelemetry != null && obeliskTelemetry.latchedId >= 0)
-                ? obeliskTelemetry.latchedId
-                : ObeliskSignal.getLastTagId();
+        int latchedObeliskId = ObeliskSignal.getLastTagId();
         String latchedObeliskIdStr = (latchedObeliskId < 0) ? "-" : String.valueOf(latchedObeliskId);
-        long obeliskAgeMs = (obeliskTelemetry != null) ? obeliskTelemetry.ageMs : ObeliskSignal.ageMs();
 
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         String obeliskDisplay = ObeliskSignal.getDisplay();
@@ -995,23 +980,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
             String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
-            String txGlobal = aimTelemetry.txGlobalBest != null ? String.format(Locale.US, "%.1f", aimTelemetry.txGlobalBest) : "-";
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s txUsed=%s txGlobal=%s ageMs=%s ids=%s",
+                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
                     aimTelemetry.goalVisible,
                     lockedId,
                     aimTxUsed,
-                    txGlobal,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }
         mirrorData(dashboardLines, "OB: seen ids/latched", String.format(Locale.US,
-                "seenThisFrame=%s ids=%s latchedId=%s motif=%s ageMs=%d",
+                "seen=%s ids=%s latchedId=%s motif=%s ageMs=%d",
                 obeliskSeen,
                 obeliskIdsStr,
                 latchedObeliskIdStr,
                 ObeliskSignal.get(),
-                obeliskAgeMs));
+                ObeliskSignal.ageMs()));
         mirrorData(dashboardLines, "AutoAim Grace (ms)", autoAimLossGraceMs);
         if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
             mirrorData(dashboardLines, "AutoAim Grace Left", Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)));
@@ -1024,11 +1007,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         Double fieldIn = (llDistance != null && llDistance.fieldDistanceMeters != null)
                 ? llDistance.fieldDistanceMeters * M_TO_IN
                 : null;
-        FieldPose wheelPose = (fusionTelemetry != null && fusionTelemetry.wheelPose != null)
-                ? fusionTelemetry.wheelPose
-                : fusedPose;
-        FieldPose cameraPose = (fusionTelemetry != null) ? fusionTelemetry.cameraPoseInches : null;
-        double[] camRawMeters = (fusionTelemetry != null) ? fusionTelemetry.cameraRawMeters : null;
         updateLimelightTelemetry();
         if (limelightStatusLine != null) mirrorLine(dashboardLines, limelightStatusLine);
         if (limelightHealthLine != null) mirrorLine(dashboardLines, limelightHealthLine);
@@ -1090,28 +1068,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 mirrorLine(dashboardLines, "FeedStop: " + feed.getHomeAbortMessage());
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
-        }
-        mirrorLine(dashboardLines, "--- ODOM DEBUG ---");
-        mirrorData(dashboardLines, "wheelPose", String.format(Locale.US, "%.1f, %.1f, %.1f", wheelPose.x, wheelPose.y, wheelPose.headingDeg));
-        String camRawStr = (camRawMeters == null) ? "-" : String.format(Locale.US, "%.2f, %.2f, %.1f", camRawMeters[0], camRawMeters[1], camRawMeters.length > 2 ? camRawMeters[2] : Double.NaN);
-        mirrorData(dashboardLines, "camRaw(m)", camRawStr);
-        String camInStr = (cameraPose == null) ? "-" : String.format(Locale.US, "%.1f, %.1f, %.1f", cameraPose.x, cameraPose.y, cameraPose.headingDeg);
-        mirrorData(dashboardLines, "camIn(in)", camInStr);
-        if (fusionTelemetry != null) {
-            mirrorData(dashboardLines, "camGate", String.format(Locale.US,
-                    "good=%d/%d stdIn=%.1f stdDeg=%.1f ageMs=%d accepted=%s reject=%s",
-                    fusionTelemetry.gateGoodFrames,
-                    fusionTelemetry.gateWindowCount,
-                    fusionTelemetry.gateStddevIn,
-                    fusionTelemetry.gateStddevDeg,
-                    fusionTelemetry.gateAgeMs,
-                    fusionTelemetry.accepted,
-                    fusionTelemetry.gateRejectReason));
-            mirrorData(dashboardLines, "camTags", String.format(Locale.US,
-                    "goalVisible=%s obeliskOnly=%s ids=%s",
-                    fusionTelemetry.goalVisible,
-                    fusionTelemetry.obeliskOnly,
-                    joinIds(fusionTelemetry.visibleIds)));
         }
         sendDashboard(fusedPose, "RUN", dashboardLines);
         telemetry.update();

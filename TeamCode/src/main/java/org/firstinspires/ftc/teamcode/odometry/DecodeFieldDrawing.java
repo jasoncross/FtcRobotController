@@ -6,8 +6,6 @@ import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
 
-import java.util.Locale;
-
 /*
  * FILE: DecodeFieldDrawing.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/odometry/
@@ -24,11 +22,6 @@ import java.util.Locale;
  * CHANGES (2025-12-11): Updated drawing transforms for the field-center
  *                        odometry frame (no Y shift) so overlays match fused
  *                        poses with Limelight XY fusion enabled.
- * CHANGES (2025-12-13): Added FieldPose-aligned pose overlay text (inches/deg)
- *                        on the dashboard field drawing to mirror driver
- *                        telemetry and validate heading/origin alignment.
- * CHANGES (2025-12-14): Updated strokeText call to match the current FTC
- *                        Dashboard Canvas signature for overlay text.
  */
 public final class DecodeFieldDrawing {
 
@@ -186,7 +179,6 @@ public final class DecodeFieldDrawing {
         double hy = py + 8.0 * Math.cos(headingRad);
         c.setStroke("#000000");
         c.strokeLine(px, py, hx, hy);
-        drawPoseOverlay(c, pose);
     }
 
     private static void drawTriangle(Canvas c, double x1, double y1, double x2, double y2, double x3, double y3) {
@@ -204,14 +196,5 @@ public final class DecodeFieldDrawing {
 
     private static double toDashY(double fieldY) {
         return fieldY; // Odometry now uses the dashboard-centered frame directly
-    }
-
-    private static void drawPoseOverlay(Canvas c, FieldPose pose) {
-        // Render the same pose (inches, degrees) used by driver telemetry so
-        // the Dashboard overlay can be validated against the FieldPose frame.
-        double textX = toDashX(OdometryConfig.LEFT_FIELD_X + 4.0);
-        double textY = toDashY(OdometryConfig.TARGET_WALL_Y - 6.0);
-        String text = String.format(Locale.US, "Pose x=%.1f y=%.1f h=%.1f", pose.x, pose.y, pose.headingDeg);
-        c.strokeText(text, textX, textY, COLOR_TILE, 1.0, false);
     }
 }

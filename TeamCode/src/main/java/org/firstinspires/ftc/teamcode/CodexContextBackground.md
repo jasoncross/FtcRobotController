@@ -84,15 +84,16 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 ### **Limelight 3A — Primary Vision System**
 *(See [`docs/vision/Limelight3A.md`](./docs/vision/Limelight3A.md) for full details.)*
 
-- Provides **heading (tx)**, **distance (3D pose)**, and **full-field localization (MegaTag1/MegaTag2)**.  
-- USB-only device; appears as `EthernetDevice` in DS config.  
-- Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.  
+- Provides **heading (tx)**, **distance (3D pose)**, and **full-field localization (MegaTag1/MegaTag2)**.
+- USB-only device; appears as `EthernetDevice` in DS config.
+- Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.
 - All new AutoAim, AutoSpeed, and OdometryFusion development must target the Limelight 3A pipeline.
 - A new `VisionTargetProvider` abstraction fronts heading + distance; Limelight is now the default source while a legacy webcam wrapper exists only for fallback builds. `TagAimController` and `AutoAimSpeed` both consume the provider so aim PD and RPM gating share the same source. `BaseAuto` and TeleOp construct the provider (Limelight default, webcam fallback), Limelight latches obelisk motifs, and AutoSequence `visionMode(...)` steps no-op when Limelight is active to avoid webcam-only swaps.
+- Limelight goal visibility/tx now latch through a short hold window and a few missing frames so Auto scan/aim stays stable; aiming is locked to alliance goal IDs 20/24 only (never obelisks/best-target fallbacks) while webcam fallback behavior remains unchanged.
 
-### **Legacy P480 AprilTag Pipeline (DEPRECATED)**  
-- Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).  
-- Retained strictly for backward compatibility with existing OpModes.  
+### **Legacy P480 AprilTag Pipeline (DEPRECATED)**
+- Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).
+- Retained strictly for backward compatibility with existing OpModes.
 - **Codex must not generate or extend code using the P480 pipeline.**  
 - **All future vision-related code is to be built exclusively around the Limelight 3A.**  
 - Auto/TeleOp aim logic previously tied to P480 is being migrated to LL3A-based heading + pose.

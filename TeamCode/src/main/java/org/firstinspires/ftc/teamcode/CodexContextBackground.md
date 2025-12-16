@@ -131,7 +131,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 |------|--------|-------------|---------|
 | **Drivebase** | IMU drift | Normalization + reset utilities | Stable heading |
 | **Launcher** | RPM load variance | PIDF tuning + tag-based AutoSpeed | Consistent volleys |
-| **Vision** | P480 instability | **Migrated to Limelight 3A** | Reliable heading/distance |
+| **Vision** | P480 instability | **Migrated to Limelight 3A** (with TeleOp pipeline alias retained post split) | Reliable heading/distance |
 | **TeleOp** | Button logic duplication | Centralized bindings | Cleaner driver workflow |
 
 ---

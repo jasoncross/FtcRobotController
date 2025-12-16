@@ -118,6 +118,7 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-11-07): Updated fireN() to rely on Feed.beginFeedCycle() so the new
     //                        asynchronous servo lead applies consistently without manual release calls.
     // CHANGES (2025-11-07): Surfaced FeedStop homing telemetry so INIT shows when zero is established.
+    // CHANGES (2025-12-18): Applied AutoAim twist inversion to AUTO drive commands so aim direction matches the TeleOp tunable.
     // CHANGES (2025-11-09): Trimmed FeedStop telemetry to a single summary line with warnings only
     //                        when soft-limit or scaling guards trigger.
     // CHANGES (2025-11-14): Relaxed AprilTag lock tolerance automatically when the 480p vision
@@ -439,7 +440,8 @@ public abstract class BaseAuto extends LinearOpMode {
                 aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
                 double err = smoothedHeading;
                 bearing = err;
-                double cmd = clamp(aim.turnPower(), -cap, +cap);
+                double cmdRaw = aim.turnPower();
+                double cmd = clamp(TagAimController.applyDriveTwistSign(cmdRaw), -cap, +cap);
                 drive.drive(0, 0, cmd);
                 lockedNow = lockWindow.contains(err);
                 if (lockedNow) {
@@ -800,7 +802,8 @@ public abstract class BaseAuto extends LinearOpMode {
                     telemetry.update();
                     return true;
                 }
-                double cmd = clamp(aim.turnPower(), -cap, +cap);
+                double cmdRaw = aim.turnPower();
+                double cmd = clamp(TagAimController.applyDriveTwistSign(cmdRaw), -cap, +cap);
                 drive.drive(0, 0, cmd * 0.6);
                 updateStatus(label, false);
                 telemetry.addData("Bearing (deg)", err);

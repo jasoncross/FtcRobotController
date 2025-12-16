@@ -74,6 +74,8 @@ public class Feed {
     //                       artifacts without rearming the state machine between shots.
     // CHANGES (2025-11-29): Exposed releaseHoldMs so TeleOp can delay continuous-feed conversion
     //                       until a deliberate hold after the standard single-shot window.
+    // CHANGES (2025-12-16): Deferred FeedStop homing/parking until START so INIT remains motionless
+    //                       while still queuing homing for the first post-START loops.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -129,6 +131,8 @@ public class Feed {
     private boolean homeAborted = false;
     private String homeAbortMessage = null;
     private String softLimitMessage = null;
+
+    private boolean feedStopHomeQueued = false;
 
     private HomeState homeState = HomeState.IDLE;
     private long homeStateStartMs = 0L;
@@ -187,10 +191,10 @@ public class Feed {
         angleClamped = false;
         softLimitClamped = false;
         softLimitMessage = null;
+        feedStopHomeQueued = false;
         useAutoScale = false;
         autoScaleApplied = false;
         applyFeedStopConfigValues();
-        setHome();
         cycleState = FeedCycleState.IDLE;
         cycleStateStartMs = 0L;
     }
@@ -208,9 +212,12 @@ public class Feed {
             feedStop = hw.get(ServoImplEx.class, "FeedStop");
             feedStopReady = true;
             applyFeedStopConfigValues();
-            beginFeedStopHoming();
+            feedStopState = FeedStopState.UNKNOWN;
+            homeState = HomeState.IDLE;
+            feedStopHomeQueued = true;
+            feedStopHomed = false;
             if (this.feedStopTelemetry != null) {
-                this.feedStopTelemetry.addLine("FeedStop: homing…");
+                this.feedStopTelemetry.addLine("FeedStop: homing queued for START");
             }
         } catch (Exception ex) {
             feedStopReady = false;
@@ -236,6 +243,23 @@ public class Feed {
         }
         commandAngleImmediate(holdAngleDeg);
         feedStopState = FeedStopState.BLOCK;
+    }
+
+    /** Begin FeedStop homing after START so INIT stays motionless. Safe to call repeatedly. */
+    public void startFeedStopAfterStart() {
+        if (!feedStopReady || feedStop == null) {
+            feedStopHomeQueued = false;
+            return;
+        }
+        if (!feedStopHomeQueued && feedStopHomed) {
+            return;
+        }
+        applyFeedStopConfigValues();
+        beginFeedStopHoming();
+        feedStopHomeQueued = false;
+        if (this.feedStopTelemetry != null) {
+            this.feedStopTelemetry.addLine("FeedStop: homing…");
+        }
     }
 
     /** Immediately commands the servo to the homed zero position. */

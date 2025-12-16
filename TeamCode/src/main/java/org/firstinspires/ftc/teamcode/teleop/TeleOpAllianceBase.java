@@ -653,6 +653,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void start() {
+        feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
         intakeResumeState = DEFAULT_INTAKE_ENABLED;

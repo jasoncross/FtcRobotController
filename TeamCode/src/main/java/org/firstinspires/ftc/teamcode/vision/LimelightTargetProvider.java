@@ -56,6 +56,11 @@ import java.util.function.Supplier;
  *                       obelisk observation vs. goal aiming so Auto can force
  *                       the correct AprilTag mode when Limelight is the active
  *                       source without touching webcam fallbacks.
+ * CHANGES (2025-12-16): Added smoothed goal visibility + held tx outputs with
+ *                       configurable acquire/loss frames + hold timers so AUTO
+ *                       ignores single-frame dropouts and keeps scanning stable.
+ * CHANGES (2025-12-16): Shortened goal tx hold to reduce stale headings while
+ *                       the robot is rotating quickly between sightlines.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -63,6 +68,9 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private static final long AIM_LOCK_STALE_MS = 250L;          // How long to retain a goal lock after loss
     private static final double AIM_SWITCH_TX_HYST_DEG = 2.0;    // Margin needed to switch aim target
     private static final long PIPELINE_REASSERT_MS = 750L;       // Minimum gap between repeated pipeline assertions
+    private static final int GOAL_ACQUIRE_FRAMES = 2;            // Require N consecutive hits before declaring visible
+    private static final int GOAL_LOST_FRAMES = 6;               // Frames without the goal before clearing smoothed state
+    private static final long GOAL_HOLD_MS = 150L;               // Hold last tx for this many ms after loss (short to avoid stale tx while turning fast)
 
     private final Limelight3A limelight;
     private final Supplier<Alliance> allianceSupplier;
@@ -78,6 +86,15 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private Double lockedAimLastTx = null;
     private Integer activePipelineIndex = null;
     private long lastPipelineCommandMs = 0L;
+    private int goalLostFrames = 0;
+    private int goalSeenFrames = 0;
+    private long lastGoalSeenMs = 0L;
+    private Double lastGoalTxDeg = null;
+    private boolean lastGoalVisibleRaw = false;
+    private boolean lastGoalVisibleSmoothed = false;
+    private Long lastProcessedFrameTimestampMs = null;
+    private TargetSnapshot cachedSnapshot = null;
+    private long lastSnapshotWallMs = 0L;
 
     public LimelightTargetProvider(Limelight3A limelight, Supplier<Alliance> allianceSupplier) {
         this.limelight = limelight;
@@ -90,7 +107,16 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public boolean hasGoalTarget() {
         TargetSnapshot snap = snapshot();
-        return snap.hasGoalTag;
+        return snap.goalVisibleRaw;
+    }
+
+    @Override
+    public boolean isGoalVisibleRaw() { return hasGoalTarget(); }
+
+    @Override
+    public boolean isGoalVisibleSmoothed() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalVisibleSmoothed;
     }
 
     @Override
@@ -117,15 +143,23 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public int getBestVisibleTagId() {
         TargetSnapshot snap = snapshot();
-        return snap.hasGoalTag ? snap.allianceGoalId : -1;
+        return snap.goalVisibleSmoothed ? snap.allianceGoalId : -1;
     }
 
     @Override
     public double getHeadingErrorDeg() {
         TargetSnapshot snap = snapshot();
-        if (!snap.hasGoalTag) return Double.NaN;
-        return snap.aimTxDegUsed != null ? snap.aimTxDegUsed : Double.NaN;
+        return snap.txToUseDeg != null ? snap.txToUseDeg : Double.NaN;
     }
+
+    @Override
+    public Double getSmoothedHeadingErrorDeg() {
+        TargetSnapshot snap = snapshot();
+        return snap.txToUseDeg;
+    }
+
+    @Override
+    public int getGoalLostFrames() { return goalLostFrames; }
 
     @Override
     public double getDistanceMeters() {
@@ -183,7 +217,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             ids.add(obs.id);
         }
 
-        return new AimTelemetry(ids, snap.hasGoalTag, lockedAimTagId, snap.aimTxDegUsed, ageMs);
+        return new AimTelemetry(ids, snap.goalVisibleRaw, snap.goalVisibleSmoothed, lockedAimTagId,
+                snap.txToUseDeg, snap.txToUseDeg, ageMs, goalLostFrames);
     }
 
     private LLResult latest() {
@@ -283,8 +318,15 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     private TargetSnapshot snapshot() {
-        LLResult result = latest();
         long now = System.currentTimeMillis();
+        if (cachedSnapshot != null && (now - lastSnapshotWallMs) < 10L) {
+            return cachedSnapshot;
+        }
+
+        LLResult result = latest();
+        Long frameTs = readTimestampMs(result);
+        boolean newFrame = frameTs == null || !frameTs.equals(lastProcessedFrameTimestampMs);
+
         List<FiducialObservation> observations = extractFiducials(result);
         boolean resultValid = result != null && result.isValid();
 
@@ -294,22 +336,69 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observations);
         updateAimLock(now, allianceGoalId, goalObs);
 
-        boolean hasGoal = resultValid && goalObs != null;
+        boolean hasGoalRaw = resultValid && goalObs != null;
+        Double goalTxDeg = null;
+        if (goalObs != null && goalObs.txDeg != null) {
+            goalTxDeg = goalObs.txDeg;
+        } else if (hasGoalRaw && result != null) {
+            goalTxDeg = result.getTx();
+        }
+
+        updateGoalVisibility(hasGoalRaw, goalTxDeg, now, newFrame);
+
+        boolean hasGoal = lastGoalVisibleRaw;
+        boolean smoothedGoal = lastGoalVisibleSmoothed;
         int bestId = (resultValid && !observations.isEmpty()) ? observations.get(0).id : -1;
-        if (hasGoal) {
+        if (smoothedGoal) {
             bestId = allianceGoalId;
         }
 
-        Double aimTxDeg = null;
-        if (hasGoal) {
-            if (goalObs != null && goalObs.txDeg != null) {
-                aimTxDeg = goalObs.txDeg;
-            } else if (result != null) {
-                aimTxDeg = result.getTx();
+        Double txToUse = selectTxForAim(goalTxDeg);
+
+        TargetSnapshot snap = new TargetSnapshot(result, resultValid, hasGoal, smoothedGoal, allianceGoalId,
+                bestId, observations, goalObs, txToUse, now, frameTs);
+        cachedSnapshot = snap;
+        lastSnapshotWallMs = now;
+        if (newFrame) {
+            lastProcessedFrameTimestampMs = frameTs;
+        }
+        return snap;
+    }
+
+    /**
+     * Hysteresis helper: require several consecutive detections before declaring the goal visible,
+     * hold the last tx briefly after loss, and only drop smoothed visibility once both the hold
+     * window and the lost-frame counter expire. This prevents AUTO scan/aim thrash when Limelight
+     * misses a single frame.
+     */
+    private void updateGoalVisibility(boolean rawVisible, Double rawTxDeg, long nowMs, boolean newFrame) {
+        if (newFrame) {
+            if (rawVisible) {
+                goalSeenFrames = Math.min(GOAL_ACQUIRE_FRAMES, goalSeenFrames + 1);
+                goalLostFrames = 0;
+                lastGoalSeenMs = nowMs;
+                if (rawTxDeg != null && Double.isFinite(rawTxDeg)) { lastGoalTxDeg = rawTxDeg; }
+            } else {
+                goalSeenFrames = 0;
+                goalLostFrames = Math.min(goalLostFrames + 1, Integer.MAX_VALUE);
             }
+            lastGoalVisibleRaw = rawVisible && goalSeenFrames >= GOAL_ACQUIRE_FRAMES;
         }
 
-        return new TargetSnapshot(result, resultValid, hasGoal, allianceGoalId, bestId, observations, goalObs, aimTxDeg, now);
+        boolean holdWindow = lastGoalSeenMs > 0
+                && (nowMs - lastGoalSeenMs) < GOAL_HOLD_MS
+                && goalLostFrames < GOAL_LOST_FRAMES;
+        lastGoalVisibleSmoothed = lastGoalVisibleRaw || holdWindow;
+    }
+
+    private Double selectTxForAim(Double goalTxDeg) {
+        if (lastGoalVisibleRaw && goalTxDeg != null && Double.isFinite(goalTxDeg)) {
+            return goalTxDeg;
+        }
+        if (lastGoalVisibleSmoothed && lastGoalTxDeg != null && Double.isFinite(lastGoalTxDeg)) {
+            return lastGoalTxDeg;
+        }
+        return null;
     }
 
     private void updateAimLock(long nowMs, int allianceGoalId, FiducialObservation goalObs) {
@@ -352,7 +441,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     private DistanceEstimate computeDistanceMeters(TargetSnapshot snap) {
-        if (snap == null || !snap.hasGoalTag || snap.result == null) {
+        if (snap == null || !snap.goalVisibleRaw || snap.result == null) {
             return DistanceEstimate.empty();
         }
 
@@ -629,32 +718,38 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private static final class TargetSnapshot {
         final LLResult result;
         final boolean resultValid;
-        final boolean hasGoalTag;
+        final boolean goalVisibleRaw;
+        final boolean goalVisibleSmoothed;
         final int allianceGoalId;
         final int bestVisibleId;
         final List<FiducialObservation> observations;
         final FiducialObservation goalObservation;
-        final Double aimTxDegUsed;
+        final Double txToUseDeg;
         final long snapshotMs;
+        final Long frameTimestampMs;
 
         TargetSnapshot(LLResult result,
                        boolean resultValid,
-                       boolean hasGoalTag,
+                       boolean goalVisibleRaw,
+                       boolean goalVisibleSmoothed,
                        int allianceGoalId,
                        int bestVisibleId,
                        List<FiducialObservation> observations,
                        FiducialObservation goalObservation,
-                       Double aimTxDegUsed,
-                       long snapshotMs) {
+                       Double txToUseDeg,
+                       long snapshotMs,
+                       Long frameTimestampMs) {
             this.result = result;
             this.resultValid = resultValid;
-            this.hasGoalTag = hasGoalTag;
+            this.goalVisibleRaw = goalVisibleRaw;
+            this.goalVisibleSmoothed = goalVisibleSmoothed;
             this.allianceGoalId = allianceGoalId;
             this.bestVisibleId = bestVisibleId;
             this.observations = observations;
             this.goalObservation = goalObservation;
-            this.aimTxDegUsed = aimTxDegUsed;
+            this.txToUseDeg = txToUseDeg;
             this.snapshotMs = snapshotMs;
+            this.frameTimestampMs = frameTimestampMs;
         }
     }
 
@@ -662,20 +757,37 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     public static final class AimTelemetry {
         public final List<Integer> visibleIds;
         public final boolean goalVisible;
+        public final boolean goalVisibleSmoothed;
         public final int lockedAimTagId;
         public final Double aimTxDeg;
+        public final Double txToUseDeg;
         public final long lockAgeMs;
+        public final int goalLostFrames;
+
+        AimTelemetry(List<Integer> visibleIds,
+                     boolean goalVisible,
+                     boolean goalVisibleSmoothed,
+                     int lockedAimTagId,
+                     Double aimTxDeg,
+                     Double txToUseDeg,
+                     long lockAgeMs,
+                     int goalLostFrames) {
+            this.visibleIds = visibleIds;
+            this.goalVisible = goalVisible;
+            this.goalVisibleSmoothed = goalVisibleSmoothed;
+            this.lockedAimTagId = lockedAimTagId;
+            this.aimTxDeg = aimTxDeg;
+            this.txToUseDeg = txToUseDeg;
+            this.lockAgeMs = lockAgeMs;
+            this.goalLostFrames = goalLostFrames;
+        }
 
         AimTelemetry(List<Integer> visibleIds,
                      boolean goalVisible,
                      int lockedAimTagId,
                      Double aimTxDeg,
                      long lockAgeMs) {
-            this.visibleIds = visibleIds;
-            this.goalVisible = goalVisible;
-            this.lockedAimTagId = lockedAimTagId;
-            this.aimTxDeg = aimTxDeg;
-            this.lockAgeMs = lockAgeMs;
+            this(visibleIds, goalVisible, goalVisible, lockedAimTagId, aimTxDeg, aimTxDeg, lockAgeMs, 0);
         }
     }
 

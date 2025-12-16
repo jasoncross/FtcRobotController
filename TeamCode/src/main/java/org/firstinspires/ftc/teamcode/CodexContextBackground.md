@@ -84,11 +84,12 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 ### **Limelight 3A — Primary Vision System**
 *(See [`docs/vision/Limelight3A.md`](./docs/vision/Limelight3A.md) for full details.)*
 
-- Provides **heading (tx)**, **distance (3D pose)**, and **full-field localization (MegaTag1/MegaTag2)**.  
-- USB-only device; appears as `EthernetDevice` in DS config.  
-- Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.  
+- Provides **heading (tx)**, **distance (3D pose)**, and **full-field localization (MegaTag1/MegaTag2)**.
+- USB-only device; appears as `EthernetDevice` in DS config.
+- Supports 90FPS pipelines, neural detection, Python pipelines, and built-in FTC field map.
 - All new AutoAim, AutoSpeed, and OdometryFusion development must target the Limelight 3A pipeline.
 - A new `VisionTargetProvider` abstraction fronts heading + distance; Limelight is now the default source while a legacy webcam wrapper exists only for fallback builds. `TagAimController` and `AutoAimSpeed` both consume the provider so aim PD and RPM gating share the same source. `BaseAuto` and TeleOp construct the provider (Limelight default, webcam fallback), Limelight latches obelisk motifs, and AutoSequence `visionMode(...)` steps no-op when Limelight is active to avoid webcam-only swaps.
+- AUTO now applies alliance-only goal filtering with Limelight-side hysteresis (multi-frame acquire/loss counters and a short tx hold) so single-frame dropouts no longer flip between scan and aim; BaseAuto telemetry surfaces raw vs. smoothed visibility, held tx, lost-frame count, and pipeline index for verification.
 
 ### **Legacy P480 AprilTag Pipeline (DEPRECATED)**  
 - Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).  

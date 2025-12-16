@@ -55,9 +55,10 @@ only Limelight XY (MegaTag2 preferred) with bounded corrections; yaw remains IMU
 Codex must understand these three core outputs:
 
 ## 4.1 Heading (tx)
-- Horizontal angle offset to target, in degrees  
-- Used for shooter auto-aim and drivetrain rotation alignment  
+- Horizontal angle offset to target, in degrees
+- Used for shooter auto-aim and drivetrain rotation alignment
 - Consumed primarily by LimelightAimHelper and Drivebase PID turn routines
+- AUTO applies Limelight-side hysteresis (multi-frame acquire/loss counters and a short tx hold) before feeding `TagAimController` so goal locks stay steady through single-frame flickers; telemetry surfaces raw/smoothed visibility, held tx, lost-frame count, and pipeline index for verification.
 
 ## 4.2 Distance
 Primary source: **3D AprilTag pose data (botpose MT2 preferred)**

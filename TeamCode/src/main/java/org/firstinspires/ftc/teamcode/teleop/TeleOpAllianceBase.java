@@ -84,6 +84,9 @@
  *                       with graphable launcher RPM channels and made long-shot
  *                       mode sticky until a new distance reading arrives so
  *                       brief tag dropouts no longer flip the shot window.
+ * CHANGES (2025-12-16): Reversed long-shot lock bias so RED favors negative
+ *                       bearings and BLUE favors positive bearings when the
+ *                       range cutover engages in TeleOp aim windows.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -1580,8 +1583,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             return new LockWindow(-tol, tol);
         }
         return (alliance() == Alliance.RED)
-                ? new LockWindow(0.0, tol)
-                : new LockWindow(-tol, 0.0);
+                ? new LockWindow(-tol, 0.0)
+                : new LockWindow(0.0, tol);
     }
 
     private boolean isLongShot(Double distanceIn) {

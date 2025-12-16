@@ -91,6 +91,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - A new `VisionTargetProvider` abstraction fronts heading + distance; Limelight is now the default source while a legacy webcam wrapper exists only for fallback builds. `TagAimController` and `AutoAimSpeed` both consume the provider so aim PD and RPM gating share the same source. `BaseAuto` and TeleOp construct the provider (Limelight default, webcam fallback), Limelight latches obelisk motifs, and AutoSequence `visionMode(...)` steps no-op when Limelight is active to avoid webcam-only swaps.
 - AUTO now applies alliance-only goal filtering with Limelight-side hysteresis (multi-frame acquire/loss counters and a short tx hold) so single-frame dropouts no longer flip between scan and aim; BaseAuto telemetry surfaces raw vs. smoothed visibility, held tx, lost-frame count, and pipeline index for verification.
 - `AutoAimTuning.INVERT_AIM_TWIST` flips aim-generated twist before it hits the drivebase in both TeleOp and Auto so clockwise/counter-clockwise rotation stays consistent once hardware direction is verified, without touching manual stick twist.
+- Long-shot aim windows now bias **RED** toward negative bearings and **BLUE** toward positive bearings once the distance cutover engages, keeping long volleys on the correct side of center in both TeleOp and Auto.
 
 ### **Legacy P480 AprilTag Pipeline (DEPRECATED)**  
 - Implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java).  
@@ -118,6 +119,9 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 ## 🤖 Autonomous Framework ([`auto/BaseAuto.java`](./auto/BaseAuto.java))
 - Shared Auto initialization, seeding, and aim/RPM helpers.
 - LL3A corrections will drive long-range shot consistency and positional accuracy.
+- AutoSequence `move(...)` steps now treat the heading argument as **relative to the robot’s current facing** so translation
+  vectors stay robot-centric even after mid-match heading changes; the builder resolves the absolute heading internally and
+  reports both values in telemetry.
 
 ---
 

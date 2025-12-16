@@ -53,6 +53,9 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-12-16): Added sticky-goal Limelight telemetry (goalSeen,
+ *                       smoothed visibility, missing-frame counter) to verify
+ *                       the new aim-hold behavior during Auto scan/aim steps.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -981,8 +984,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
-                    aimTelemetry.goalVisible,
+                    "goalSeen=%s smoothed=%s missing=%d locked=%s tx=%s ageMs=%s ids=%s",
+                    aimTelemetry.goalSeenThisFrame,
+                    aimTelemetry.goalVisibleSmoothed,
+                    aimTelemetry.goalMissingFrames,
                     lockedId,
                     aimTxUsed,
                     lockAgeMs,

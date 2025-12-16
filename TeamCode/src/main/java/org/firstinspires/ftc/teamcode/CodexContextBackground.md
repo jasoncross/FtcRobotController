@@ -70,6 +70,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 
 ### ⚙️ Feed ([`subsystems/Feed.java`](./subsystems/Feed.java))
 - Coordinated with launcher readiness and StopAll safety.
+- FeedStop homing is now queued until START so INIT stays motionless; the servo homes and parks at the blocking angle as soon as
+  the match begins.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.
@@ -122,6 +124,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - AutoSequence `move(...)` steps now treat the heading argument as **relative to the robot’s current facing** so translation
   vectors stay robot-centric even after mid-match heading changes; the builder resolves the absolute heading internally and
   reports both values in telemetry.
+- Aim/launcher prep loops exit as soon as their readiness goals are satisfied, using timeouts only as fallbacks so sequences
+  proceed immediately once a step is complete.
 
 ---
 

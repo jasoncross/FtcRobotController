@@ -177,6 +177,9 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        robot's current facing so paths remain robot-centric regardless of start
     //                        orientation; telemetry surfaces both the relative request and resolved
     //                        absolute heading.
+    // CHANGES (2025-12-16): Launcher readiness/aim loops now exit immediately upon success while still
+    //                        honoring per-step timeouts as fallbacks so AutoSequence steps advance as
+    //                        soon as their goals are satisfied.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -330,6 +333,7 @@ public abstract class BaseAuto extends LinearOpMode {
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
+        feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
         if (vision != null) vision.setObeliskAutoLatchEnabled(true); // Capture motifs during movement
@@ -555,13 +559,23 @@ public abstract class BaseAuto extends LinearOpMode {
 
         boolean hadLock = false;
         long start = System.currentTimeMillis();
+        long deadline = (timeoutMs > 0) ? start + timeoutMs : Long.MAX_VALUE;
         long settleStart = -1L;
 
         while (opModeIsActive()) {
             updateIntakeFlowForAuto();
             long now = System.currentTimeMillis();
-            if ((now - start) >= timeoutMs) {
-                break;
+            if (now >= deadline) {
+                updateStatus(phase + " – timeout", false);
+                telemetry.addData("Phase", phase);
+                telemetry.addData("Distance (in)", "---");
+                telemetry.addData("Target RPM", launcher.targetRpm);
+                telemetry.addData("Current RPM", launcher.getCurrentRpm());
+                telemetry.addData("Tolerance", tolerance);
+                telemetry.addData("Within band", false);
+                telemetry.addData("Time remaining (ms)", 0);
+                telemetry.update();
+                return false;
             }
 
             Double distanceIn = distanceInchesFromProvider(visionTargetProvider);

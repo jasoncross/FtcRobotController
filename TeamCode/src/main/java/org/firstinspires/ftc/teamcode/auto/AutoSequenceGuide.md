@@ -170,6 +170,12 @@ sequence()
 feed timing without requiring a tag lock. Avoid using no-lock shots in
 competition code.
 
+**Timeout behavior:** Steps with timeouts (for example, `rotateToTarget(...)`
+or `readyToLaunch(...)`) now advance as soon as their goals are satisfied;
+the timeout acts only as a fallback when locks/at-speed gates never clear.
+This keeps sequences moving instead of idling until the full timeout expires
+after a successful aim or launcher prep.
+
 ---
 
 ## Additional `.custom(...)` Ideas

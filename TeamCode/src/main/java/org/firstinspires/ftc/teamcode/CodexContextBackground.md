@@ -13,6 +13,7 @@ Match strategy centers on consistent scoring of **ARTIFACTS** into **GOALS**, ra
 - **Dual flywheel launcher** with a distance-aware AutoSpeed curve managed by [`control/LauncherAutoSpeedController.java`](./control/LauncherAutoSpeedController.java).
 - **Synchronized feed and intake subsystems** ([`subsystems/Feed.java`](./subsystems/Feed.java), [`subsystems/Intake.java`](./subsystems/Intake.java)).
 - **Primary vision system: Limelight 3A AprilTag targeting**, defined in [`/vision/Limelight3A.md`](./vision/Limelight3A.md), feeding shared aim and RPM controllers such as [`assist/AutoAimSpeed.java`](./assist/AutoAimSpeed.java) and upcoming Limelight fusion helpers.
+- **Limelight AUTO pipeline enforcement:** Autonomous now forces Limelight into an obelisk-observation pipeline during INIT motif checks and flips into the goal-aim pipeline (alliance-tag gated: BLUE 20 / RED 24) whenever scans/aiming begin, reasserting as needed during search loops so Autos are self-contained even without prior TeleOp prep.
 - **Legacy P480 webcam pipeline (DEPRECATED)** – The P480-based AprilTag pipeline implemented in [`vision/VisionAprilTag.java`](./vision/VisionAprilTag.java) is retained *only* so existing Auto/TeleOp OpModes continue to compile this season.  
   **Codex must not generate new code using P480 / VisionPortal pipelines.**  
   **All new targeting, heading, distance, and pose code must use the Limelight 3A exclusively.**

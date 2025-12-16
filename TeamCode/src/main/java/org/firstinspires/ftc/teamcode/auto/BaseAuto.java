@@ -33,6 +33,7 @@ import org.firstinspires.ftc.teamcode.vision.WebcamLegacyTargetProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /*
  * FILE: BaseAuto.java
@@ -162,6 +163,9 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        default start poses accordingly, and enabled Limelight-only XY fusion with
     //                        MT2 preference, reacquire-friendly outlier gates, motion gating, and
     //                        clamped correction steps (IMU-only heading).
+    // CHANGES (2025-12-16): Limelight-backed autos now assert distinct obelisk vs. goal aim pipelines,
+    //                        gate aiming strictly to alliance goal tags, and surface pipeline/goal/obelisk
+    //                        telemetry so AUTO no longer depends on TeleOp to prep Limelight state.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -218,6 +222,7 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double M_TO_IN            = 39.37007874015748;
 
     private String autoOpModeName;
+    private Integer lastReportedPipelineIndex = null;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -306,6 +311,7 @@ public abstract class BaseAuto extends LinearOpMode {
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
 
         while (!isStarted() && !isStopRequested()) {
+            ensureLimelightObeliskMode();
             maybeSeedStartPoseFromVision();
             updateStatus("INIT", false);
             onPreStartLoop();
@@ -397,6 +403,7 @@ public abstract class BaseAuto extends LinearOpMode {
             sweepSummary = String.format(Locale.US, "%.1f / %.1f", primaryTarget, 0.0);
         }
 
+        ensureLimelightGoalAimMode();
         SweepState state = SweepState.PRIMARY_OUT;
         long startMs = System.currentTimeMillis();
 
@@ -414,6 +421,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
 
             updateIntakeFlowForAuto();
+            ensureLimelightGoalAimMode();
             VisionTargetProvider provider = visionTargetProvider;
             double bearing = Double.NaN;
             boolean lockedNow = false;
@@ -900,13 +908,13 @@ public abstract class BaseAuto extends LinearOpMode {
     private void applyLimelightPipeline(Limelight3A ll) {
         if (ll == null) return;
         try {
-            ll.pipelineSwitch(VisionConfig.LimelightFusion.PIPELINE_INDEX);
+            ll.pipelineSwitch(VisionConfig.LimelightFusion.OBELISK_PIPELINE_INDEX);
             return;
         } catch (Throwable ignored) { }
 
         try {
             ll.getClass().getMethod("setPipelineIndex", int.class)
-                    .invoke(ll, VisionConfig.LimelightFusion.PIPELINE_INDEX);
+                    .invoke(ll, VisionConfig.LimelightFusion.OBELISK_PIPELINE_INDEX);
         } catch (Throwable ignored) { }
     }
 
@@ -915,6 +923,30 @@ public abstract class BaseAuto extends LinearOpMode {
         try {
             ll.setPollRateHz(VisionConfig.LimelightFusion.POLL_HZ);
         } catch (Throwable ignored) { }
+    }
+
+    private void ensureLimelightObeliskMode() {
+        if (visionTargetProvider == null) return;
+        Integer before = visionTargetProvider.getActivePipelineIndex();
+        visionTargetProvider.ensureObeliskObservationMode();
+        maybeReportPipelineSwitch(before, visionTargetProvider.getActivePipelineIndex(),
+                "AUTO: Limelight -> Obelisk observation mode");
+    }
+
+    private void ensureLimelightGoalAimMode() {
+        if (visionTargetProvider == null) return;
+        Integer before = visionTargetProvider.getActivePipelineIndex();
+        visionTargetProvider.ensureGoalAimMode(alliance());
+        maybeReportPipelineSwitch(before, visionTargetProvider.getActivePipelineIndex(),
+                String.format(Locale.US, "AUTO: Limelight -> Goal aim mode (%s)", alliance()));
+    }
+
+    private void maybeReportPipelineSwitch(Integer before, Integer after, String message) {
+        if (after == null) return;
+        if (!Objects.equals(after, before) || !Objects.equals(after, lastReportedPipelineIndex)) {
+            telemetry.addLine(String.format(Locale.US, "%s", message + " (pipeline=" + after + ")"));
+            lastReportedPipelineIndex = after;
+        }
     }
     /** Shutdown the vision portal safely if it was created. */
     protected final void stopVisionIfAny() {
@@ -961,6 +993,20 @@ public abstract class BaseAuto extends LinearOpMode {
         String startPoseText = startPoseDescription();
         telemetry.addData("Start Pose", startPoseText);
         mirroredLines.add("Start Pose: " + startPoseText);
+
+        boolean goalVisible = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+        Integer pipelineIdx = (visionTargetProvider != null) ? visionTargetProvider.getActivePipelineIndex() : null;
+        List<Integer> visibleObelisks = (visionTargetProvider != null) ? visionTargetProvider.getVisibleObeliskIds() : new ArrayList<>();
+        int latchedObeliskId = (visionTargetProvider != null) ? visionTargetProvider.getLatchedObeliskId() : -1;
+
+        telemetry.addData("LL Pipeline", pipelineIdx == null ? "-" : pipelineIdx);
+        mirroredLines.add("LL Pipeline: " + (pipelineIdx == null ? "-" : pipelineIdx));
+        telemetry.addData("Goal Tag Visible", goalVisible);
+        mirroredLines.add("Goal Tag Visible: " + goalVisible);
+        telemetry.addData("Obelisk Seen", visibleObelisks.isEmpty() ? "-" : visibleObelisks.toString());
+        mirroredLines.add("Obelisk Seen: " + (visibleObelisks.isEmpty() ? "-" : visibleObelisks.toString()));
+        telemetry.addData("Obelisk Latched", latchedObeliskId < 0 ? "-" : latchedObeliskId);
+        mirroredLines.add("Obelisk Latched: " + (latchedObeliskId < 0 ? "-" : latchedObeliskId));
 
         Double tagDistanceIn = null;
         Double rawTzM = null;

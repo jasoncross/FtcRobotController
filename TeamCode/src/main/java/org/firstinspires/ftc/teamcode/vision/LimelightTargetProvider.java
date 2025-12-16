@@ -1,12 +1,12 @@
 package org.firstinspires.ftc.teamcode.vision;
 
-import com.qualcomm.hardware.limelightvision.LLResult;
-import com.qualcomm.hardware.limelightvision.Limelight3A;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
@@ -52,12 +52,17 @@ import java.util.function.Supplier;
  *                       disabled.
  * CHANGES (2025-12-12): Updated pose field accessors to match current Limelight
  *                       Pose3D API fields for build compatibility.
+ * CHANGES (2025-12-16): Added Limelight-only pipeline assertion helpers for
+ *                       obelisk observation vs. goal aiming so Auto can force
+ *                       the correct AprilTag mode when Limelight is the active
+ *                       source without touching webcam fallbacks.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
     private static final long OBELISK_STALE_MS = 1500L;
     private static final long AIM_LOCK_STALE_MS = 250L;          // How long to retain a goal lock after loss
     private static final double AIM_SWITCH_TX_HYST_DEG = 2.0;    // Margin needed to switch aim target
+    private static final long PIPELINE_REASSERT_MS = 750L;       // Minimum gap between repeated pipeline assertions
 
     private final Limelight3A limelight;
     private final Supplier<Alliance> allianceSupplier;
@@ -71,6 +76,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private int lockedAimTagId = -1;
     private long lockedAimLastSeenMs = 0L;
     private Double lockedAimLastTx = null;
+    private Integer activePipelineIndex = null;
+    private long lastPipelineCommandMs = 0L;
 
     public LimelightTargetProvider(Limelight3A limelight, Supplier<Alliance> allianceSupplier) {
         this.limelight = limelight;
@@ -93,9 +100,24 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     @Override
+    public int getLatchedObeliskId() { return latchedObeliskId == null ? -1 : latchedObeliskId; }
+
+    @Override
+    public List<Integer> getVisibleObeliskIds() {
+        TargetSnapshot snap = snapshot();
+        List<Integer> obelisks = new ArrayList<>();
+        for (FiducialObservation obs : snap.observations) {
+            if (obs.id >= 21 && obs.id <= 23) {
+                obelisks.add(obs.id);
+            }
+        }
+        return obelisks;
+    }
+
+    @Override
     public int getBestVisibleTagId() {
         TargetSnapshot snap = snapshot();
-        return snap.bestVisibleId;
+        return snap.hasGoalTag ? snap.allianceGoalId : -1;
     }
 
     @Override
@@ -122,6 +144,21 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         return VisionConfig.goalTagIdForAlliance(alliance);
     }
+
+    @Override
+    public void ensureGoalAimMode(Alliance alliance) {
+        assertPipeline(VisionConfig.LimelightFusion.GOAL_AIM_PIPELINE_INDEX);
+        startIfNeeded();
+    }
+
+    @Override
+    public void ensureObeliskObservationMode() {
+        assertPipeline(VisionConfig.LimelightFusion.OBELISK_PIPELINE_INDEX);
+        startIfNeeded();
+    }
+
+    @Override
+    public Integer getActivePipelineIndex() { return activePipelineIndex; }
 
     /** Debug helper: returns the latest visible tag IDs (empty list when none). */
     public List<Integer> getVisibleTagIds() {
@@ -335,6 +372,38 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         }
 
         return new DistanceEstimate(forwardMeters, scaledMeters, fieldMeters);
+    }
+
+    private void assertPipeline(int pipelineIndex) {
+        if (limelight == null) return;
+        long now = System.currentTimeMillis();
+        if (activePipelineIndex != null && activePipelineIndex == pipelineIndex && (now - lastPipelineCommandMs) < PIPELINE_REASSERT_MS) {
+            return;
+        }
+
+        boolean changed = false;
+        try {
+            limelight.pipelineSwitch(pipelineIndex);
+            changed = true;
+        } catch (Throwable ignored) { }
+
+        if (!changed) {
+            try {
+                limelight.getClass().getMethod("setPipelineIndex", int.class)
+                        .invoke(limelight, pipelineIndex);
+                changed = true;
+            } catch (Throwable ignored) { }
+        }
+
+        if (changed) {
+            activePipelineIndex = pipelineIndex;
+            lastPipelineCommandMs = now;
+        }
+    }
+
+    private void startIfNeeded() {
+        if (limelight == null) return;
+        try { limelight.start(); } catch (Throwable ignored) { }
     }
 
     private Pose3D selectTargetPoseRobotSpace(LLResult result, int allianceGoalId) {

@@ -32,9 +32,21 @@ import java.util.List;
  *   - getHeadingErrorDeg()
  *       • Signed left/right error to the scoring target in degrees (+ right,
  *         – left). Returns NaN when no target is available.
+ *   - getSmoothedHeadingErrorDeg()
+ *       • Optional hysteresis-friendly heading sample that may hold the last
+ *         known tx for a grace window. Defaults to the raw heading when
+ *         unimplemented.
  *   - getDistanceMeters()
  *       • Range from the robot to the scoring target in meters. Returns NaN
  *         when no target is available.
+ *   - isGoalVisibleRaw()
+ *       • True when the scoring tag is present in the most recent frame.
+ *   - isGoalVisibleSmoothed()
+ *       • True when the provider still considers the goal acquired after
+ *         applying any loss hysteresis/hold logic.
+ *   - getGoalLostFrames()
+ *       • Count of consecutive frames without the goal tag (smoothed)
+ *         visibility.
  *   - ensureGoalAimMode(alliance)
  *       • Allows Limelight-backed implementations to assert the correct
  *         AprilTag pipeline for alliance-goal aiming; no-op for webcam.
@@ -64,7 +76,18 @@ public interface VisionTargetProvider {
 
     double getHeadingErrorDeg();
 
+    default Double getSmoothedHeadingErrorDeg() {
+        double heading = getHeadingErrorDeg();
+        return Double.isNaN(heading) ? null : heading;
+    }
+
     double getDistanceMeters();
+
+    default boolean isGoalVisibleRaw() { return hasGoalTarget(); }
+
+    default boolean isGoalVisibleSmoothed() { return hasGoalTarget(); }
+
+    default int getGoalLostFrames() { return 0; }
 
     default void ensureGoalAimMode(Alliance alliance) {}
 

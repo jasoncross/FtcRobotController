@@ -166,6 +166,10 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-12-16): Limelight-backed autos now assert distinct obelisk vs. goal aim pipelines,
     //                        gate aiming strictly to alliance goal tags, and surface pipeline/goal/obelisk
     //                        telemetry so AUTO no longer depends on TeleOp to prep Limelight state.
+    // CHANGES (2025-12-16): Added goal-visibility hysteresis (acquire/loss frames + hold window) with
+    //                        smoothed heading telemetry so AUTO scans no longer bounce when Limelight
+    //                        misses a single frame, and exposed raw/smoothed visibility + tx/loss counts
+    //                        in AUTO telemetry.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -426,11 +430,14 @@ public abstract class BaseAuto extends LinearOpMode {
             double bearing = Double.NaN;
             boolean lockedNow = false;
 
-            if (provider != null && provider.hasGoalTarget()) {
+            boolean smoothedGoal = provider != null && provider.isGoalVisibleSmoothed();
+            Double smoothedHeading = (provider != null) ? provider.getSmoothedHeadingErrorDeg() : null;
+
+            if (smoothedGoal && smoothedHeading != null) {
                 Double distanceIn = distanceInchesFromProvider(provider);
                 lockWindow = computeLockWindow(isLongShot(distanceIn), tol);
                 aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
-                double err = provider.getHeadingErrorDeg();
+                double err = smoothedHeading;
                 bearing = err;
                 double cmd = clamp(aim.turnPower(), -cap, +cap);
                 drive.drive(0, 0, cmd);
@@ -782,8 +789,9 @@ public abstract class BaseAuto extends LinearOpMode {
         while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
             updateIntakeFlowForAuto();
             VisionTargetProvider provider = visionTargetProvider;
-            if (provider != null && provider.hasGoalTarget()) {
-                double err = provider.getHeadingErrorDeg();
+            Double smoothedHeading = (provider != null) ? provider.getSmoothedHeadingErrorDeg() : null;
+            if (provider != null && provider.isGoalVisibleSmoothed() && smoothedHeading != null) {
+                double err = smoothedHeading;
                 boolean locked = Math.abs(err) <= tol;
                 if (locked) {
                     drive.stopAll();
@@ -994,15 +1002,24 @@ public abstract class BaseAuto extends LinearOpMode {
         telemetry.addData("Start Pose", startPoseText);
         mirroredLines.add("Start Pose: " + startPoseText);
 
-        boolean goalVisible = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+        boolean goalVisibleRaw = visionTargetProvider != null && visionTargetProvider.isGoalVisibleRaw();
+        boolean goalVisibleSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalVisibleSmoothed();
+        Double txToUseDeg = (visionTargetProvider != null) ? visionTargetProvider.getSmoothedHeadingErrorDeg() : null;
+        int goalLostFrames = (visionTargetProvider != null) ? visionTargetProvider.getGoalLostFrames() : 0;
         Integer pipelineIdx = (visionTargetProvider != null) ? visionTargetProvider.getActivePipelineIndex() : null;
         List<Integer> visibleObelisks = (visionTargetProvider != null) ? visionTargetProvider.getVisibleObeliskIds() : new ArrayList<>();
         int latchedObeliskId = (visionTargetProvider != null) ? visionTargetProvider.getLatchedObeliskId() : -1;
 
         telemetry.addData("LL Pipeline", pipelineIdx == null ? "-" : pipelineIdx);
         mirroredLines.add("LL Pipeline: " + (pipelineIdx == null ? "-" : pipelineIdx));
-        telemetry.addData("Goal Tag Visible", goalVisible);
-        mirroredLines.add("Goal Tag Visible: " + goalVisible);
+        telemetry.addData("Goal Tag Visible (raw)", goalVisibleRaw);
+        mirroredLines.add("Goal Tag Visible (raw): " + goalVisibleRaw);
+        telemetry.addData("Goal Tag Visible (smoothed)", goalVisibleSmoothed);
+        mirroredLines.add("Goal Tag Visible (smoothed): " + goalVisibleSmoothed);
+        telemetry.addData("Goal Lost Frames", goalLostFrames);
+        mirroredLines.add("Goal Lost Frames: " + goalLostFrames);
+        telemetry.addData("Goal tx to use (deg)", txToUseDeg == null ? "---" : String.format(Locale.US, "%.1f", txToUseDeg));
+        mirroredLines.add("Goal tx to use (deg): " + (txToUseDeg == null ? "---" : String.format(Locale.US, "%.1f", txToUseDeg)));
         telemetry.addData("Obelisk Seen", visibleObelisks.isEmpty() ? "-" : visibleObelisks.toString());
         mirroredLines.add("Obelisk Seen: " + (visibleObelisks.isEmpty() ? "-" : visibleObelisks.toString()));
         telemetry.addData("Obelisk Latched", latchedObeliskId < 0 ? "-" : latchedObeliskId);
@@ -1130,7 +1147,7 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private Double distanceInchesFromProvider(VisionTargetProvider provider) {
-        if (provider == null || !provider.hasGoalTarget()) {
+        if (provider == null || !provider.isGoalVisibleSmoothed()) {
             return null;
         }
         double rangeM = provider.getDistanceMeters();

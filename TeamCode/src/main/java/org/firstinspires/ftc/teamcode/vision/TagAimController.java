@@ -37,6 +37,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
  * CHANGES (2025-12-11): Routed heading + availability through VisionTargetProvider
  *                       to decouple aim from legacy webcam implementations while
  *                       preserving PD tuning and deadband behavior.
+ * CHANGES (2025-12-16): Auto now consumes smoothed goal visibility + held tx
+ *                       samples from LimelightTargetProvider so brief dropouts
+ *                       do not flip scans; TeleOp behavior remains unchanged.
  */
 public class TagAimController {
     private VisionTargetProvider provider;     // Source for target visibility + heading error
@@ -96,7 +99,7 @@ public class TagAimController {
     }
 
     public double distanceMeters() {
-        return provider != null && provider.hasGoalTarget() ? provider.getDistanceMeters() : Double.NaN;
+        return provider != null && provider.isGoalVisibleSmoothed() ? provider.getDistanceMeters() : Double.NaN;
     }
 
     /**
@@ -114,12 +117,17 @@ public class TagAimController {
     }
 
     private double turnPowerWithProvider(VisionTargetProvider vision) {
-        if (vision == null || !vision.hasGoalTarget()) {
+        if (vision == null || !vision.isGoalVisibleSmoothed()) {
             // Keep derivative sane after target loss so the first frame back uses fresh error
             lastErrorDeg = 0.0;
             return 0.0;
         }
-        double errDeg = vision.getHeadingErrorDeg();   // + right, - left
+        Double smoothed = vision.getSmoothedHeadingErrorDeg();
+        if (smoothed == null || Double.isNaN(smoothed)) {
+            lastErrorDeg = 0.0;
+            return 0.0;
+        }
+        double errDeg = smoothed;   // + right, - left
         double deriv  = errDeg - lastErrorDeg; // simple D term (frame-to-frame)
         lastErrorDeg  = errDeg;
 

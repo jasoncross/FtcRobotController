@@ -83,7 +83,7 @@ public class Auto_Red_Human extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
+                //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 0.85)
@@ -93,7 +93,7 @@ public class Auto_Red_Human extends BaseAuto {
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive 53 in back", 53.0, 180.0, 0.0, 0.85)
                 .rotateToHeading("Rotating", 90, 0.85)
-                .move("Drive 52 in backward", 52.0, 180.0, 0.0, 0.85)
+                .move("Drive 52 in backward", 50.0, 180.0, 0.0, 0.85)
                 .move("Drive 52 in forward", 52.0, 0.0, 0.0, 0.85)
                 .run();
     }

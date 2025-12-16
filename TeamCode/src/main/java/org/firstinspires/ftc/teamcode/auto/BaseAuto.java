@@ -119,6 +119,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        asynchronous servo lead applies consistently without manual release calls.
     // CHANGES (2025-11-07): Surfaced FeedStop homing telemetry so INIT shows when zero is established.
     // CHANGES (2025-12-18): Applied AutoAim twist inversion to AUTO drive commands so aim direction matches the TeleOp tunable.
+    // CHANGES (2025-12-16): Reversed long-shot lock bias so RED uses negative bearings
+    //                        and BLUE uses positive bearings when long-range aim windows engage.
     // CHANGES (2025-11-09): Trimmed FeedStop telemetry to a single summary line with warnings only
     //                        when soft-limit or scaling guards trigger.
     // CHANGES (2025-11-14): Relaxed AprilTag lock tolerance automatically when the 480p vision
@@ -171,6 +173,10 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        smoothed heading telemetry so AUTO scans no longer bounce when Limelight
     //                        misses a single frame, and exposed raw/smoothed visibility + tx/loss counts
     //                        in AUTO telemetry.
+    // CHANGES (2025-12-16): AutoSequence.move(...) now treats the heading argument as relative to the
+    //                        robot's current facing so paths remain robot-centric regardless of start
+    //                        orientation; telemetry surfaces both the relative request and resolved
+    //                        absolute heading.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -1138,8 +1144,8 @@ public abstract class BaseAuto extends LinearOpMode {
             return new LockWindow(-tol, tol);
         }
         return (alliance() == Alliance.RED)
-                ? new LockWindow(0.0, tol)
-                : new LockWindow(-tol, 0.0);
+                ? new LockWindow(-tol, 0.0)
+                : new LockWindow(0.0, tol);
     }
 
     private boolean isLongShot(Double distanceIn) {
@@ -1224,16 +1230,18 @@ public abstract class BaseAuto extends LinearOpMode {
                 double speed = clampTranslationSpeed(speedCap);
                 double startHeading = drive.heading();
                 double targetHeading = normDeg(startHeading + twistDeg);
+                double absoluteHeading = normDeg(startHeading + headingDeg);
                 double turnSpeed = clampTurnSpeed(speedCap);
                 updateStatus(label, false);
                 telemetry.addData("Distance (in)", distanceInches);
-                telemetry.addData("Heading (deg)", headingDeg);
+                telemetry.addData("Heading offset (deg)", headingDeg);
+                telemetry.addData("Resolved heading (deg)", absoluteHeading);
                 telemetry.addData("Twist target (deg)", targetHeading);
                 telemetry.addData("Start heading (deg)", startHeading);
                 telemetry.addData("Speed cap", speed);
                 telemetry.addData("Twist speed cap", turnSpeed);
                 telemetry.update();
-                drive.moveWithTwist(distanceInches, headingDeg, targetHeading, speed, turnSpeed);
+                drive.moveWithTwist(distanceInches, absoluteHeading, targetHeading, speed, turnSpeed);
                 drive.stopAll();
                 updateStatus(label + " complete", false);
                 telemetry.update();

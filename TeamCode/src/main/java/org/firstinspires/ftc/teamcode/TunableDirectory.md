@@ -56,6 +56,7 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | `FeedStopConfig.FIRE_LEAD_MS` | `config/FeedStopConfig.java` | Both | Lead time between servo release and feed motor power. | Central value ensures TeleOp and Auto honor the same pre-feed delay. | Increase to `70 ms` if the arm needs more head start; reduce to `30 ms` for faster cadence once hardware proves reliable. |
 
 > **Note:** Autonomous volley spacing is now passed directly to `AutoSequence.fire(... betweenShotsMs)`. Adjust cadence inside each auto routine instead of a shared tunable.
+> **Note:** The temporary AutoAim assist that engages during LB feed holds now releases back to the driver’s prior AutoAim toggle as soon as continuous streaming stops; no tunable changes are required.
 | `TeleOpEjectTuning.RPM` | `config/TeleOpEjectTuning.java` | TeleOp | Launcher RPM during eject routine. | TeleOp-only; Auto never calls eject. Tune here without affecting Auto. | `400 RPM` for gentle clears; `800 RPM` for stubborn jams. |
 | `TeleOpEjectTuning.TIME_MS` | `config/TeleOpEjectTuning.java` | TeleOp | Duration of eject routine. | TeleOp only. | `600 ms` for quick clear, `1400 ms` for heavy debris. |
 

@@ -108,6 +108,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Central TeleOp layer: AutoAim toggles, rumble cues, StopAll latch, intake modes.
 - Now integrates LL3A heading/distance where available.
 - Legacy P480 preview screens remain temporarily for testing but are no longer used for targeting.
+- Temporary AutoAim shot assists triggered by feed holds now unwind cleanly after the stream ends, restoring the driver’s AutoAim
+  toggle instead of leaving AutoAim latched on when continuous fire is released.
 
 ---
 

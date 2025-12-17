@@ -142,6 +142,9 @@
  *                       frame (human wall = −72" Y) and moved odometry fusion
  *                       to Limelight-only XY blending with bounded corrections
  *                       (IMU-only heading, no webcam pose fusion).
+ * CHANGES (2025-12-17): Restored the driver’s AutoAim toggle after releasing a
+ *                       continuous-feed hold so the temporary shot assist no
+ *                       longer latches AutoAim on once streaming stops.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -1633,6 +1636,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         pendingAutoAimNudge = true;
     }
 
+    /** Restores the driver-selected AutoAim state after a shot assist. */
+    private void restoreAutoAimNudgeIfActive() {
+        if (!autoAimNudgeActive) {
+            return;
+        }
+        autoAimEnabled = autoAimNudgeRestoreState;
+        autoAimNudgeActive = false;
+        pendingAutoAimNudge = false;
+        aimLossStartMs = -1L;
+    }
+
     /** Enables a temporary AutoAim assist when a tag is visible, then restores the prior setting after firing. */
     private void updateAutoAimNudge(boolean hasGoalTarget) {
         boolean firingActive = feed != null && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
@@ -1648,10 +1662,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         if (autoAimNudgeActive && !firingActive) {
-            autoAimEnabled = autoAimNudgeRestoreState;
-            autoAimNudgeActive = false;
-            pendingAutoAimNudge = false;
-            aimLossStartMs = -1L;
+            restoreAutoAimNudgeIfActive();
         }
     }
 
@@ -1833,6 +1844,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } else if (continuousFireActive) {
             feed.stopContinuousFeed();
             continuousFireActive = false;
+            restoreAutoAimNudgeIfActive();
         }
     }
 

@@ -392,8 +392,11 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ## Revision History
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are
-  visible without letting obelisk detections influence heading, and derived a per-fiducial pose-based tx fallback so heading
-  remains available even when fiducial tx fields are omitted.
+  visible without letting obelisk detections influence heading, derived a per-fiducial pose-based tx fallback so heading
+  remains available even when fiducial tx fields are omitted, streamlined AutoSequence cadence by letting warm-up/heading
+  captures run without halting the drive while preserving tag-lock state for continuous-fire steps that previously skipped,
+  added a Tag Visible telemetry line ahead of RPM that shows the goal tag ID, heading, and distance when sighted, and surfaced
+  per-wheel percent-of-target annotations on the RPM line so drivers can see tracking quality at a glance.
 - **2025-12-18** – Applied the AutoAim twist inversion tunable to autonomous aim commands so clockwise/counter-clockwise behavior stays consistent between TeleOp and AUTO; documented the TeleOp+AUTO scope of `INVERT_AIM_TWIST`.
 - **2025-12-17** – Forced AUTO to assert Limelight AprilTag pipelines without TeleOp prep, splitting obelisk observation from alliance-goal aiming. Aiming now filters strictly to goal IDs 20/24, keeps obelisk motif reads alive, surfaces pipeline/goal/obelisk status in AUTO telemetry, and adds tunables for Limelight goal vs. obelisk pipelines while preserving webcam fallback. Restored the TeleOp Limelight pipeline alias so day-of builds continue to compile after the pipeline split, and fixed the continuous-feed AutoAim nudge so it releases back to the driver’s prior toggle after the stream stops.
 - **2025-12-16** – Deferred FeedStop homing/parking until after START so INIT stays motionless while the gate still zeroes immediately once a match begins. Launcher prep loops now treat timeouts purely as fallbacks, exiting the AutoSequence step the moment RPM readiness or tag-lock goals are satisfied instead of lingering until the timeout. Documentation updated for the new start gating and faster step advancement.

@@ -180,6 +180,10 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-12-16): Launcher readiness/aim loops now exit immediately upon success while still
     //                        honoring per-step timeouts as fallbacks so AutoSequence steps advance as
     //                        soon as their goals are satisfied.
+    // CHANGES (2025-12-19): AutoSequence warm-up/heading-capture steps run without forcing a drive stop,
+    //                        readyToLaunch now records whether a tag lock was observed so later steps that
+    //                        require lock (e.g., fireContinuous) no longer skip incorrectly, and
+    //                        continuous-fire telemetry stays live while AutoSpeed maintains RPM.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -237,6 +241,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
     private String autoOpModeName;
     private Integer lastReportedPipelineIndex = null;
+    private boolean lastReadyHadLock = false;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -556,6 +561,7 @@ public abstract class BaseAuto extends LinearOpMode {
         final double tolerance = rpmTol();
         final double fallbackRpm = autoSeedRpm();
         try { autoCtrl.setDefaultRpm(fallbackRpm); } catch (Throwable ignored) {}
+        lastReadyHadLock = false;
 
         boolean hadLock = false;
         long start = System.currentTimeMillis();
@@ -575,6 +581,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.addData("Within band", false);
                 telemetry.addData("Time remaining (ms)", 0);
                 telemetry.update();
+                lastReadyHadLock = false;
                 return false;
             }
 
@@ -609,6 +616,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     telemetry.addData("Within band", withinBand);
                     telemetry.addData("Time remaining (ms)", Math.max(0, timeoutMs - (now - start)));
                     telemetry.update();
+                    lastReadyHadLock = true;
                     return true;
                 }
             } else {
@@ -637,6 +645,7 @@ public abstract class BaseAuto extends LinearOpMode {
         telemetry.addData("Within band", false);
         telemetry.addData("Time remaining (ms)", 0);
         telemetry.update();
+        lastReadyHadLock = false;
         return false;
     }
 
@@ -732,7 +741,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         boolean lockedForRun = !requireLock;
         if (requireLock) {
-            lockedForRun = requireLockOrTimeOut(1200, label + " – acquire lock");
+            lockedForRun = lastReadyHadLock || requireLockOrTimeOut(1200, label + " – acquire lock");
             if (!lockedForRun) {
                 updateStatus(label + " – skipped (no lock)", false);
                 telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
@@ -1194,7 +1203,6 @@ public abstract class BaseAuto extends LinearOpMode {
 
     protected final void spinLauncherToAutoRpmDefault(String phase) {
         String label = (phase == null || phase.isEmpty()) ? "Spin to auto RPM" : phase;
-        drive.stopAll();
         autoCtrl.setAutoEnabled(true);
         double seed = autoSeedRpm();
         try { autoCtrl.setDefaultRpm(seed); } catch (Throwable ignored) {}
@@ -1426,6 +1434,9 @@ public abstract class BaseAuto extends LinearOpMode {
         public AutoSequence readyToLaunch(String phase, long timeoutMs) {
             return addStep(() -> {
                 lastAimReady = readyLauncherUntilReady(timeoutMs, phase);
+                if (lastReadyHadLock) {
+                    lastLock = true;
+                }
                 if (!lastAimReady) {
                     telemetry.addLine("⚠️ Launcher not at speed before timeout");
                     telemetry.update();
@@ -1472,19 +1483,20 @@ public abstract class BaseAuto extends LinearOpMode {
         public AutoSequence fireContinuous(String phase, long durationMs, boolean requireLock) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Continuous fire");
-                if (requireLock && !lastLock) {
+                boolean lockSatisfied = lastLock || lastReadyHadLock;
+                if (requireLock && !lockSatisfied) {
                     updateStatus(label + " – skipped (no lock)", false);
                     telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
                     telemetry.update();
                     return;
                 }
-                updateStatus(label, !requireLock || lastLock);
+                updateStatus(label, !requireLock || lockSatisfied);
                 telemetry.addData("Duration (ms)", durationMs);
                 telemetry.addData("Lock required", requireLock);
                 telemetry.update();
                 BaseAuto.this.fireContinuous(durationMs, requireLock, label);
                 lastAimReady = false;
-                lastLock = requireLock && lastLock;
+                lastLock = requireLock && lockSatisfied;
             });
         }
 

@@ -53,6 +53,14 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-12-19): Added a Tag Visible telemetry line ahead of RPM
+ *                       reporting that surfaces the alliance goal tag ID,
+ *                       heading, and distance whenever the goal is visible
+ *                       without altering any AutoAim or RPM behavior.
+ * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
+ *                       telemetry line so drivers can see how close each
+ *                       flywheel is tracking to the current setpoint at a
+ *                       glance.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -941,6 +949,26 @@ public abstract class TeleOpAllianceBase extends OpMode {
         int latchedObeliskId = ObeliskSignal.getLastTagId();
         String latchedObeliskIdStr = (latchedObeliskId < 0) ? "-" : String.valueOf(latchedObeliskId);
 
+        double headingForTagLineDeg = (smHeadingDeg != null) ? smHeadingDeg : headingDegRaw;
+        Double distanceForTagLineIn = currentDistanceInches;
+        if (distanceForTagLineIn == null && smRangeMeters != null && Double.isFinite(smRangeMeters)) {
+            distanceForTagLineIn = smRangeMeters * M_TO_IN;
+        } else if (distanceForTagLineIn == null && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) {
+            distanceForTagLineIn = rangeMetersRaw * M_TO_IN;
+        }
+
+        String tagVisibleLine = "NO";
+        if (goalVisibleForAim) {
+            int displayId = (bestTagId > 0) ? bestTagId : allianceGoalId;
+            String headingStr = Double.isFinite(headingForTagLineDeg)
+                    ? String.format(Locale.US, "%.1f°", headingForTagLineDeg)
+                    : "---";
+            String distanceStr = (distanceForTagLineIn != null)
+                    ? String.format(Locale.US, "%.1f", distanceForTagLineIn)
+                    : "---";
+            tagVisibleLine = String.format(Locale.US, "#%d, %s, %s", displayId, headingStr, distanceStr);
+        }
+
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         String obeliskDisplay = ObeliskSignal.getDisplay();
         mirrorData(dashboardLines, "Obelisk", "%s", obeliskDisplay);
@@ -951,7 +979,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
-        mirrorData(dashboardLines, "RPM Target / Actual", "%.0f / L:%.0f R:%.0f", rpmTarget, rpmLeft, rpmRight);
+        mirrorData(dashboardLines, "Tag Visible", tagVisibleLine);
+        mirrorData(dashboardLines, "RPM", "T:%.0f | L:%.0f(%s) R:%.0f(%s)",
+                rpmTarget,
+                rpmLeft, formatRpmPercent(rpmLeft, rpmTarget),
+                rpmRight, formatRpmPercent(rpmRight, rpmTarget));
         if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
             double pct = (autoRpmTweakFactor - 1.0) * 100.0;
             double rpmDelta = autoOutRpmCommanded - autoOutRpm;
@@ -1116,6 +1148,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private double getRpmAverage() {
         return (launcher != null) ? launcher.getCurrentRpm() : 0.0;
+    }
+
+    private String formatRpmPercent(double actual, double target) {
+        if (!Double.isFinite(target) || Math.abs(target) < 1e-6) return "---";
+        double pct = (actual / target) * 100.0;
+        if (!Double.isFinite(pct)) return "---";
+        long rounded = Math.round(pct);
+        return String.format(Locale.US, "%d%%", rounded);
     }
 
     private void maybeSeedPoseFromVision() {

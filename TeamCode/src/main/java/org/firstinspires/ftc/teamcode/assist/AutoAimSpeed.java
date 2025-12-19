@@ -53,6 +53,9 @@
  *                       VisionTargetProvider so the helper follows whichever
  *                       vision source is active (Limelight by default) while
  *                       preserving existing toggles and readiness behavior.
+ * CHANGES (2025-12-21): Gated assist enablement on goal detection plus finite
+ *                       heading samples so Auto shares the same alliance-goal
+ *                       requirements as TeleOp auto-aim.
  */
 package org.firstinspires.ftc.teamcode.assist;
 
@@ -129,7 +132,9 @@ public class AutoAimSpeed {
             vision = wrapDetection(det);
         }
 
-        boolean hasTarget = vision != null && vision.hasGoalTarget();
+        boolean goalDetected = vision != null && vision.isGoalDetectedSmoothed();
+        boolean goalAimValid = vision != null && vision.isGoalAimValid();
+        boolean hasTarget = goalDetected && goalAimValid;
 
         // ---- AutoSpeed ----
         double outRpm;

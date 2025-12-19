@@ -22,6 +22,12 @@ import java.util.List;
  *         to the alliance scoring tag.
  *   - hasAnyTarget()
  *       • True when any valid AprilTag solve is present (goal OR other tags).
+ *   - isGoalDetectedRaw()/isGoalDetectedSmoothed()
+ *       • True when the alliance goal tag ID appears in the most recent frame
+ *         (raw) and after any hysteresis/hold logic (smoothed), independent of
+ *         heading validity.
+ *   - isGoalAimValid()
+ *       • True only when the heading sample is finite/usable for aim control.
  *   - getLatchedObeliskId()
  *       • Returns the last latched obelisk ID (21–23) or -1 if none is present.
  *   - getVisibleObeliskIds()
@@ -60,6 +66,9 @@ import java.util.List;
  * CHANGES (2025-12-16): Added explicit alliance-goal vs. obelisk accessors and
  *                       Limelight-only mode assertion hooks so Auto can force
  *                       the correct pipeline without touching webcam fallbacks.
+ * CHANGES (2025-12-21): Added separate goal-detected vs. aim-valid accessors
+ *                       so auto-aim enablement can gate on fiducial presence
+ *                       plus finite heading instead of a single tagVisible flag.
  */
 public interface VisionTargetProvider {
     boolean hasTarget();
@@ -67,6 +76,15 @@ public interface VisionTargetProvider {
     boolean hasGoalTarget();
 
     boolean hasAnyTarget();
+
+    /** True when the alliance goal tag ID appears in the latest frame (no gating on tx validity). */
+    default boolean isGoalDetectedRaw() { return hasGoalTarget(); }
+
+    /** True when the alliance goal tag survives any acquire/loss hysteresis (no gating on tx validity). */
+    default boolean isGoalDetectedSmoothed() { return isGoalDetectedRaw(); }
+
+    /** True only when a finite heading sample is available for aim control. */
+    default boolean isGoalAimValid() { return hasGoalTarget(); }
 
     default int getLatchedObeliskId() { return -1; }
 
@@ -83,9 +101,9 @@ public interface VisionTargetProvider {
 
     double getDistanceMeters();
 
-    default boolean isGoalVisibleRaw() { return hasGoalTarget(); }
+    default boolean isGoalVisibleRaw() { return isGoalDetectedRaw(); }
 
-    default boolean isGoalVisibleSmoothed() { return hasGoalTarget(); }
+    default boolean isGoalVisibleSmoothed() { return isGoalDetectedSmoothed(); }
 
     default int getGoalLostFrames() { return 0; }
 

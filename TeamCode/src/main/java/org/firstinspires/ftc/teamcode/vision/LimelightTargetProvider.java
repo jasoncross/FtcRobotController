@@ -67,6 +67,9 @@ import java.util.function.Supplier;
  *                       the alliance goal tag, added tunables for lock aging
  *                       and tx hysteresis, and removed global tx fallback so
  *                       obelisk detections cannot influence AutoAim.
+ * CHANGES (2025-12-19): Added per-fiducial pose-to-tx fallback so alliance goal
+ *                       headings remain available even when fiducial tx fields
+ *                       are omitted by the Limelight API.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -338,6 +341,15 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
 
         FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observationsById);
+        if (goalObs == null || goalObs.txDeg == null) {
+            Pose3D goalPose = findFiducialPose(result, allianceGoalId);
+            Double poseTx = computeTxFromPose(goalPose);
+            if (poseTx != null) {
+                goalObs = new FiducialObservation(allianceGoalId, poseTx);
+                observationsById.put(allianceGoalId, goalObs);
+                observations.add(goalObs);
+            }
+        }
         updateAimLock(now, allianceGoalId, goalObs);
 
         boolean hasGoalRaw = resultValid && goalObs != null && goalObs.txDeg != null;
@@ -531,6 +543,14 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         double tz = pose.getPosition().z;
         if (Double.isNaN(tz) || !Double.isFinite(tz)) return null;
         return tz;
+    }
+
+    private Double computeTxFromPose(Pose3D pose) {
+        if (pose == null || pose.getPosition() == null) return null;
+        double x = pose.getPosition().x;
+        double z = pose.getPosition().z;
+        if (!Double.isFinite(x) || !Double.isFinite(z) || z == 0.0) return null;
+        return Math.toDegrees(Math.atan2(x, z));
     }
 
     private List<FiducialObservation> extractFiducials(LLResult result) {

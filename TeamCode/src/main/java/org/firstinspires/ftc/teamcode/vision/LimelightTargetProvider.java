@@ -376,7 +376,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
 
-        FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observations);
+        FiducialObservation goalObs = resultValid ? selectBestGoalObservation(allianceGoalId, observations) : null;
         updateAimLock(now, allianceGoalId, goalObs);
 
         boolean goalDetected = goalObs != null;
@@ -526,7 +526,13 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             fieldMeters = Math.hypot(dx, dy) * VisionConfig.LIMELIGHT_RANGE_SCALE;
         }
 
-        return new DistanceEstimate(forwardMeters, scaledMeters, fieldMeters);
+        Double resolvedMeters = scaledMeters;
+        if (resolvedMeters == null && fieldMeters != null) {
+            // Preserve goal-only distance for telemetry using botpose when fiducial TZ is unavailable
+            resolvedMeters = fieldMeters;
+        }
+
+        return new DistanceEstimate(forwardMeters, resolvedMeters, fieldMeters);
     }
 
     private void assertPipeline(int pipelineIndex) {

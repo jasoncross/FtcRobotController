@@ -64,6 +64,11 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Twist-enabled moves keep translation locked to the requested field heading while steering toward the target yaw, with encoder-derived distance tracking that remains accurate during simultaneous rotation.
 - Shared across TeleOp and Auto.
 
+#### 🚀 Movement speed constraints to watch
+- `SharedRobotTuning.DRIVE_MAX_POWER` is the global ceiling for AutoSequence move speed; lowering it below 1.0 will cap every scripted drive even if individual steps request more. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/SharedRobotTuning.java†L71-L72】
+- `DriveTuning.AUTO_MOVE_MIN_SPEED` and `AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED` set the taper floors inside `Drivebase.move(...)` and `moveWithTwist(...)`, so overly low values can make the robot crawl as it finishes encoder-driven moves while higher floors keep it brisk near the target. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/DriveTuning.java†L34-L39】
+- `SharedRobotTuning.TURN_TWIST_CAP` clamps twist authority for scans and blended drive/aim steps; large heading changes during translation may feel slower if this cap is tight. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/SharedRobotTuning.java†L70-L72】
+
 ### 🚀 Launcher ([`subsystems/Launcher.java`](./subsystems/Launcher.java))
 - Dual 5202 flywheels under velocity PIDF.
 - Integrated AutoSpeed logic for tag-based RPM.

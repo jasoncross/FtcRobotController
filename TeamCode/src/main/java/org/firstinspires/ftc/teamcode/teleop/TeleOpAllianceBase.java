@@ -87,6 +87,10 @@
  * CHANGES (2025-12-16): Reversed long-shot lock bias so RED favors negative
  *                       bearings and BLUE favors positive bearings when the
  *                       range cutover engages in TeleOp aim windows.
+ * CHANGES (2025-12-19): Expanded Limelight aim telemetry to show per-fiducial
+ *                       tx selection, locked tx memory, and the raw global tx
+ *                       sample so field crews can verify aim locks stay tied
+ *                       to the alliance goal instead of obelisk detections.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -985,13 +989,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 visibleIdsStr));
         if (aimTelemetry != null) {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
-            String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
+            String aimTxUsed = aimTelemetry.txUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txUsedDeg) : "-";
+            String lockedTx = aimTelemetry.lockedTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.lockedTxDeg) : "-";
+            String globalTx = aimTelemetry.txGlobalDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txGlobalDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
+                    "goalVisible=%s locked=%s txUsed=%s lockedTx=%s globalTx=%s ageMs=%s ids=%s",
                     aimTelemetry.goalVisible,
                     lockedId,
                     aimTxUsed,
+                    lockedTx,
+                    globalTx,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }

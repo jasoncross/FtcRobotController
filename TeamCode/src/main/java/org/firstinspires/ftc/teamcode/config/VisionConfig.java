@@ -32,6 +32,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *                        axis offsets) to support FTC field-center odometry.
  * CHANGES (2025-12-12): Cleaned imports after odometry package move to keep
  *                        build compatibility with field-center frame updates.
+ * CHANGES (2025-12-19): Added Limelight aim-lock tunables to control how long
+ *                        goal-tag locks persist and how much hysteresis applies
+ *                        before switching aim samples.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -52,6 +55,14 @@ public final class VisionConfig {
     public static final double GOAL_BLUE_Y_IN = OdometryConfig.TAG_BLUE_GOAL_Y;     // Blue goal tag Y on field (inches)
 
     public static final double LIMELIGHT_RANGE_SCALE = 1.0; // Scaling factor on Limelight distance output; adjust after calibration
+
+    public static final class LimelightAimLock {
+        private LimelightAimLock() {}
+
+        public static final long AIM_LOCK_STALE_MS = 250L; // How long to retain a goal lock after loss (ms)
+        public static final double AIM_SWITCH_TX_HYST_DEG = 2.0; // Tx delta needed before switching aim sample (deg)
+        public static final int AIM_SWITCH_CONFIRM_FRAMES = 2; // Frames required before accepting a new aim sample
+    }
 
     public static final class LimelightFusion {
         private LimelightFusion() {}

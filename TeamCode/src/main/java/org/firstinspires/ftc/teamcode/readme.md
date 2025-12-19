@@ -163,6 +163,9 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
   AutoAim continuously applies twist correction from `TagAimController` to hold target at 0°.
 - **Twist direction:** `AutoAimTuning.INVERT_AIM_TWIST` flips the sign of aim-generated twist before handing it to the drivebase
   in both TeleOp **and AUTO** so the rotation direction matches your hardware without affecting manual rotation controls.
+- **Alliance goal lock:** Limelight aim now locks strictly to the alliance goal tag (BLUE 20 / RED 24) using that fiducial’s own
+  tx/tz sample; global tx and obelisk detections are excluded from aim control. Locks drop after **`250 ms`** of loss to stop
+  twist the moment the goal tag disappears.
 - **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
 - **Lock window:** At normal ranges the aim deadband remains symmetric (±`1.5°`, from `TagAimTuning.DEADBAND_DEG`). When the tag distance exceeds `AutoAimTuning.LONG_SHOT_DISTANCE_IN` (default **90 in**), the window biases toward the alliance goal to keep long volleys on the correct side of center—**RED locks between −1.5..0°**, **BLUE locks between 0..+1.5°**—as long as `AutoAimTuning.LONG_SHOT_ENABLED` remains true. Telemetry surfaces `ShotRangeMode=LONG` while the biased window is active and now holds the last range mode during brief tag dropouts until a new tag distance arrives, so lock tolerances do not flutter while frames are missing. Long-shot detection uses the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`), so recalibration affects when this bias turns on.
   - TeleOp telemetry keeps the lock context near the top readout, showing AutoAim/AutoSpeed status and the RPM Target/Actual line split into left/right flywheel readings before other details.
@@ -387,6 +390,10 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
+  hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are
+  visible without letting obelisk detections influence heading, and derived a per-fiducial pose-based tx fallback so heading
+  remains available even when fiducial tx fields are omitted.
 - **2025-12-18** – Applied the AutoAim twist inversion tunable to autonomous aim commands so clockwise/counter-clockwise behavior stays consistent between TeleOp and AUTO; documented the TeleOp+AUTO scope of `INVERT_AIM_TWIST`.
 - **2025-12-17** – Forced AUTO to assert Limelight AprilTag pipelines without TeleOp prep, splitting obelisk observation from alliance-goal aiming. Aiming now filters strictly to goal IDs 20/24, keeps obelisk motif reads alive, surfaces pipeline/goal/obelisk status in AUTO telemetry, and adds tunables for Limelight goal vs. obelisk pipelines while preserving webcam fallback. Restored the TeleOp Limelight pipeline alias so day-of builds continue to compile after the pipeline split, and fixed the continuous-feed AutoAim nudge so it releases back to the driver’s prior toggle after the stream stops.
 - **2025-12-16** – Deferred FeedStop homing/parking until after START so INIT stays motionless while the gate still zeroes immediately once a match begins. Launcher prep loops now treat timeouts purely as fallbacks, exiting the AutoSequence step the moment RPM readiness or tag-lock goals are satisfied instead of lingering until the timeout. Documentation updated for the new start gating and faster step advancement.

@@ -153,6 +153,10 @@
  * CHANGES (2025-12-17): Restored the driver’s AutoAim toggle after releasing a
  *                       continuous-feed hold so the temporary shot assist no
  *                       longer latches AutoAim on once streaming stops.
+ * CHANGES (2025-12-21): Gated AutoAim enablement on goal detection + aim-valid
+ *                       heading samples, updated top-line Tag Visible to match
+ *                       detection regardless of heading validity, and mirrored
+ *                       the goal-detected vs. aim-valid split in telemetry.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -517,12 +521,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
         // Reverse Drive toggle
         controls.bindPress(Pad.G1, Btn.L_STICK_BTN, this::toggleReverseDriveMode);
 
-        // AutoAim toggle (gated by current tag visibility)
-            controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
-                boolean hasGoal = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
-                if (!autoAimEnabled) {
-                    if (hasGoal) {
-                        autoAimEnabled = true;
+        // AutoAim toggle (gated by goal detection + aim-valid heading)
+        controls.bindPress(Pad.G1, Btn.R_STICK_BTN, () -> {
+            boolean goalDetected = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
+            boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
+            if (!autoAimEnabled) {
+                if (goalDetected && goalAimValid) {
+                    autoAimEnabled = true;
                     aimLossStartMs = -1;
                     pulseDouble(gamepad1);
                 } else {
@@ -797,9 +802,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean aimActive = false;
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
-        boolean goalDetectedRaw = visionTargetProvider != null && visionTargetProvider.isGoalVisibleRaw();
-        boolean goalDetectedSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalVisibleSmoothed();
-        boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
+        boolean goalDetectedRaw = visionTargetProvider != null && visionTargetProvider.isGoalDetectedRaw();
+        boolean goalDetectedSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed();
+        boolean goalAimValid = visionTargetProvider != null && visionTargetProvider.isGoalAimValid();
+        boolean goalVisibleForAim = goalAimValid;
         boolean goalVisibleSmoothed = goalDetectedSmoothed;
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
@@ -933,7 +939,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             allianceGoalId = llProvider.getAllianceGoalId();
             visibleIds = llProvider.getVisibleTagIds();
             aimTelemetry = llProvider.getAimTelemetry();
-        } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
+        } else if (visionTargetProvider != null && visionTargetProvider.isGoalDetectedSmoothed()) {
             visibleIds.add(allianceGoalId);
         }
         String visibleIdsStr = joinIds(visibleIds);
@@ -958,8 +964,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
         String tagVisibleLine;
-        if (goalDetectedSmoothed && smHeadingDeg != null && smRangeMeters != null) {
-            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %.1f°, %.0f\")", allianceGoalId, smHeadingDeg, smRangeMeters * M_TO_IN);
+        if (goalDetectedSmoothed) {
+            String headingStr = (smHeadingDeg != null) ? String.format(Locale.US, "%.1f°", smHeadingDeg) : "---";
+            String rangeStr = (smRangeMeters != null) ? String.format(Locale.US, "%.0f\"", smRangeMeters * M_TO_IN) : "---";
+            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %s, %s)", allianceGoalId, headingStr, rangeStr);
         } else {
             tagVisibleLine = "Tag Visible: NO";
         }

@@ -73,6 +73,11 @@ import java.util.function.Supplier;
  *                       follows fiducial presence even when tx is invalid
  *                       while aim gating still requires a finite heading;
  *                       added telemetry for observed IDs and goal tx validity.
+ * CHANGES (2025-12-21): Exposed separate goalDetected vs. goalAimValid flags so
+ *                       auto-aim can enable on fiducial presence while still
+ *                       requiring finite tx for rotation; top-level telemetry
+ *                       now keys “Tag Visible” off detection instead of aim
+ *                       validity.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -122,15 +127,33 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     }
 
     @Override
+    public boolean isGoalDetectedRaw() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalDetectedRaw;
+    }
+
+    @Override
     public boolean isGoalVisibleRaw() {
         TargetSnapshot snap = snapshot();
         return snap.goalDetectedRaw;
     }
 
     @Override
+    public boolean isGoalDetectedSmoothed() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalDetectedSmoothed;
+    }
+
+    @Override
     public boolean isGoalVisibleSmoothed() {
         TargetSnapshot snap = snapshot();
         return snap.goalDetectedSmoothed;
+    }
+
+    @Override
+    public boolean isGoalAimValid() {
+        TargetSnapshot snap = snapshot();
+        return snap.goalAimValid;
     }
 
     @Override

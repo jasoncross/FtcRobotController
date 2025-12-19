@@ -40,6 +40,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
  * CHANGES (2025-12-16): Auto now consumes smoothed goal visibility + held tx
  *                       samples from LimelightTargetProvider so brief dropouts
  *                       do not flip scans; TeleOp behavior remains unchanged.
+ * CHANGES (2025-12-21): Aligned turn gating with goalAimValid so twist output
+ *                       only engages when a finite heading sample exists,
+ *                       matching the new goalDetected vs. aim-valid split.
  */
 public class TagAimController {
     private VisionTargetProvider provider;     // Source for target visibility + heading error
@@ -95,7 +98,7 @@ public class TagAimController {
     }
 
     public double headingDeg() {
-        return provider != null && provider.hasGoalTarget() ? provider.getHeadingErrorDeg() : Double.NaN;
+        return provider != null && provider.isGoalAimValid() ? provider.getHeadingErrorDeg() : Double.NaN;
     }
 
     public double distanceMeters() {
@@ -117,7 +120,7 @@ public class TagAimController {
     }
 
     private double turnPowerWithProvider(VisionTargetProvider vision) {
-        if (vision == null || !vision.isGoalVisibleSmoothed()) {
+        if (vision == null || !vision.isGoalAimValid()) {
             // Keep derivative sane after target loss so the first frame back uses fresh error
             lastErrorDeg = 0.0;
             return 0.0;

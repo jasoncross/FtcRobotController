@@ -53,14 +53,6 @@ public final class VisionConfig {
 
     public static final double LIMELIGHT_RANGE_SCALE = 1.0; // Scaling factor on Limelight distance output; adjust after calibration
 
-    public static final class AimLock {
-        private AimLock() {}
-
-        public static final long AIM_LOCK_STALE_MS = 250L; // How long to keep a goal aim lock after the last sighting before clearing
-        public static final double AIM_SWITCH_TX_HYST_DEG = 2.0; // Required tx improvement (deg) before accepting a new locked sample
-        public static final int AIM_SWITCH_CONFIRM_FRAMES = 2; // Consecutive frames needed to confirm a new locked tx sample
-    }
-
     public static final class LimelightFusion {
         private LimelightFusion() {}
 

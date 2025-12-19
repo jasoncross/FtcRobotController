@@ -84,15 +84,14 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 0.55)
-                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
-                .readyToLaunch("Ready launcher for volley", 3800)
+                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.15, 90, 30, 10000)
+                .readyToLaunch("Ready launcher for volley", 3900)
                 .fire("Fire volley", 3, true, 0)
-                .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 20 in forward", 32.0, -45.0, 90.0, 0.85)
-                //.rotateToHeading("Rotating", 90, 0.85)
-                .move("Drive 52 in backward", 48.0, 180.0, 0.0, 0.85)
-                .move("Drive 52 in forward", 56.0, 22.0, -120.0, 0.85)
-                .fire("Fire volley", 4, true, 0)
+                .returnToStoredHeading("Return to start heading", 0.75)
+                .move("Drive to balls", 32.0, -45.0, 90.0, 0.85)
+                .move("Drive backward", 46.0, 180.0, 0.0, 0.85)
+                .move("Drive to triangle", 54.0, 22.0, -120.0, 0.85)
+                //.fire("Fire volley", 4, true, 0)
           .run();
     }
 }

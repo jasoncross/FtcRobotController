@@ -87,14 +87,13 @@ public class Auto_Red_Human extends BaseAuto {
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 0.85)
-                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.75, 90, 30, 10000)
+                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.4, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 4, true, 300)
+                .fire("Fire volley", 3, true, 300)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive 53 in back", 53.0, 180.0, 0.0, 0.85)
-                .rotateToHeading("Rotating", 90, 0.85)
-                .move("Drive 52 in backward", 50.0, 180.0, 0.0, 0.85)
-                .move("Drive 52 in forward", 52.0, 0.0, 0.0, 0.85)
+                .move("Drive to balls", 58.0, -170.0, 90.0, 0.85)
+                .move("Drive backward", 44.0, 180.0, 0.0, 0.85)
+                .move("Drive to triangle", 54.0, 22.0, -120.0, 0.85)
                 .run();
     }
 }

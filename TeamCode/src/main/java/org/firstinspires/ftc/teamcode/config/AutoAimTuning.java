@@ -46,7 +46,7 @@ public final class AutoAimTuning {
     public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // Seed RPM before first tag fix
     public static double AUTO_AIM_SPEED_SCALE = 0.25;                                 // Translation multiplier (0-1) while AutoAim is active
     public static boolean LONG_SHOT_ENABLED = true;                                    // Master toggle for alliance-biased long-shot lock behavior
-    public static double LONG_SHOT_DISTANCE_IN = 90.0;                                // Range cutover (in) for long-shot lock biasing
+    public static double LONG_SHOT_DISTANCE_IN = 110.0;                                // Range cutover (in) for long-shot lock biasing
     // Twist inversion now applies only to AutoAim (manual rotation is never flipped).
     public static boolean INVERT_TWIST = true;                                        // Legacy flag (kept for compatibility)
     public static boolean INVERT_AIM_TWIST = INVERT_TWIST;                             // Flip AutoAim twist only

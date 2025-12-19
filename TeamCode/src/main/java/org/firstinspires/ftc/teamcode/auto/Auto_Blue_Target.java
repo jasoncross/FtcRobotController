@@ -71,13 +71,17 @@ public class Auto_Blue_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
+                .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.85)
-                // Telemetry label mirrors the shared driver callout; BaseAuto targets the BLUE goal (ID 20).
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CCW, 0.75, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 5, true, 1000)
+                .fire("Fire volley", 3, true, 300)
+                .returnToStoredHeading("Return to start heading", 0.45)
+                .move("Drive to balls", 26.0, -90.0, 45.0, 0.85)
+                .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
+                .move("Drive to triangle", 44.0, 15.0, 135.0, 0.85)
+                .fire("Fire volley", 3, true, 100)
                 //.waitFor("Hold position", 500)
                 .run();
     }

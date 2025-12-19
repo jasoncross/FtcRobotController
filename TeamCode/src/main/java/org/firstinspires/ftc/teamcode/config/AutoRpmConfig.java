@@ -45,23 +45,27 @@ public final class AutoRpmConfig {
     // --- Tunables shared by TeleOp & Auto ---
     // CHANGES (2025-11-15): Replaced fixed near/far anchors with a full calibration table (default 6 points, 35–100 in).
     public static double[] CALIBRATION_DISTANCES_IN = {
-            35.0,
-            37.0,
-            60.0,
-            67.0,
-            82.0,
-            98.0
+            48.0,
+            55.0,
+            65.0,
+            78.0,
+            88.0,
+            100.0,
+            120.0,
+            130.0
     }; // Inches for the calibration table (must align with CALIBRATION_RPMS)
     public static double[] CALIBRATION_RPMS = {
-            2600.0,
-            2500.0,
-            2550.0,
             2750.0,
-            3050.0,
-            3850.0
+            2600.0,
+            2650.0,
+            2800.0,
+            3000.0,
+            3200.0,
+            3900.0,
+            4250.0
     }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
-    public static double DEFAULT_NO_TAG_RPM = 2500.0; // RPM to hold while AutoSpeed runs without a tag lock
+    public static double DEFAULT_NO_TAG_RPM = 2600.0; // RPM to hold while AutoSpeed runs without a tag lock
 
     /** Apply standard params to a controller. Safe to call repeatedly. */
     public static void apply(LauncherAutoSpeedController ctrl) {

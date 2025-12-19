@@ -65,10 +65,10 @@ import java.util.function.Supplier;
  *                       removed global tx fallbacks, and added tunables for
  *                       lock stale, hysteresis, and confirmation frames so
  *                       aim control only follows the alliance goal tag.
- * CHANGES (2025-12-19): Allowed goal-tag heading/distance telemetry to fall
- *                       back to the live fiducial sample even when the lock
- *                       freshness gate has expired, so alliance-only status
- *                       remains visible without re-enabling global tx.
+ * CHANGES (2025-12-19): Treated per-fiducial detections as goal-visible even
+ *                       when LLResult.isValid() is false so alliance-goal tags
+ *                       always surface heading/range for aim and telemetry as
+ *                       long as a fiducial entry exists.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -129,7 +129,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public boolean hasAnyTarget() {
         TargetSnapshot snap = snapshot();
-        return snap.resultValid;
+        return snap.anyVisible;
     }
 
     @Override
@@ -339,6 +339,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
 
         List<FiducialObservation> observations = extractFiducials(result);
         boolean resultValid = result != null && result.isValid();
+        boolean anyVisible = !observations.isEmpty();
 
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
@@ -346,7 +347,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         FiducialObservation goalObs = resultValid ? selectBestGoalObservation(allianceGoalId, observations) : null;
         updateAimLock(now, allianceGoalId, goalObs);
 
-        boolean hasGoalRaw = resultValid && goalObs != null && goalObs.txDeg != null;
+        boolean hasGoalRaw = goalObs != null && goalObs.txDeg != null;
         boolean lockFresh = isLockFresh(now, allianceGoalId);
         updateGoalVisibility(hasGoalRaw, now, newFrame, lockFresh);
 
@@ -358,15 +359,11 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         }
 
         Double txLockedUsed = lockFresh ? lockedAimLastTx : null;
-        if (txLockedUsed == null && goalObs != null && goalObs.txDeg != null) {
-            // Goal is visible but the lock aged out; surface the live goal sample for telemetry
-            txLockedUsed = goalObs.txDeg;
-        }
         long lockAge = (lockedAimLastSeenMs <= 0L || lockedAimTagId != allianceGoalId)
                 ? -1L
                 : Math.max(0L, now - lockedAimLastSeenMs);
 
-        TargetSnapshot snap = new TargetSnapshot(result, resultValid, hasGoal, smoothedGoal, allianceGoalId,
+        TargetSnapshot snap = new TargetSnapshot(result, resultValid, anyVisible, hasGoal, smoothedGoal, allianceGoalId,
                 bestId, observations, goalObs, txLockedUsed, now, frameTs, lockFresh, lockAge);
         cachedSnapshot = snap;
         lastSnapshotWallMs = now;
@@ -768,6 +765,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private static final class TargetSnapshot {
         final LLResult result;
         final boolean resultValid;
+        final boolean anyVisible;
         final boolean goalVisibleRaw;
         final boolean goalVisibleSmoothed;
         final int allianceGoalId;
@@ -782,6 +780,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
 
         TargetSnapshot(LLResult result,
                        boolean resultValid,
+                       boolean anyVisible,
                        boolean goalVisibleRaw,
                        boolean goalVisibleSmoothed,
                        int allianceGoalId,
@@ -795,6 +794,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
                        long lockAgeMs) {
             this.result = result;
             this.resultValid = resultValid;
+            this.anyVisible = anyVisible;
             this.goalVisibleRaw = goalVisibleRaw;
             this.goalVisibleSmoothed = goalVisibleSmoothed;
             this.allianceGoalId = allianceGoalId;

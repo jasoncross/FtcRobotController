@@ -53,6 +53,14 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2025-12-20): Split goal detection telemetry from aim validity for
+ *                       Limelight auto-aim, adding raw goal tx validity and
+ *                       observed ID reporting so drivers can see when the goal
+ *                       tag is detected even if heading is unusable.
+ * CHANGES (2025-12-17): Surfaced per-fiducial Limelight aim lock telemetry
+ *                       (locked tx vs. global tx, lock freshness, smoothed
+ *                       visibility) so drivers can confirm goal-only aiming
+ *                       no longer jumps to obelisk detections.
  * CHANGES (2025-11-29): Surfaced AutoRPM tweak telemetry (D-pad left/right while
  *                       AutoSpeed is active) with percentage and RPM deltas so
  *                       drivers can see the live nudge under the RPM target
@@ -789,8 +797,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean aimActive = false;
 
         boolean anyTagVisible = visionTargetProvider != null && visionTargetProvider.hasAnyTarget();
+        boolean goalDetectedRaw = visionTargetProvider != null && visionTargetProvider.isGoalVisibleRaw();
+        boolean goalDetectedSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalVisibleSmoothed();
         boolean goalVisibleForAim = visionTargetProvider != null && visionTargetProvider.hasGoalTarget();
-        boolean goalVisibleSmoothed = goalVisibleForAim;
+        boolean goalVisibleSmoothed = goalDetectedSmoothed;
         double headingDegRaw = visionTargetProvider != null ? visionTargetProvider.getHeadingErrorDeg() : Double.NaN;
         double rangeMetersRaw = visionTargetProvider != null ? visionTargetProvider.getDistanceMeters() : Double.NaN;
         LimelightTargetProvider.DistanceEstimate llDistance = null;
@@ -947,6 +957,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
         mirrorData(dashboardLines, "AutoSpeed", autoSpeedEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "AutoAim", autoAimEnabled ? "ON" : "OFF");
         mirrorData(dashboardLines, "Reverse", reverseDriveMode ? "ON" : "OFF");
+        String tagVisibleLine;
+        if (goalDetectedSmoothed && smHeadingDeg != null && smRangeMeters != null) {
+            tagVisibleLine = String.format(Locale.US, "Tag Visible: (#%d, %.1f°, %.0f\")", allianceGoalId, smHeadingDeg, smRangeMeters * M_TO_IN);
+        } else {
+            tagVisibleLine = "Tag Visible: NO";
+        }
+        mirrorLine(dashboardLines, tagVisibleLine);
         mirrorData(dashboardLines, "RPM Target / Actual", "%.0f / L:%.0f R:%.0f", rpmTarget, rpmLeft, rpmRight);
         if (autoRpmActive && !rpmTestEnabled && Math.abs(autoRpmTweakFactor - 1.0) > 1e-6) {
             double pct = (autoRpmTweakFactor - 1.0) * 100.0;
@@ -961,7 +978,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (manualRpmLocked) mirrorData(dashboardLines, "ManualLock", "LOCKED (%.0f rpm)", manualLockedRpm);
         mirrorData(dashboardLines, "RT", "%.2f", gamepad1.right_trigger);
         if (autoAimEnabled) mirrorData(dashboardLines, "SpeedScale", "%.2f", appliedAimSpeedScale);
-        mirrorData(dashboardLines, "Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO");
+        mirrorData(dashboardLines, "Tag Visible (goal)", goalDetectedSmoothed ? "YES" : "NO");
         mirrorData(dashboardLines, "Tag Visible (any)", anyTagVisible ? "YES" : "NO");
         mirrorData(dashboardLines, "Aim Debug", String.format(Locale.US,
                 "shotAssist=%s aimActive=%s hasGoalTarget=%s errDeg=%.1f aimRaw=%s aimInv=%s driverRot=%.3f finalRot=%.3f",
@@ -974,9 +991,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 driverRot,
                 finalRot));
         mirrorData(dashboardLines, "LL: valid/goal/best", String.format(Locale.US,
-                "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
+                "valid=%s anyVisible=%s goalDetected=%s aimValid=%s bestId=%s",
                 anyTagVisible,
                 anyTagVisible,
+                goalDetectedSmoothed,
                 goalVisibleForAim,
                 (bestTagId < 0) ? "-" : String.valueOf(bestTagId)));
         mirrorData(dashboardLines, "LL: allianceGoalId/ids", String.format(Locale.US,
@@ -985,13 +1003,20 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 visibleIdsStr));
         if (aimTelemetry != null) {
             String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
-            String aimTxUsed = aimTelemetry.aimTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.aimTxDeg) : "-";
+            String aimTxUsed = aimTelemetry.txLockedUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txLockedUsedDeg) : "-";
             String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
+            boolean goalTxFinite = aimTelemetry.goalTxDeg != null && Double.isFinite(aimTelemetry.goalTxDeg);
+            String goalTxRaw = aimTelemetry.goalTxDeg == null ? "null" : String.format(Locale.US, "%.2f", aimTelemetry.goalTxDeg);
             mirrorData(dashboardLines, "LL: aimLock", String.format(Locale.US,
-                    "goalVisible=%s locked=%s tx=%s ageMs=%s ids=%s",
-                    aimTelemetry.goalVisible,
+                    "detected=%s smoothed=%s aimValid=%s lockFresh=%s locked=%s txUsed=%s goalTx=%s finite=%s ageMs=%s ids=%s",
+                    aimTelemetry.goalDetected,
+                    aimTelemetry.goalDetectedSmoothed,
+                    aimTelemetry.goalAimValid,
+                    aimTelemetry.lockFresh,
                     lockedId,
                     aimTxUsed,
+                    goalTxRaw,
+                    goalTxFinite,
                     lockAgeMs,
                     joinIds(aimTelemetry.visibleIds)));
         }

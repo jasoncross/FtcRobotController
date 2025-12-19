@@ -65,6 +65,10 @@ import java.util.function.Supplier;
  *                       removed global tx fallbacks, and added tunables for
  *                       lock stale, hysteresis, and confirmation frames so
  *                       aim control only follows the alliance goal tag.
+ * CHANGES (2025-12-19): Allowed goal-tag heading/distance telemetry to fall
+ *                       back to the live fiducial sample even when the lock
+ *                       freshness gate has expired, so alliance-only status
+ *                       remains visible without re-enabling global tx.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -354,6 +358,10 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         }
 
         Double txLockedUsed = lockFresh ? lockedAimLastTx : null;
+        if (txLockedUsed == null && goalObs != null && goalObs.txDeg != null) {
+            // Goal is visible but the lock aged out; surface the live goal sample for telemetry
+            txLockedUsed = goalObs.txDeg;
+        }
         long lockAge = (lockedAimLastSeenMs <= 0L || lockedAimTagId != allianceGoalId)
                 ? -1L
                 : Math.max(0L, now - lockedAimLastSeenMs);
@@ -487,7 +495,13 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             fieldMeters = Math.hypot(dx, dy) * VisionConfig.LIMELIGHT_RANGE_SCALE;
         }
 
-        return new DistanceEstimate(forwardMeters, scaledMeters, fieldMeters);
+        Double resolvedMeters = scaledMeters;
+        if (resolvedMeters == null && fieldMeters != null) {
+            // Preserve goal-only distance for telemetry using botpose when fiducial TZ is unavailable
+            resolvedMeters = fieldMeters;
+        }
+
+        return new DistanceEstimate(forwardMeters, resolvedMeters, fieldMeters);
     }
 
     private void assertPipeline(int pipelineIndex) {

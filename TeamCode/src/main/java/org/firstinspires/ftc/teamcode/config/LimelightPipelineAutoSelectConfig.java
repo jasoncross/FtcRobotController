@@ -30,6 +30,12 @@ package org.firstinspires.ftc.teamcode.config;
  *       • If true, ignore opposing goal detections for qualification.
  *   - PIPELINE_FALLBACK_INDEX
  *       • Pipeline index to use when selection fails or times out.
+ *   - PIPELINE_REMEMBER_LAST_GOOD_ENABLED
+ *       • Enable storing and using the last successful pipeline as a fallback.
+ *   - PIPELINE_PERSIST_LAST_GOOD_ENABLED
+ *       • If true, persist the last-good pipeline to SharedPreferences.
+ *   - PIPELINE_USE_LAST_GOOD_ON_TIMEOUT
+ *       • If true, prefer last-good pipeline when selection times out.
  *
  * CHANGES (2025-12-28): Added Limelight pipeline auto-selection tunables for
  *                       INIT-time profile evaluation and telemetry.
@@ -37,6 +43,8 @@ package org.firstinspires.ftc.teamcode.config;
  *                       mode for stable pipeline qualification.
  * CHANGES (2025-12-28): Added a tunable fallback pipeline index instead of
  *                       hard-coding pipeline 0.
+ * CHANGES (2025-12-28): Added tunables to remember the last successful
+ *                       pipeline and optionally persist it for fallback use.
  */
 public final class LimelightPipelineAutoSelectConfig {
     private LimelightPipelineAutoSelectConfig() {}
@@ -51,4 +59,7 @@ public final class LimelightPipelineAutoSelectConfig {
     public static int PIPELINE_MIN_OPP_GOAL_HITS = 2; // Minimum opposing goal detections to qualify a pipeline
     public static boolean PIPELINE_REQUIRE_GOAL_ONLY = false; // If true, ignore opposing goal detections for ranking
     public static int PIPELINE_FALLBACK_INDEX = 0; // Pipeline index used when auto-selection fails or times out
+    public static boolean PIPELINE_REMEMBER_LAST_GOOD_ENABLED = true; // Use last successful pipeline when no tags are seen
+    public static boolean PIPELINE_PERSIST_LAST_GOOD_ENABLED = true; // Persist last-good pipeline to SharedPreferences
+    public static boolean PIPELINE_USE_LAST_GOOD_ON_TIMEOUT = true; // Allow last-good fallback on selection timeout
 }

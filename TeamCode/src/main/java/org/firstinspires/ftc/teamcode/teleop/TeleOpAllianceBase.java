@@ -66,6 +66,9 @@
  *                       timeout.
  * CHANGES (2025-12-28): Removed START-based auto-select resets so INIT
  *                       selection continues through START until lock/timeout.
+ * CHANGES (2025-12-28): Added memory fallback telemetry lines for Limelight
+ *                       auto-selection without altering the urgent banner
+ *                       ordering.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a
@@ -697,6 +700,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         if (limelightAutoSelector != null) {
             mirrorLine(dashboardLines, limelightAutoSelector.getProfileLine());
+            String memoryLine = limelightAutoSelector.getMemoryFallbackLine();
+            if (memoryLine != null) {
+                mirrorLine(dashboardLines, memoryLine);
+            }
         }
         telemetry.update();
         sendDashboard(fusedPose, "INIT", dashboardLines);
@@ -1167,6 +1174,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         if (limelightProfileLine != null) {
             mirrorLine(dashboardLines, limelightProfileLine);
+        }
+        if (limelightAutoSelector != null) {
+            String memoryLine = limelightAutoSelector.getMemoryFallbackLine();
+            if (memoryLine != null) {
+                mirrorLine(dashboardLines, memoryLine);
+            }
         }
         if (limelightAutoSelector != null) {
             String runningLine = limelightAutoSelector.getRunningStatusLine();

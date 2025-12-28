@@ -1,6 +1,9 @@
 package org.firstinspires.ftc.teamcode.vision;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
+import org.firstinspires.ftc.robotcore.internal.system.AppUtil;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.LimelightPipelineAutoSelectConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
@@ -43,6 +46,8 @@ import java.util.function.Supplier;
  *                       continue into START without forced timeouts.
  * CHANGES (2025-12-28): Added tunable fallback pipeline index instead of
  *                       hard-coding pipeline 0.
+ * CHANGES (2025-12-28): Added last-known-good memory fallback with optional
+ *                       SharedPreferences persistence and telemetry support.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -58,6 +63,8 @@ public class LimelightPipelineAutoSelector {
     private boolean locked = false;
     private boolean fallbackFailure = false;
     private String failureReason = null;
+    private boolean memoryFallbackUsed = false;
+    private String memoryFallbackReason = null;
     private Integer selectedPipeline = null;
     private String selectedDescription = null;
     private Integer activePipeline = null;
@@ -88,6 +95,7 @@ public class LimelightPipelineAutoSelector {
         this.provider = provider;
         this.allianceSupplier = allianceSupplier;
         this.profiles = parseProfiles(LimelightPipelineAutoSelectConfig.LIMELIGHT_PIPELINE_PROFILES);
+        LastKnownGood.ensureLoaded();
     }
 
     public boolean isEnabled() {
@@ -191,6 +199,20 @@ public class LimelightPipelineAutoSelector {
                 reason);
     }
 
+    public String getMemoryFallbackLine() {
+        if (!memoryFallbackUsed) return null;
+        int pipelineIndex = (selectedPipeline != null) ? selectedPipeline : resolveFallbackPipelineIndex();
+        String desc = (selectedDescription != null && !selectedDescription.isEmpty())
+                ? selectedDescription
+                : resolveLastKnownGoodDescription(pipelineIndex, LastKnownGood.getDescription());
+        String reason = (memoryFallbackReason == null || memoryFallbackReason.isEmpty()) ? "no_tags" : memoryFallbackReason;
+        return String.format(Locale.US,
+                "LL AUTOSELECT: MEMORY FALLBACK -> %d - %s (reason=%s)",
+                pipelineIndex,
+                desc,
+                reason);
+    }
+
     public void lockToSelectedPipeline() {
         if (selectedPipeline != null) {
             applyPipeline(selectedPipeline);
@@ -255,8 +277,11 @@ public class LimelightPipelineAutoSelector {
         locked = true;
         fallbackFailure = false;
         failureReason = null;
+        memoryFallbackUsed = false;
+        memoryFallbackReason = null;
         stage = Stage.COMPLETE;
         applyPipeline(chosen);
+        LastKnownGood.setLastGood(chosen, selectedDescription);
     }
 
     private int chooseWinningPipeline(List<Integer> winners) {
@@ -277,9 +302,33 @@ public class LimelightPipelineAutoSelector {
     }
 
     private void lockFallback(String reason) {
+        boolean allowMemory = true;
+        if ("timeout".equals(reason)) {
+            allowMemory = LimelightPipelineAutoSelectConfig.PIPELINE_USE_LAST_GOOD_ON_TIMEOUT;
+        }
+        boolean useMemory = allowMemory
+                && LimelightPipelineAutoSelectConfig.PIPELINE_REMEMBER_LAST_GOOD_ENABLED
+                && LastKnownGood.hasLastGood();
+        if (useMemory) {
+            Integer lastGoodIndex = LastKnownGood.getIndex();
+            if (lastGoodIndex != null && lastGoodIndex >= 0) {
+                locked = true;
+                fallbackFailure = false;
+                failureReason = null;
+                memoryFallbackUsed = true;
+                memoryFallbackReason = reason;
+                selectedPipeline = lastGoodIndex;
+                selectedDescription = resolveLastKnownGoodDescription(lastGoodIndex, LastKnownGood.getDescription());
+                stage = Stage.COMPLETE;
+                applyPipeline(lastGoodIndex);
+                return;
+            }
+        }
         locked = true;
         fallbackFailure = true;
         failureReason = reason;
+        memoryFallbackUsed = false;
+        memoryFallbackReason = null;
         int fallbackIndex = resolveFallbackPipelineIndex();
         selectedPipeline = fallbackIndex;
         PipelineProfile profile = resolveProfileForIndex(fallbackIndex);
@@ -387,6 +436,117 @@ public class LimelightPipelineAutoSelector {
             }
         }
         return null;
+    }
+
+    private String resolveLastKnownGoodDescription(int pipelineIndex, String persistedDescription) {
+        if (persistedDescription != null && !persistedDescription.trim().isEmpty()) {
+            return persistedDescription;
+        }
+        PipelineProfile profile = resolveProfileForIndex(pipelineIndex);
+        if (profile != null) {
+            return profile.description;
+        }
+        return DEFAULT_PROFILE_NAME;
+    }
+
+    private static final class LastKnownGood {
+        private static final String PREF_NAME = "limelight_pipeline_autoselect";
+        private static final String KEY_INDEX = "lastGoodPipelineIndex";
+        private static final String KEY_DESCRIPTION = "lastGoodPipelineDescription";
+        private static final String KEY_TIMESTAMP = "lastGoodTimestampMs";
+        private static final int UNKNOWN_INDEX = -1;
+
+        private static boolean loaded = false;
+        private static Integer cachedIndex = null;
+        private static String cachedDescription = null;
+        private static Long cachedTimestampMs = null;
+
+        private static void ensureLoaded() {
+            if (loaded) return;
+            loaded = true;
+            if (!LimelightPipelineAutoSelectConfig.PIPELINE_PERSIST_LAST_GOOD_ENABLED) {
+                return;
+            }
+            Context context = AppUtil.getDefContext();
+            if (context == null) {
+                return;
+            }
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            if (!prefs.contains(KEY_INDEX)) {
+                return;
+            }
+            int index = prefs.getInt(KEY_INDEX, UNKNOWN_INDEX);
+            if (index >= 0) {
+                cachedIndex = index;
+            }
+            cachedDescription = prefs.getString(KEY_DESCRIPTION, null);
+            long ts = prefs.getLong(KEY_TIMESTAMP, -1L);
+            if (ts > 0L) {
+                cachedTimestampMs = ts;
+            }
+        }
+
+        private static boolean hasLastGood() {
+            ensureLoaded();
+            return cachedIndex != null && cachedIndex >= 0;
+        }
+
+        private static Integer getIndex() {
+            ensureLoaded();
+            return cachedIndex;
+        }
+
+        private static String getDescription() {
+            ensureLoaded();
+            return cachedDescription;
+        }
+
+        private static void setLastGood(int index, String description) {
+            if (index < 0) return;
+            cachedIndex = index;
+            cachedDescription = description;
+            cachedTimestampMs = System.currentTimeMillis();
+            loaded = true;
+            if (!LimelightPipelineAutoSelectConfig.PIPELINE_PERSIST_LAST_GOOD_ENABLED) {
+                return;
+            }
+            Context context = AppUtil.getDefContext();
+            if (context == null) {
+                return;
+            }
+            SharedPreferences.Editor editor = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit();
+            editor.putInt(KEY_INDEX, index);
+            if (description != null) {
+                editor.putString(KEY_DESCRIPTION, description);
+            } else {
+                editor.remove(KEY_DESCRIPTION);
+            }
+            if (cachedTimestampMs != null) {
+                editor.putLong(KEY_TIMESTAMP, cachedTimestampMs);
+            } else {
+                editor.remove(KEY_TIMESTAMP);
+            }
+            editor.apply();
+        }
+
+        private static void clear() {
+            cachedIndex = null;
+            cachedDescription = null;
+            cachedTimestampMs = null;
+            loaded = true;
+            if (!LimelightPipelineAutoSelectConfig.PIPELINE_PERSIST_LAST_GOOD_ENABLED) {
+                return;
+            }
+            Context context = AppUtil.getDefContext();
+            if (context == null) {
+                return;
+            }
+            SharedPreferences.Editor editor = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit();
+            editor.remove(KEY_INDEX);
+            editor.remove(KEY_DESCRIPTION);
+            editor.remove(KEY_TIMESTAMP);
+            editor.apply();
+        }
     }
 
     private static final class PipelineProfile {

@@ -100,6 +100,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        removed START-forced fallback so selection can lock
     //                        post-start, and kept INIT selection running through
     //                        START without resets.
+    // CHANGES (2025-12-28): Added Limelight pipeline memory fallback telemetry
+    //                        lines while preserving urgent failure banner ordering.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -1167,6 +1169,11 @@ public abstract class BaseAuto extends LinearOpMode {
             String profileLine = limelightAutoSelector.getProfileLine();
             telemetry.addLine(profileLine);
             mirroredLines.add(profileLine);
+            String memoryLine = limelightAutoSelector.getMemoryFallbackLine();
+            if (memoryLine != null) {
+                telemetry.addLine(memoryLine);
+                mirroredLines.add(memoryLine);
+            }
         }
         if (limelightAutoSelector != null && isStarted()) {
             String runningLine = limelightAutoSelector.getRunningStatusLine();

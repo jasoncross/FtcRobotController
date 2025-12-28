@@ -213,6 +213,17 @@ public class LimelightPipelineAutoSelector {
                 profileIndex);
     }
 
+    public String getRunningLine() {
+        if (locked || stage == Stage.COMPLETE || stage == Stage.IDLE) {
+            return null;
+        }
+        int profileIndex = resolveCurrentProfileIndex();
+        return String.format(Locale.US,
+                "LL AUTOSELECT: RUNNING (stage=%s testing=%d)",
+                stage.name(),
+                profileIndex);
+    }
+
     private void beginProfile(long now) {
         PipelineProfile profile = profiles.get(currentProfileIdx);
         applyPipeline(profile.pipelineIndex);

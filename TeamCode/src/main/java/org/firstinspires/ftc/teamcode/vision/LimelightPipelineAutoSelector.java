@@ -3,7 +3,7 @@ package org.firstinspires.ftc.teamcode.vision;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
-import com.qualcomm.robotcore.util.AppUtil;
+import org.firstinspires.ftc.robotcore.internal.system.AppUtil;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.LimelightPipelineAutoSelectConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;

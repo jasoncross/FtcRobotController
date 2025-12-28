@@ -392,7 +392,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection timing now resets on START if a selection is still in progress to prevent premature timeouts.
+- **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection timing now resets on START and re-runs the pipeline evaluation if INIT has not locked a winner to prevent premature timeouts and missed post-start locks.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are
   visible without letting obelisk detections influence heading, derived a per-fiducial pose-based tx fallback so heading

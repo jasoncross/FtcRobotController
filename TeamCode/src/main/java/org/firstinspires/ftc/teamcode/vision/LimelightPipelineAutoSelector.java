@@ -41,6 +41,9 @@ import java.util.function.Supplier;
  *                       or fallback so updates continue post-start.
  * CHANGES (2025-12-28): Reset selection timing on OpMode START when selection
  *                       is still in progress to prevent premature timeouts.
+ * CHANGES (2025-12-28): Restarted the full pipeline evaluation on START when
+ *                       INIT has not locked a selection so post-start runs
+ *                       repeat the same scoring flow.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -197,8 +200,8 @@ public class LimelightPipelineAutoSelector {
         if (opModeStartedMs == null) {
             opModeStartedMs = System.currentTimeMillis();
         }
-        if (!locked && stage != Stage.IDLE && stage != Stage.COMPLETE && selectionStartMs > 0L) {
-            selectionStartMs = opModeStartedMs;
+        if (!locked && stage != Stage.COMPLETE) {
+            resetSelectionForStart(opModeStartedMs);
         }
     }
 
@@ -213,15 +216,21 @@ public class LimelightPipelineAutoSelector {
                 profileIndex);
     }
 
-    public String getRunningLine() {
-        if (locked || stage == Stage.COMPLETE || stage == Stage.IDLE) {
-            return null;
-        }
-        int profileIndex = resolveCurrentProfileIndex();
-        return String.format(Locale.US,
-                "LL AUTOSELECT: RUNNING (stage=%s testing=%d)",
-                stage.name(),
-                profileIndex);
+    private void resetSelectionForStart(long now) {
+        stage = Stage.IDLE;
+        selectionStartMs = 0L;
+        pipelineSwitchMs = 0L;
+        lastSampleMs = 0L;
+        currentProfileIdx = 0;
+        bestRankOverall = 0;
+        bestRankPipelines.clear();
+        goalHitsThisPipeline = 0;
+        oppHitsThisPipeline = 0;
+        samplesTaken = 0;
+        activePipeline = null;
+        provider.ensureStarted();
+        selectionStartMs = now;
+        beginProfile(now);
     }
 
     private void beginProfile(long now) {

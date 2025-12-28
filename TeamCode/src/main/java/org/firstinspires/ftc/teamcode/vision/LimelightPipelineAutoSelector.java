@@ -39,11 +39,10 @@ import java.util.function.Supplier;
  *                       pipeline index with post-start continuation.
  * CHANGES (2025-12-28): Confirmed START no longer forces selection finalize
  *                       or fallback so updates continue post-start.
- * CHANGES (2025-12-28): Reset selection timing on OpMode START when selection
- *                       is still in progress to prevent premature timeouts.
- * CHANGES (2025-12-28): Restarted the full pipeline evaluation on START when
- *                       INIT has not locked a selection so post-start runs
- *                       repeat the same scoring flow.
+ * CHANGES (2025-12-28): Removed START-based resets so INIT selection can
+ *                       continue into START without forced timeouts.
+ * CHANGES (2025-12-28): Added tunable fallback pipeline index instead of
+ *                       hard-coding pipeline 0.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -181,11 +180,13 @@ public class LimelightPipelineAutoSelector {
 
     public String getFallbackBannerLine() {
         if (!fallbackFailure) return null;
-        PipelineProfile fallback = resolveProfileForIndex(0);
+        int fallbackIndex = resolveFallbackPipelineIndex();
+        PipelineProfile fallback = resolveProfileForIndex(fallbackIndex);
         String desc = (fallback != null) ? fallback.description : DEFAULT_PROFILE_NAME;
         String reason = (failureReason == null || failureReason.isEmpty()) ? "no_tags" : failureReason;
         return String.format(Locale.US,
-                "LL AUTOSELECT FALLBACK -> 0 - %s (reason=%s)",
+                "LL AUTOSELECT FALLBACK -> %d - %s (reason=%s)",
+                fallbackIndex,
                 desc,
                 reason);
     }
@@ -200,9 +201,6 @@ public class LimelightPipelineAutoSelector {
         if (opModeStartedMs == null) {
             opModeStartedMs = System.currentTimeMillis();
         }
-        if (!locked && stage != Stage.COMPLETE) {
-            resetSelectionForStart(opModeStartedMs);
-        }
     }
 
     public String getRunningStatusLine() {
@@ -216,21 +214,9 @@ public class LimelightPipelineAutoSelector {
                 profileIndex);
     }
 
-    private void resetSelectionForStart(long now) {
-        stage = Stage.IDLE;
-        selectionStartMs = 0L;
-        pipelineSwitchMs = 0L;
-        lastSampleMs = 0L;
-        currentProfileIdx = 0;
-        bestRankOverall = 0;
-        bestRankPipelines.clear();
-        goalHitsThisPipeline = 0;
-        oppHitsThisPipeline = 0;
-        samplesTaken = 0;
-        activePipeline = null;
-        provider.ensureStarted();
-        selectionStartMs = now;
-        beginProfile(now);
+    private int resolveFallbackPipelineIndex() {
+        int configured = LimelightPipelineAutoSelectConfig.PIPELINE_FALLBACK_INDEX;
+        return configured >= 0 ? configured : 0;
     }
 
     private void beginProfile(long now) {
@@ -294,11 +280,12 @@ public class LimelightPipelineAutoSelector {
         locked = true;
         fallbackFailure = true;
         failureReason = reason;
-        selectedPipeline = 0;
-        PipelineProfile profile = resolveProfileForIndex(0);
+        int fallbackIndex = resolveFallbackPipelineIndex();
+        selectedPipeline = fallbackIndex;
+        PipelineProfile profile = resolveProfileForIndex(fallbackIndex);
         selectedDescription = (profile != null) ? profile.description : DEFAULT_PROFILE_NAME;
         stage = Stage.COMPLETE;
-        applyPipeline(0);
+        applyPipeline(fallbackIndex);
     }
 
     private void applyPipeline(int pipelineIndex) {
@@ -322,7 +309,7 @@ public class LimelightPipelineAutoSelector {
             pipelineIdx = provider.getActivePipelineIndex();
         }
         if (pipelineIdx == null) {
-            pipelineIdx = 0;
+            pipelineIdx = resolveFallbackPipelineIndex();
         }
         PipelineProfile profile = resolveProfileForIndex(pipelineIdx);
         return (profile != null) ? profile : new PipelineProfile(pipelineIdx, DEFAULT_PROFILE_NAME);

@@ -28,11 +28,15 @@ package org.firstinspires.ftc.teamcode.config;
  *       • Minimum opposing goal detections required to qualify a pipeline.
  *   - PIPELINE_REQUIRE_GOAL_ONLY
  *       • If true, ignore opposing goal detections for qualification.
+ *   - PIPELINE_FALLBACK_INDEX
+ *       • Pipeline index to use when selection fails or times out.
  *
  * CHANGES (2025-12-28): Added Limelight pipeline auto-selection tunables for
  *                       INIT-time profile evaluation and telemetry.
  * CHANGES (2025-12-28): Added hit-count thresholds and an optional goal-only
  *                       mode for stable pipeline qualification.
+ * CHANGES (2025-12-28): Added a tunable fallback pipeline index instead of
+ *                       hard-coding pipeline 0.
  */
 public final class LimelightPipelineAutoSelectConfig {
     private LimelightPipelineAutoSelectConfig() {}
@@ -46,4 +50,5 @@ public final class LimelightPipelineAutoSelectConfig {
     public static int PIPELINE_MIN_GOAL_HITS = 2; // Minimum goal detections to qualify a pipeline
     public static int PIPELINE_MIN_OPP_GOAL_HITS = 2; // Minimum opposing goal detections to qualify a pipeline
     public static boolean PIPELINE_REQUIRE_GOAL_ONLY = false; // If true, ignore opposing goal detections for ranking
+    public static int PIPELINE_FALLBACK_INDEX = 0; // Pipeline index used when auto-selection fails or times out
 }

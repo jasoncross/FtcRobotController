@@ -64,10 +64,8 @@
  * CHANGES (2025-12-28): Ensured START no longer finalizes auto-selection so
  *                       the selector can continue after START until lock or
  *                       timeout.
- * CHANGES (2025-12-28): Reset Limelight auto-select timing on START when still
- *                       selecting to avoid premature post-start timeouts.
- * CHANGES (2025-12-28): Restarted Limelight pipeline evaluation on START if
- *                       INIT did not lock a selection.
+ * CHANGES (2025-12-28): Removed START-based auto-select resets so INIT
+ *                       selection continues through START until lock/timeout.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a

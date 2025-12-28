@@ -98,10 +98,8 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // CHANGES (2025-12-28): Continued Limelight pipeline auto-selection after START,
     //                        removed START-forced fallback so selection can lock
-    //                        post-start, updated telemetry ordering, and reset
-    //                        selection timing on START to avoid premature timeouts.
-    // CHANGES (2025-12-28): Restarted Limelight pipeline evaluation on START if
-    //                        INIT did not lock a selection.
+    //                        post-start, and kept INIT selection running through
+    //                        START without resets.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and

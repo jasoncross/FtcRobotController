@@ -98,7 +98,8 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // CHANGES (2025-12-28): Continued Limelight pipeline auto-selection after START,
     //                        removed START-forced fallback so selection can lock
-    //                        post-start, and updated telemetry ordering.
+    //                        post-start, updated telemetry ordering, and reset
+    //                        selection timing on START to avoid premature timeouts.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -360,6 +361,9 @@ public abstract class BaseAuto extends LinearOpMode {
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
+        if (limelightAutoSelector != null) {
+            limelightAutoSelector.notifyOpModeStarted();
+        }
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
@@ -1165,7 +1169,7 @@ public abstract class BaseAuto extends LinearOpMode {
             mirroredLines.add(profileLine);
         }
         if (limelightAutoSelector != null && isStarted()) {
-            String runningLine = limelightAutoSelector.getRunningLine();
+            String runningLine = limelightAutoSelector.getRunningStatusLine();
             if (runningLine != null) {
                 telemetry.addLine(runningLine);
                 mirroredLines.add(runningLine);

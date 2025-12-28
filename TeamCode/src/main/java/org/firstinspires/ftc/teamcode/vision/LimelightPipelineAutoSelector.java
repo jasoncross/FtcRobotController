@@ -39,6 +39,8 @@ import java.util.function.Supplier;
  *                       pipeline index with post-start continuation.
  * CHANGES (2025-12-28): Confirmed START no longer forces selection finalize
  *                       or fallback so updates continue post-start.
+ * CHANGES (2025-12-28): Reset selection timing on OpMode START when selection
+ *                       is still in progress to prevent premature timeouts.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -68,6 +70,7 @@ public class LimelightPipelineAutoSelector {
     private long selectionStartMs = 0L;
     private long pipelineSwitchMs = 0L;
     private long lastSampleMs = 0L;
+    private Long opModeStartedMs = null;
 
     private enum Stage {
         IDLE,
@@ -188,6 +191,26 @@ public class LimelightPipelineAutoSelector {
         if (selectedPipeline != null) {
             applyPipeline(selectedPipeline);
         }
+    }
+
+    public void notifyOpModeStarted() {
+        if (opModeStartedMs == null) {
+            opModeStartedMs = System.currentTimeMillis();
+        }
+        if (!locked && stage != Stage.IDLE && stage != Stage.COMPLETE && selectionStartMs > 0L) {
+            selectionStartMs = opModeStartedMs;
+        }
+    }
+
+    public String getRunningStatusLine() {
+        if (locked || stage == Stage.COMPLETE || stage == Stage.IDLE) {
+            return null;
+        }
+        int profileIndex = resolveCurrentProfileIndex();
+        return String.format(Locale.US,
+                "LL AUTOSELECT: RUNNING (stage=%s testing=%d)",
+                stage.name(),
+                profileIndex);
     }
 
     public String getRunningLine() {

@@ -24,6 +24,7 @@ import org.firstinspires.ftc.teamcode.subsystems.Feed;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Launcher;
 import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
+import org.firstinspires.ftc.teamcode.vision.LimelightPipelineAutoSelector;
 import org.firstinspires.ftc.teamcode.vision.LimelightTargetProvider;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
@@ -184,6 +185,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        readyToLaunch now records whether a tag lock was observed so later steps that
     //                        require lock (e.g., fireContinuous) no longer skip incorrectly, and
     //                        continuous-fire telemetry stays live while AutoSpeed maintains RPM.
+    // CHANGES (2025-12-28): Added INIT Limelight pipeline auto-selection with tunable profiles,
+    //                        AprilTag precedence scoring, and telemetry severity rules.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -217,6 +220,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected VisionAprilTag vision;     // AprilTag pipeline (goal + obelisk)
     protected Limelight3A limelight;     // Limelight device for heading/distance + XY fusion
     protected VisionTargetProvider visionTargetProvider; // Unified heading/range provider (Limelight default)
+    protected LimelightPipelineAutoSelector limelightAutoSelector; // INIT Limelight pipeline auto-selector
     protected Launcher launcher;         // Flywheel subsystem for scoring
     protected Feed feed;                 // Artifact feed motor controller
     protected Intake intake;             // Intake roller subsystem
@@ -292,6 +296,7 @@ public abstract class BaseAuto extends LinearOpMode {
         } catch (Exception ex) { vision = null; }
 
         visionTargetProvider = null;
+        limelightAutoSelector = null;
         try {
             VisionConfig.VisionSource source = VisionConfig.VISION_SOURCE;
             if (source == VisionConfig.VisionSource.WEBCAM_LEGACY) {
@@ -302,11 +307,21 @@ public abstract class BaseAuto extends LinearOpMode {
             } else {
                 try {
                     limelight = hardwareMap.get(Limelight3A.class, "limelight");
-                    applyLimelightPipeline(limelight);
                     applyLimelightPollRate(limelight);
-                    try { limelight.start(); } catch (Throwable ignored) {}
                 } catch (Exception ex) { limelight = null; }
                 visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
+                limelightAutoSelector = new LimelightPipelineAutoSelector(
+                        limelight,
+                        (visionTargetProvider instanceof LimelightTargetProvider)
+                                ? (LimelightTargetProvider) visionTargetProvider
+                                : null,
+                        this::alliance);
+                if (limelight != null) {
+                    if (limelightAutoSelector == null || !limelightAutoSelector.isEnabled()) {
+                        applyLimelightPipeline(limelight);
+                    }
+                    try { limelight.start(); } catch (Throwable ignored) {}
+                }
             }
         } catch (Exception ex) {
             visionTargetProvider = null;
@@ -330,7 +345,11 @@ public abstract class BaseAuto extends LinearOpMode {
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
 
         while (!isStarted() && !isStopRequested()) {
-            ensureLimelightObeliskMode();
+            if (limelightAutoSelector != null && limelightAutoSelector.isEnabled()) {
+                limelightAutoSelector.update();
+            } else {
+                ensureLimelightObeliskMode();
+            }
             maybeSeedStartPoseFromVision();
             updateStatus("INIT", false);
             onPreStartLoop();
@@ -338,6 +357,9 @@ public abstract class BaseAuto extends LinearOpMode {
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
+        if (limelightAutoSelector != null) {
+            limelightAutoSelector.finalizeOnStart();
+        }
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
@@ -966,6 +988,9 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private void ensureLimelightObeliskMode() {
+        if (limelightAutoSelector != null && limelightAutoSelector.isLocked()) {
+            return;
+        }
         if (visionTargetProvider == null) return;
         Integer before = visionTargetProvider.getActivePipelineIndex();
         visionTargetProvider.ensureObeliskObservationMode();
@@ -974,6 +999,9 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private void ensureLimelightGoalAimMode() {
+        if (limelightAutoSelector != null && limelightAutoSelector.isLocked()) {
+            return;
+        }
         if (visionTargetProvider == null) return;
         Integer before = visionTargetProvider.getActivePipelineIndex();
         visionTargetProvider.ensureGoalAimMode(alliance());
@@ -1017,6 +1045,13 @@ public abstract class BaseAuto extends LinearOpMode {
             statusPhase = "Sequence";
         }
         List<String> mirroredLines = new ArrayList<>();
+        if (limelightAutoSelector != null) {
+            String fallbackLine = limelightAutoSelector.getFallbackBannerLine();
+            if (fallbackLine != null) {
+                telemetry.addLine(fallbackLine);
+                mirroredLines.add(fallbackLine);
+            }
+        }
 
         telemetry.addData("Phase", statusPhase);
         mirroredLines.add("Phase: " + statusPhase);
@@ -1044,6 +1079,11 @@ public abstract class BaseAuto extends LinearOpMode {
 
         telemetry.addData("LL Pipeline", pipelineIdx == null ? "-" : pipelineIdx);
         mirroredLines.add("LL Pipeline: " + (pipelineIdx == null ? "-" : pipelineIdx));
+        if (limelightAutoSelector != null) {
+            String profileLine = limelightAutoSelector.getProfileLine();
+            telemetry.addLine(profileLine);
+            mirroredLines.add(profileLine);
+        }
         telemetry.addData("Goal Tag Visible (raw)", goalVisibleRaw);
         mirroredLines.add("Goal Tag Visible (raw): " + goalVisibleRaw);
         telemetry.addData("Goal Tag Visible (smoothed)", goalVisibleSmoothed);

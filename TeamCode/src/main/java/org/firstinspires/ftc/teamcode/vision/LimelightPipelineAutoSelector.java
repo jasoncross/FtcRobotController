@@ -26,18 +26,18 @@ import java.util.function.Supplier;
  * SELECTION SUMMARY
  *   - Goal tag for the current alliance has highest precedence.
  *   - Opposing goal tag ranks next.
- *   - Obelisk tags (21–23) rank next.
  *   - No relevant tag yields a rank of 0 (failure fallback to pipeline 0).
  *
  * CHANGES (2025-12-28): Added non-blocking INIT pipeline auto-selection with
  *                       tunable profiles, precedence scoring, and telemetry
  *                       helpers shared by TeleOp and Auto.
+ * CHANGES (2025-12-28): Removed obelisk tags from pipeline scoring so only
+ *                       alliance/opposing goal tags affect selection.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
-    private static final int RANK_OBELISK = 1;
-    private static final int RANK_OPPOSING_GOAL = 2;
-    private static final int RANK_GOAL = 3;
+    private static final int RANK_OPPOSING_GOAL = 1;
+    private static final int RANK_GOAL = 2;
 
     private static final String DEFAULT_PROFILE_NAME = "Meet Gym";
 
@@ -317,12 +317,6 @@ public class LimelightPipelineAutoSelector {
 
         if (ids.contains(opposingGoal)) {
             return RANK_OPPOSING_GOAL;
-        }
-
-        for (int id : ids) {
-            if (id >= 21 && id <= 23) {
-                return RANK_OBELISK;
-            }
         }
 
         return RANK_NONE;

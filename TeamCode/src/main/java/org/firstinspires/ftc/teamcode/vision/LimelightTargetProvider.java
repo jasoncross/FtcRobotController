@@ -70,6 +70,8 @@ import java.util.function.Supplier;
  * CHANGES (2025-12-19): Added per-fiducial pose-to-tx fallback so alliance goal
  *                       headings remain available even when fiducial tx fields
  *                       are omitted by the Limelight API.
+ * CHANGES (2025-12-28): Exposed a public pipeline switch helper so INIT-time
+ *                       auto-selection can score and lock profiles safely.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -194,6 +196,12 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public void ensureObeliskObservationMode() {
         assertPipeline(VisionConfig.LimelightFusion.OBELISK_PIPELINE_INDEX);
+        startIfNeeded();
+    }
+
+    /** Allows external helpers to switch pipelines while keeping internal state consistent. */
+    public void setPipelineIndex(int pipelineIndex) {
+        assertPipeline(pipelineIndex);
         startIfNeeded();
     }
 

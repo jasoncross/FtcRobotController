@@ -57,6 +57,10 @@
  *                       reporting that surfaces the alliance goal tag ID,
  *                       heading, and distance whenever the goal is visible
  *                       without altering any AutoAim or RPM behavior.
+ * CHANGES (2025-12-28): Added Limelight INIT pipeline auto-selection with
+ *                       tunable profiles, AprilTag precedence scoring, and
+ *                       severity-based telemetry while keeping TeleOp
+ *                       non-blocking.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a
@@ -181,6 +185,7 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig.VisionSource;
+import org.firstinspires.ftc.teamcode.vision.LimelightPipelineAutoSelector;
 import org.firstinspires.ftc.teamcode.vision.LimelightTargetProvider;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
@@ -311,6 +316,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private String visionHealthLine = null;
     private String limelightStatusLine = null;
     private String limelightHealthLine = null;
+    private String limelightProfileLine = null;
+    private LimelightPipelineAutoSelector limelightAutoSelector = null;
     private boolean visionWarningShown = false;
     private ExecutorService visionTaskExecutor;
     private volatile boolean visionProfileSwapInProgress = false;
@@ -461,6 +468,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         vision = null;
         limelight = null;
         visionTargetProvider = null;
+        limelightAutoSelector = null;
         VisionSource source = VisionConfig.VISION_SOURCE;
         if (source == VisionSource.WEBCAM_LEGACY) {
             vision = new VisionAprilTag();
@@ -476,12 +484,23 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
 
             if (limelight != null) {
-                applyLimelightPipeline(limelight);
                 applyLimelightPollRate(limelight);
-                try { limelight.start(); } catch (Throwable ignored) {}
             }
 
             visionTargetProvider = new LimelightTargetProvider(limelight, this::alliance);
+            limelightAutoSelector = new LimelightPipelineAutoSelector(
+                    limelight,
+                    (visionTargetProvider instanceof LimelightTargetProvider)
+                            ? (LimelightTargetProvider) visionTargetProvider
+                            : null,
+                    this::alliance);
+
+            if (limelight != null) {
+                if (limelightAutoSelector == null || !limelightAutoSelector.isEnabled()) {
+                    applyLimelightPipeline(limelight);
+                }
+                try { limelight.start(); } catch (Throwable ignored) {}
+            }
         }
 
         aim.setProvider(visionTargetProvider);
@@ -642,11 +661,21 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void init_loop() {
+        if (limelightAutoSelector != null) {
+            limelightAutoSelector.update();
+        }
         maybeSeedPoseFromVision();
         if (odometry != null) {
             fusedPose = odometry.getPose();
         }
         List<String> dashboardLines = new ArrayList<>();
+        if (limelightAutoSelector != null) {
+            String fallbackLine = limelightAutoSelector.getFallbackBannerLine();
+            if (fallbackLine != null) {
+                mirrorLine(dashboardLines, fallbackLine);
+            }
+            mirrorLine(dashboardLines, limelightAutoSelector.getProfileLine());
+        }
         if (feed != null) {
             feed.update();
             if (feed.wasWindowLimitReached()) {
@@ -668,6 +697,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     @Override
     public void start() {
+        if (limelightAutoSelector != null) {
+            limelightAutoSelector.finalizeOnStart();
+        }
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
@@ -1057,6 +1089,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateLimelightTelemetry();
         if (limelightStatusLine != null) mirrorLine(dashboardLines, limelightStatusLine);
         if (limelightHealthLine != null) mirrorLine(dashboardLines, limelightHealthLine);
+        if (limelightProfileLine != null) mirrorLine(dashboardLines, limelightProfileLine);
         updateVisionTelemetry(null, rawIn);
         mirrorData(dashboardLines, "rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM));
         mirrorData(dashboardLines, "rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn));
@@ -1240,6 +1273,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (VisionConfig.VISION_SOURCE != VisionSource.LIMELIGHT) {
             limelightStatusLine = null;
             limelightHealthLine = null;
+            limelightProfileLine = null;
             return;
         }
 
@@ -1276,6 +1310,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } else {
             limelightHealthLine = null;
         }
+
+        limelightProfileLine = (limelightAutoSelector != null)
+                ? limelightAutoSelector.getProfileLine()
+                : null;
     }
 
     private void applyLimelightPipeline(Limelight3A ll) {

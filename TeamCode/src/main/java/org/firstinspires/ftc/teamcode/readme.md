@@ -100,6 +100,7 @@ TeamCode/
     │   ├── FeedStopConfig.java               ← Feed gate servo scaling + timing
     │   ├── IntakeTuning.java                 ← Intake motor power
     │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
+    │   ├── LimelightPipelineAutoSelectConfig.java ← Limelight INIT pipeline auto-selection profiles + timing
     │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
     │   ├── OdometryConfig.java               ← Field geometry + odometry fusion tunables
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
@@ -126,6 +127,7 @@ TeamCode/
     │   └── ObeliskSignal.java            ← LED/signal helpers for Obelisk status patterns
     └── vision/
         ├── VisionTargetProvider.java         ← Unified heading/distance interface for vision sources
+        ├── LimelightPipelineAutoSelector.java ← INIT-time Limelight pipeline evaluator + lock helper
         ├── LimelightTargetProvider.java      ← Limelight-backed goal/obelisk target provider (default)
         ├── WebcamLegacyTargetProvider.java   ← VisionPortal-based legacy provider when webcam mode is selected
         ├── VisionAprilTag.java               ← VisionPortal wrapper exposing Tag distance/pose
@@ -390,6 +392,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-28** – Added INIT-time Limelight pipeline auto-selection for TeleOp and Auto with tunable profile lists, settle/sample timing, AprilTag precedence scoring (goal → opposing goal → obelisk), lock-in behavior, and severity-based telemetry that flags fallback to pipeline 0 without treating successful ties as errors.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are
   visible without letting obelisk detections influence heading, derived a per-fiducial pose-based tx fallback so heading

@@ -54,8 +54,8 @@ public final class LimelightPipelineAutoSelectConfig {
     public static long PIPELINE_SETTLE_MS = 250L; // Settling time after pipeline switch (ms)
     public static int PIPELINE_SAMPLE_COUNT = 6; // Frames sampled per pipeline
     public static long PIPELINE_SAMPLE_INTERVAL_MS = 60L; // Delay between samples (ms)
-    public static long PIPELINE_MAX_SELECTION_MS = 2000L; // Max total selection time (ms)
-    public static int PIPELINE_MIN_GOAL_HITS = 2; // Minimum goal detections to qualify a pipeline
+    public static long PIPELINE_MAX_SELECTION_MS = 5000L; // Max total selection time (ms)
+    public static int PIPELINE_MIN_GOAL_HITS = 5; // Minimum goal detections to qualify a pipeline
     public static int PIPELINE_MIN_OPP_GOAL_HITS = 2; // Minimum opposing goal detections to qualify a pipeline
     public static boolean PIPELINE_REQUIRE_GOAL_ONLY = false; // If true, ignore opposing goal detections for ranking
     public static int PIPELINE_FALLBACK_INDEX = 0; // Pipeline index used when auto-selection fails or times out

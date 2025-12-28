@@ -251,7 +251,7 @@ public class Odometry {
      */
     private double normalizeHeading(double rawHeadingDeg) {
         double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG;
-        double fieldFrame = shifted - 90.0; // align IMU basis (0° = +X) to odometry basis (0° = +Y)
+        double fieldFrame = shifted; // align IMU basis (0° = +X) to odometry basis (0° = +Y)
         return normHeading(fieldFrame);
     }
 

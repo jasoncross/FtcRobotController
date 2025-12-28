@@ -35,6 +35,10 @@ import java.util.function.Supplier;
  * CHANGES (2025-12-28): Added hit-count qualification logic, ensured Limelight
  *                       start before sampling, and allowed selection to
  *                       continue after START until completion/timeout.
+ * CHANGES (2025-12-28): Adjusted running telemetry to report the testing
+ *                       pipeline index with post-start continuation.
+ * CHANGES (2025-12-28): Confirmed START no longer forces selection finalize
+ *                       or fallback so updates continue post-start.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -192,7 +196,7 @@ public class LimelightPipelineAutoSelector {
         }
         int profileIndex = resolveCurrentProfileIndex();
         return String.format(Locale.US,
-                "LL AUTOSELECT: RUNNING (stage=%s profile=%d)",
+                "LL AUTOSELECT: RUNNING (stage=%s testing=%d)",
                 stage.name(),
                 profileIndex);
     }

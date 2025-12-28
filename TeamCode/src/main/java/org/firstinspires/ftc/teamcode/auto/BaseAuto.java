@@ -97,8 +97,8 @@ import java.util.Objects;
 public abstract class BaseAuto extends LinearOpMode {
 
     // CHANGES (2025-12-28): Continued Limelight pipeline auto-selection after START,
-    //                        added stable hit-count scoring, and updated telemetry
-    //                        ordering for fallback/running status.
+    //                        removed START-forced fallback so selection can lock
+    //                        post-start, and updated telemetry ordering.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and

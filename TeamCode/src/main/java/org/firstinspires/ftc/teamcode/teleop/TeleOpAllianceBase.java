@@ -61,6 +61,9 @@
  *                       hit-count scoring, post-start continuation, and
  *                       severity-based telemetry while keeping TeleOp
  *                       non-blocking.
+ * CHANGES (2025-12-28): Ensured START no longer finalizes auto-selection so
+ *                       the selector can continue after START until lock or
+ *                       timeout.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a

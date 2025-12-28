@@ -58,7 +58,7 @@
  *                       heading, and distance whenever the goal is visible
  *                       without altering any AutoAim or RPM behavior.
  * CHANGES (2025-12-28): Added Limelight INIT pipeline auto-selection with
- *                       tunable profiles, AprilTag precedence scoring, and
+ *                       hit-count scoring, post-start continuation, and
  *                       severity-based telemetry while keeping TeleOp
  *                       non-blocking.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
@@ -674,7 +674,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (fallbackLine != null) {
                 mirrorLine(dashboardLines, fallbackLine);
             }
-            mirrorLine(dashboardLines, limelightAutoSelector.getProfileLine());
         }
         if (feed != null) {
             feed.update();
@@ -691,15 +690,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
         }
+        if (limelightAutoSelector != null) {
+            mirrorLine(dashboardLines, limelightAutoSelector.getProfileLine());
+        }
         telemetry.update();
         sendDashboard(fusedPose, "INIT", dashboardLines);
     }
 
     @Override
     public void start() {
-        if (limelightAutoSelector != null) {
-            limelightAutoSelector.finalizeOnStart();
-        }
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true);
         intake.set(DEFAULT_INTAKE_ENABLED);
@@ -750,6 +749,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateIntakeFlow();
         updatePendingToggleRumbles(now);
         List<String> dashboardLines = new ArrayList<>();
+
+        if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
+            limelightAutoSelector.update();
+        }
+        if (limelightAutoSelector != null) {
+            String fallbackLine = limelightAutoSelector.getFallbackBannerLine();
+            if (fallbackLine != null) {
+                mirrorLine(dashboardLines, fallbackLine);
+            }
+        }
 
         if (!poseSeeded) {
             maybeSeedPoseFromVision();
@@ -1089,7 +1098,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         updateLimelightTelemetry();
         if (limelightStatusLine != null) mirrorLine(dashboardLines, limelightStatusLine);
         if (limelightHealthLine != null) mirrorLine(dashboardLines, limelightHealthLine);
-        if (limelightProfileLine != null) mirrorLine(dashboardLines, limelightProfileLine);
         updateVisionTelemetry(null, rawIn);
         mirrorData(dashboardLines, "rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM));
         mirrorData(dashboardLines, "rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn));
@@ -1148,6 +1156,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 mirrorLine(dashboardLines, "FeedStop: " + feed.getHomeAbortMessage());
             }
             mirrorLine(dashboardLines, feed.getFeedStopSummaryLine());
+        }
+        if (limelightProfileLine != null) {
+            mirrorLine(dashboardLines, limelightProfileLine);
+        }
+        if (limelightAutoSelector != null) {
+            String runningLine = limelightAutoSelector.getRunningLine();
+            if (runningLine != null) {
+                mirrorLine(dashboardLines, runningLine);
+            }
         }
         sendDashboard(fusedPose, "RUN", dashboardLines);
         telemetry.update();

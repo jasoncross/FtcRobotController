@@ -96,6 +96,9 @@ import java.util.Objects;
  */
 public abstract class BaseAuto extends LinearOpMode {
 
+    // CHANGES (2025-12-28): Continued Limelight pipeline auto-selection after START,
+    //                        added stable hit-count scoring, and updated telemetry
+    //                        ordering for fallback/running status.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -357,9 +360,6 @@ public abstract class BaseAuto extends LinearOpMode {
             sleep(20);
         }
         if (isStopRequested()) { stopVisionIfAny(); return; }
-        if (limelightAutoSelector != null) {
-            limelightAutoSelector.finalizeOnStart();
-        }
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
@@ -1034,6 +1034,9 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     protected final void updateStatus(String phase, boolean tagLocked) {
+        if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
+            limelightAutoSelector.update();
+        }
         if (feed != null) {
             try { feed.update(); } catch (Throwable ignored) {}
         }
@@ -1079,11 +1082,6 @@ public abstract class BaseAuto extends LinearOpMode {
 
         telemetry.addData("LL Pipeline", pipelineIdx == null ? "-" : pipelineIdx);
         mirroredLines.add("LL Pipeline: " + (pipelineIdx == null ? "-" : pipelineIdx));
-        if (limelightAutoSelector != null) {
-            String profileLine = limelightAutoSelector.getProfileLine();
-            telemetry.addLine(profileLine);
-            mirroredLines.add(profileLine);
-        }
         telemetry.addData("Goal Tag Visible (raw)", goalVisibleRaw);
         mirroredLines.add("Goal Tag Visible (raw): " + goalVisibleRaw);
         telemetry.addData("Goal Tag Visible (smoothed)", goalVisibleSmoothed);
@@ -1160,6 +1158,18 @@ public abstract class BaseAuto extends LinearOpMode {
             String summary = feed.getFeedStopSummaryLine();
             telemetry.addLine(summary);
             mirroredLines.add(summary);
+        }
+        if (limelightAutoSelector != null) {
+            String profileLine = limelightAutoSelector.getProfileLine();
+            telemetry.addLine(profileLine);
+            mirroredLines.add(profileLine);
+        }
+        if (limelightAutoSelector != null && isStarted()) {
+            String runningLine = limelightAutoSelector.getRunningLine();
+            if (runningLine != null) {
+                telemetry.addLine(runningLine);
+                mirroredLines.add(runningLine);
+            }
         }
         FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
         sendDashboard(poseForDashboard, statusPhase, mirroredLines);

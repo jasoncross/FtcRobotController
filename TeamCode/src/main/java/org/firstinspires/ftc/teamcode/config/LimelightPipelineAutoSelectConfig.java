@@ -22,9 +22,17 @@ package org.firstinspires.ftc.teamcode.config;
  *       • Delay between samples while scoring a pipeline (ms).
  *   - PIPELINE_MAX_SELECTION_MS
  *       • Max time allowed for selection before timing out (ms).
+ *   - PIPELINE_MIN_GOAL_HITS
+ *       • Minimum goal detections required to qualify a pipeline.
+ *   - PIPELINE_MIN_OPP_GOAL_HITS
+ *       • Minimum opposing goal detections required to qualify a pipeline.
+ *   - PIPELINE_REQUIRE_GOAL_ONLY
+ *       • If true, ignore opposing goal detections for qualification.
  *
  * CHANGES (2025-12-28): Added Limelight pipeline auto-selection tunables for
  *                       INIT-time profile evaluation and telemetry.
+ * CHANGES (2025-12-28): Added hit-count thresholds and an optional goal-only
+ *                       mode for stable pipeline qualification.
  */
 public final class LimelightPipelineAutoSelectConfig {
     private LimelightPipelineAutoSelectConfig() {}
@@ -35,4 +43,7 @@ public final class LimelightPipelineAutoSelectConfig {
     public static int PIPELINE_SAMPLE_COUNT = 6; // Frames sampled per pipeline
     public static long PIPELINE_SAMPLE_INTERVAL_MS = 60L; // Delay between samples (ms)
     public static long PIPELINE_MAX_SELECTION_MS = 2000L; // Max total selection time (ms)
+    public static int PIPELINE_MIN_GOAL_HITS = 2; // Minimum goal detections to qualify a pipeline
+    public static int PIPELINE_MIN_OPP_GOAL_HITS = 2; // Minimum opposing goal detections to qualify a pipeline
+    public static boolean PIPELINE_REQUIRE_GOAL_ONLY = false; // If true, ignore opposing goal detections for ranking
 }

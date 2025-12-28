@@ -7,10 +7,8 @@ import org.firstinspires.ftc.teamcode.config.VisionConfig;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -20,19 +18,23 @@ import java.util.function.Supplier;
  *
  * PURPOSE
  *   - Evaluate a list of Limelight pipelines during INIT, score them based on
- *     AprilTag precedence, and lock the best profile for the remainder of the
- *     match without blocking the OpMode loop.
+ *     AprilTag hit counts, and lock the best profile for the remainder of the
+ *     match without blocking the OpMode loop (continues after START if needed).
  *
  * SELECTION SUMMARY
- *   - Goal tag for the current alliance has highest precedence.
- *   - Opposing goal tag ranks next.
- *   - No relevant tag yields a rank of 0 (failure fallback to pipeline 0).
+ *   - Goal and opposing goal hits are tallied per pipeline (obelisk ignored).
+ *   - Goal hits meeting PIPELINE_MIN_GOAL_HITS rank highest.
+ *   - Opposing hits meeting PIPELINE_MIN_OPP_GOAL_HITS rank next.
+ *   - Otherwise rank is 0 (failure fallback to pipeline 0).
  *
  * CHANGES (2025-12-28): Added non-blocking INIT pipeline auto-selection with
  *                       tunable profiles, precedence scoring, and telemetry
  *                       helpers shared by TeleOp and Auto.
  * CHANGES (2025-12-28): Removed obelisk tags from pipeline scoring so only
  *                       alliance/opposing goal tags affect selection.
+ * CHANGES (2025-12-28): Added hit-count qualification logic, ensured Limelight
+ *                       start before sampling, and allowed selection to
+ *                       continue after START until completion/timeout.
  */
 public class LimelightPipelineAutoSelector {
     private static final int RANK_NONE = 0;
@@ -45,8 +47,6 @@ public class LimelightPipelineAutoSelector {
     private final LimelightTargetProvider provider;
     private final Supplier<Alliance> allianceSupplier;
     private final List<PipelineProfile> profiles;
-    private final Map<Integer, Integer> bestRankByPipeline = new HashMap<>();
-
     private boolean locked = false;
     private boolean fallbackFailure = false;
     private String failureReason = null;
@@ -58,7 +58,8 @@ public class LimelightPipelineAutoSelector {
     private int currentProfileIdx = 0;
     private int bestRankOverall = 0;
     private final List<Integer> bestRankPipelines = new ArrayList<>();
-    private int bestRankThisPipeline = 0;
+    private int goalHitsThisPipeline = 0;
+    private int oppHitsThisPipeline = 0;
     private int samplesTaken = 0;
     private long selectionStartMs = 0L;
     private long pipelineSwitchMs = 0L;
@@ -115,11 +116,11 @@ public class LimelightPipelineAutoSelector {
 
         long now = System.currentTimeMillis();
         if (stage == Stage.IDLE) {
+            provider.ensureStarted();
             selectionStartMs = now;
             currentProfileIdx = 0;
             bestRankOverall = 0;
             bestRankPipelines.clear();
-            bestRankByPipeline.clear();
             beginProfile(now);
             return;
         }
@@ -153,10 +154,7 @@ public class LimelightPipelineAutoSelector {
             }
 
             if (lastSampleMs == 0L || (now - lastSampleMs) >= LimelightPipelineAutoSelectConfig.PIPELINE_SAMPLE_INTERVAL_MS) {
-                int rank = rankVisibleTags(provider.getVisibleTagIds());
-                if (rank > bestRankThisPipeline) {
-                    bestRankThisPipeline = rank;
-                }
+                tallyHits(provider.getVisibleTagIds());
                 samplesTaken++;
                 lastSampleMs = now;
             }
@@ -182,32 +180,21 @@ public class LimelightPipelineAutoSelector {
                 reason);
     }
 
-    public void finalizeOnStart() {
-        if (!isEnabled() || locked) {
-            return;
-        }
-        if (stage != Stage.IDLE && stage != Stage.COMPLETE) {
-            PipelineProfile profile = profiles.get(currentProfileIdx);
-            if (profile != null) {
-                bestRankByPipeline.put(profile.pipelineIndex, bestRankThisPipeline);
-                if (bestRankThisPipeline > bestRankOverall) {
-                    bestRankOverall = bestRankThisPipeline;
-                    bestRankPipelines.clear();
-                    bestRankPipelines.add(profile.pipelineIndex);
-                } else if (bestRankThisPipeline == bestRankOverall) {
-                    if (!bestRankPipelines.contains(profile.pipelineIndex)) {
-                        bestRankPipelines.add(profile.pipelineIndex);
-                    }
-                }
-            }
-        }
-        finalizeSelection("timeout");
-    }
-
     public void lockToSelectedPipeline() {
         if (selectedPipeline != null) {
             applyPipeline(selectedPipeline);
         }
+    }
+
+    public String getRunningLine() {
+        if (locked || stage == Stage.COMPLETE || stage == Stage.IDLE) {
+            return null;
+        }
+        int profileIndex = resolveCurrentProfileIndex();
+        return String.format(Locale.US,
+                "LL AUTOSELECT: RUNNING (stage=%s profile=%d)",
+                stage.name(),
+                profileIndex);
     }
 
     private void beginProfile(long now) {
@@ -216,17 +203,18 @@ public class LimelightPipelineAutoSelector {
         activePipeline = profile.pipelineIndex;
         pipelineSwitchMs = now;
         samplesTaken = 0;
-        bestRankThisPipeline = 0;
+        goalHitsThisPipeline = 0;
+        oppHitsThisPipeline = 0;
         stage = Stage.SETTLING;
     }
 
     private void finalizeProfile(PipelineProfile profile) {
-        bestRankByPipeline.put(profile.pipelineIndex, bestRankThisPipeline);
-        if (bestRankThisPipeline > bestRankOverall) {
-            bestRankOverall = bestRankThisPipeline;
+        int rank = computeRank(goalHitsThisPipeline, oppHitsThisPipeline);
+        if (rank > bestRankOverall) {
+            bestRankOverall = rank;
             bestRankPipelines.clear();
             bestRankPipelines.add(profile.pipelineIndex);
-        } else if (bestRankThisPipeline == bestRankOverall) {
+        } else if (rank == bestRankOverall) {
             bestRankPipelines.add(profile.pipelineIndex);
         }
     }
@@ -304,22 +292,42 @@ public class LimelightPipelineAutoSelector {
         return (profile != null) ? profile : new PipelineProfile(pipelineIdx, DEFAULT_PROFILE_NAME);
     }
 
-    private int rankVisibleTags(List<Integer> ids) {
-        if (ids == null || ids.isEmpty()) return RANK_NONE;
+    private void tallyHits(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return;
         Alliance alliance = (allianceSupplier != null) ? allianceSupplier.get() : Alliance.BLUE;
         int goalId = VisionConfig.goalTagIdForAlliance(alliance);
         int opposingGoal = (goalId == VisionConfig.GOAL_TAG_BLUE)
                 ? VisionConfig.GOAL_TAG_RED
                 : VisionConfig.GOAL_TAG_BLUE;
 
-        boolean hasGoal = ids.contains(goalId);
-        if (hasGoal) return RANK_GOAL;
+        if (ids.contains(goalId)) {
+            goalHitsThisPipeline++;
+        }
+        if (!LimelightPipelineAutoSelectConfig.PIPELINE_REQUIRE_GOAL_ONLY && ids.contains(opposingGoal)) {
+            oppHitsThisPipeline++;
+        }
+    }
 
-        if (ids.contains(opposingGoal)) {
+    private int computeRank(int goalHits, int oppHits) {
+        if (goalHits >= LimelightPipelineAutoSelectConfig.PIPELINE_MIN_GOAL_HITS) {
+            return RANK_GOAL;
+        }
+        if (!LimelightPipelineAutoSelectConfig.PIPELINE_REQUIRE_GOAL_ONLY
+                && oppHits >= LimelightPipelineAutoSelectConfig.PIPELINE_MIN_OPP_GOAL_HITS) {
             return RANK_OPPOSING_GOAL;
         }
-
         return RANK_NONE;
+    }
+
+    private int resolveCurrentProfileIndex() {
+        PipelineProfile profile = profiles.get(currentProfileIdx);
+        if (profile != null) {
+            return profile.pipelineIndex;
+        }
+        if (activePipeline != null) {
+            return activePipeline;
+        }
+        return 0;
     }
 
     private List<PipelineProfile> parseProfiles(String raw) {

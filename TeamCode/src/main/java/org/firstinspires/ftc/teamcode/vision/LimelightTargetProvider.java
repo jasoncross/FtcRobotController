@@ -72,6 +72,9 @@ import java.util.function.Supplier;
  *                       are omitted by the Limelight API.
  * CHANGES (2025-12-28): Exposed a public pipeline switch helper so INIT-time
  *                       auto-selection can score and lock profiles safely.
+ * CHANGES (2025-12-28): Added a public ensureStarted() helper so pipeline
+ *                       auto-selection can guarantee Limelight is running
+ *                       before sampling frames.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -196,6 +199,11 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public void ensureObeliskObservationMode() {
         assertPipeline(VisionConfig.LimelightFusion.OBELISK_PIPELINE_INDEX);
+        startIfNeeded();
+    }
+
+    /** Idempotent helper to guarantee Limelight streaming before sampling. */
+    public void ensureStarted() {
         startIfNeeded();
     }
 

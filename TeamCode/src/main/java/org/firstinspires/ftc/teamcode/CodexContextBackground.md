@@ -63,6 +63,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Encoder-based translation with controlled tapering.
 - Twist-enabled moves keep translation locked to the requested field heading while steering toward the target yaw, with encoder-derived distance tracking that remains accurate during simultaneous rotation.
 - Shared across TeleOp and Auto.
+ - Encoder distance math assumes 1× (non-quadrature) counts per revolution in `DriveTuning.TICKS_PER_REV`; only use 4× counts if the hub actually reports quadrature ticks.
 
 #### 🚀 Movement speed constraints to watch
 - `SharedRobotTuning.DRIVE_MAX_POWER` is the global ceiling for AutoSequence move speed; lowering it below 1.0 will cap every scripted drive even if individual steps request more. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/SharedRobotTuning.java†L71-L72】

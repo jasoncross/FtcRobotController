@@ -22,6 +22,8 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  * CHANGES (2025-12-11): Updated drawing transforms for the field-center
  *                        odometry frame (no Y shift) so overlays match fused
  *                        poses with Limelight XY fusion enabled.
+ * CHANGES (2025-12-29): Corrected dashboard heading arrow rotation to match
+ *                        the odometry CCW-positive convention (0° = +Y).
  */
 public final class DecodeFieldDrawing {
 
@@ -174,7 +176,7 @@ public final class DecodeFieldDrawing {
         double py = toDashY(pose.y);
         c.setFill("#333333");
         c.fillCircle(px, py, 3.0);
-        double headingRad = Math.toRadians(pose.headingDeg);
+        double headingRad = Math.toRadians(-pose.headingDeg); // draw CCW-positive heading in dashboard's CW-positive frame
         double hx = px + 8.0 * Math.sin(headingRad);
         double hy = py + 8.0 * Math.cos(headingRad);
         c.setStroke("#000000");

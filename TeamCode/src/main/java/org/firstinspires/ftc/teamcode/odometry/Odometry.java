@@ -104,8 +104,8 @@ public class Odometry {
         double strafe = strafeRaw / Drivebase.STRAFE_CORRECTION;
 
         double hRad = toRadians(heading);
-        double dx = strafe * cos(hRad) + forward * sin(hRad);
-        double dy = forward * cos(hRad) - strafe * sin(hRad);
+        double dx = strafe * cos(hRad) - forward * sin(hRad);
+        double dy = strafe * sin(hRad) + forward * cos(hRad);
 
         double speedInPerS = (dtSec > 1e-6) ? hypot(dx, dy) / dtSec : 0.0;
         double turnRateDegPerS = (dtSec > 1e-6) ? abs(normHeading(heading - pose.headingDeg)) / dtSec : 0.0;

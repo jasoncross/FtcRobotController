@@ -394,7 +394,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-29** – Reworked Limelight MT2 yaw feeding to write `robot_orientation_set` on the `LL_NT_NAME` table each loop with telemetry confirmation, enforced goal‑tag‑only localization via `fiducial_id_filters_set` (20/24), added field-bounds gates, and appended a `VisionDbg` line showing raw/accepted/fused poses plus rejection reasons while keeping aim/RPM alliance-priority locked.
+- **2025-12-29** – Reworked Limelight MT2 yaw feeding to use `LimelightHelpers.setRobotOrientation(...)` each loop with telemetry confirmation, enforced goal‑tag‑only localization via `LimelightHelpers.setFiducialIDFilters(...)` (20/24), added field-bounds gates, and appended a `VisionDbg` line showing raw/accepted/fused poses plus rejection reasons while keeping aim/RPM alliance-priority locked.
 - **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection now continues through START without resets, the fallback pipeline index is tunable, and the selector remembers the last successful pipeline for tag-less autos with optional persistence and memory fallback telemetry.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are

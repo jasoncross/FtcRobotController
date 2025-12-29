@@ -2,9 +2,7 @@ package org.firstinspires.ftc.teamcode.odometry;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
-import edu.wpi.first.networktables.NetworkTable;
-import edu.wpi.first.networktables.NetworkTableEntry;
-import edu.wpi.first.networktables.NetworkTableInstance;
+import com.qualcomm.hardware.limelightvision.LimelightHelpers;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
@@ -50,7 +48,7 @@ import static java.lang.Math.*;
  * CHANGES (2025-12-29): Removed NetworkTables localization filter fallback so
  *                        builds without WPILib NTCore remain compatible.
  * CHANGES (2025-12-29): Switched MT2 yaw feeding + localization filtering to
- *                        NetworkTables writes with debug confirmation.
+ *                        LimelightHelpers so FTC builds avoid WPILib NTCore.
  */
 public class Odometry {
 
@@ -77,8 +75,6 @@ public class Odometry {
     private String visionDebugLine = null;
     private long lastLocalizationFilterMs = 0L;
     private long lastYawFeedMs = 0L;
-    private static final String LIMELIGHT_ORIENTATION_KEY = "robot_orientation_set";
-    private static final String LIMELIGHT_FIDUCIAL_FILTER_KEY = "fiducial_id_filters_set";
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -285,15 +281,8 @@ public class Odometry {
         long now = System.currentTimeMillis();
         if ((now - lastLocalizationFilterMs) < 500L) return;
 
-        NetworkTable table = NetworkTableInstance.getDefault().getTable(VisionConfig.LimelightFusion.LL_NT_NAME);
-        NetworkTableEntry entry = table.getEntry(LIMELIGHT_FIDUCIAL_FILTER_KEY);
-        double[] payload = new double[ids.length];
-        for (int i = 0; i < ids.length; i++) {
-            payload[i] = ids[i];
-        }
-        if (entry.setDoubleArray(payload)) {
-            lastLocalizationFilterMs = now;
-        }
+        LimelightHelpers.setFiducialIDFilters(VisionConfig.LimelightFusion.LL_NT_NAME, ids);
+        lastLocalizationFilterMs = now;
     }
 
 
@@ -309,10 +298,16 @@ public class Odometry {
     }
 
     private boolean writeYawToNetworkTables(double headingDeg) {
-        NetworkTable table = NetworkTableInstance.getDefault().getTable(VisionConfig.LimelightFusion.LL_NT_NAME);
-        NetworkTableEntry entry = table.getEntry(LIMELIGHT_ORIENTATION_KEY);
-        double[] payload = new double[]{headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0};
-        boolean ok = entry.setDoubleArray(payload);
+        LimelightHelpers.setRobotOrientation(
+                VisionConfig.LimelightFusion.LL_NT_NAME,
+                headingDeg,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+        );
+        boolean ok = true;
         lastYawSentDeg = headingDeg;
         return ok;
     }

@@ -25,6 +25,9 @@ package org.firstinspires.ftc.teamcode.config;
  * CHANGES (2025-12-11): Recentered all field geometry to the FTC-standard
  *                        field-center origin (+Y toward targets, +X right)
  *                        ahead of Limelight-only position fusion.
+ * CHANGES (2025-12-29): Added dashboard-only orientation tunables so the
+ *                        FTC Dashboard overlay can be rotated or mirrored
+ *                        without affecting odometry math.
  */
 public final class OdometryConfig {
 
@@ -36,6 +39,11 @@ public final class OdometryConfig {
     public static final double FIELD_CENTER_X = 0.0;        // X origin at field centerline
     public static final double LEFT_FIELD_X  = -72.0;       // Left field edge (human perspective)
     public static final double RIGHT_FIELD_X = 72.0;        // Right field edge
+
+    // ==== Dashboard overlay orientation (degrees/bools) ====
+    public static final double DASHBOARD_ROTATION_DEG = 0.0;            // CCW rotation applied to dashboard-only drawings (0/90/180/270)
+    public static final boolean DASHBOARD_MIRROR_X = false;             // Mirror dashboard overlay across the field X axis (left/right flip)
+    public static final boolean DASHBOARD_MIRROR_Y = false;             // Mirror dashboard overlay across the field Y axis (up/down flip)
 
     public static final double ROBOT_HALF_LENGTH = 9.0;     // Half-length of robot footprint, inches
     public static final double ROBOT_HALF_WIDTH  = 7.875;     // Half-width of robot footprint, inches

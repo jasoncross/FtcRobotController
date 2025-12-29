@@ -129,6 +129,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Uses the FTC-standard field-center frame (0,0 in the middle; +X right, +Y toward targets) with IMU-only heading and mecanum wheel deltas.
 - Optionally fuses Limelight botpose XY (MegaTag2 preferred) with two-phase gating: tight outlier rejection while tracking, a larger window after `reacquireAfterMs`, per-step correction clamps, and motion gates on speed/turn rate. Yaw is never fused.
 - Webcam pose fusion has been removed entirely; Limelight is the only vision source allowed to influence odometry.
+- FTC Dashboard drawing applies a configurable rotation/mirror transform (`OdometryConfig.DASHBOARD_*`) for visualization only; odometry math and coordinate frames remain unchanged.
 
 ---
 

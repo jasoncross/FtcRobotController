@@ -66,7 +66,6 @@ public class Odometry {
     private double lastRawErrorMag = Double.NaN;
     private boolean lastYawFeedOk = false;
     private Double lastYawSentDeg = null;
-    private String lastLimelightTableName = "limelight";
     private boolean lastPoseUsedMt2 = false;
     private Long lastVisionAgeMs = null;
     private Integer lastPrimaryTagId = null;
@@ -332,7 +331,6 @@ public class Odometry {
             Object table = instanceClass.getMethod("getTable", String.class)
                     .invoke(instance, LIMELIGHT_NT_NAME);
             if (table == null) return false;
-            lastLimelightTableName = LIMELIGHT_NT_NAME;
 
             Class<?> tableClass = table.getClass();
             Object entry = tableClass.getMethod("getEntry", String.class)
@@ -374,7 +372,7 @@ public class Odometry {
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
-                lastLimelightTableName,
+                LIMELIGHT_NT_NAME,
                 lastPoseUsedMt2,
                 ageStr,
                 tidStr,

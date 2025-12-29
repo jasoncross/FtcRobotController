@@ -23,7 +23,9 @@ import org.firstinspires.ftc.teamcode.utils.ObeliskSignal;
  *                        odometry frame (no Y shift) so overlays match fused
  *                        poses with Limelight XY fusion enabled.
  * CHANGES (2025-12-29): Corrected dashboard heading arrow rotation to match
- *                        the odometry CCW-positive convention (0° = +Y).
+ *                        the odometry CCW-positive convention (0° = +Y) and
+ *                        added configurable dashboard-only orientation
+ *                        transforms for field visualization.
  */
 public final class DecodeFieldDrawing {
 
@@ -47,31 +49,29 @@ public final class DecodeFieldDrawing {
     private static void drawStatic(Canvas c, ObeliskSignal.Order motif) {
         // Mat background
         c.setFill(COLOR_GRAY);
-        c.fillRect(toDashX(OdometryConfig.LEFT_FIELD_X), toDashY(OdometryConfig.HUMAN_WALL_Y),
+        fillRectField(c, OdometryConfig.LEFT_FIELD_X, OdometryConfig.HUMAN_WALL_Y,
                 OdometryConfig.FIELD_WIDTH, OdometryConfig.FIELD_LENGTH);
 
         // Border
         c.setStroke(COLOR_WHITE);
-        c.strokeRect(toDashX(OdometryConfig.LEFT_FIELD_X), toDashY(OdometryConfig.HUMAN_WALL_Y),
+        strokeRectField(c, OdometryConfig.LEFT_FIELD_X, OdometryConfig.HUMAN_WALL_Y,
                 OdometryConfig.FIELD_WIDTH, OdometryConfig.FIELD_LENGTH);
 
         // Tile grid every 24"
         c.setStroke(COLOR_TILE);
         for (double x = OdometryConfig.LEFT_FIELD_X; x <= OdometryConfig.RIGHT_FIELD_X; x += 24.0) {
-            double dashX = toDashX(x);
-            c.strokeLine(dashX, toDashY(OdometryConfig.HUMAN_WALL_Y), dashX, toDashY(OdometryConfig.TARGET_WALL_Y));
+            strokeLineField(c, x, OdometryConfig.HUMAN_WALL_Y, x, OdometryConfig.TARGET_WALL_Y);
         }
         for (double y = OdometryConfig.HUMAN_WALL_Y; y <= OdometryConfig.TARGET_WALL_Y; y += 24.0) {
-            double ys = toDashY(y);
-            c.strokeLine(toDashX(OdometryConfig.LEFT_FIELD_X), ys, toDashX(OdometryConfig.RIGHT_FIELD_X), ys);
+            strokeLineField(c, OdometryConfig.LEFT_FIELD_X, y, OdometryConfig.RIGHT_FIELD_X, y);
         }
 
         // Launch lines
         c.setStroke(COLOR_WHITE);
-        c.strokeLine(toDashX(OdometryConfig.LEFT_FIELD_X), toDashY(OdometryConfig.HUMAN_LAUNCH_LINE_Y),
-                toDashX(OdometryConfig.RIGHT_FIELD_X), toDashY(OdometryConfig.HUMAN_LAUNCH_LINE_Y));
-        c.strokeLine(toDashX(OdometryConfig.LEFT_FIELD_X), toDashY(OdometryConfig.TARGET_LAUNCH_LINE_Y),
-                toDashX(OdometryConfig.RIGHT_FIELD_X), toDashY(OdometryConfig.TARGET_LAUNCH_LINE_Y));
+        strokeLineField(c, OdometryConfig.LEFT_FIELD_X, OdometryConfig.HUMAN_LAUNCH_LINE_Y,
+                OdometryConfig.RIGHT_FIELD_X, OdometryConfig.HUMAN_LAUNCH_LINE_Y);
+        strokeLineField(c, OdometryConfig.LEFT_FIELD_X, OdometryConfig.TARGET_LAUNCH_LINE_Y,
+                OdometryConfig.RIGHT_FIELD_X, OdometryConfig.TARGET_LAUNCH_LINE_Y);
 
         // Launch triangles
         c.setStroke(COLOR_WHITE);
@@ -86,55 +86,57 @@ public final class DecodeFieldDrawing {
 
         // Goals
         c.setFill(COLOR_RED);
-        c.fillRect(toDashX(OdometryConfig.GOAL_RED_X) - 2, toDashY(OdometryConfig.GOAL_RED_Y) - 2, 4, 4);
+        fillRectField(c, OdometryConfig.GOAL_RED_X - 2, OdometryConfig.GOAL_RED_Y - 2, 4, 4);
         c.setFill(COLOR_BLUE);
-        c.fillRect(toDashX(OdometryConfig.GOAL_BLUE_X) - 2, toDashY(OdometryConfig.GOAL_BLUE_Y) - 2, 4, 4);
+        fillRectField(c, OdometryConfig.GOAL_BLUE_X - 2, OdometryConfig.GOAL_BLUE_Y - 2, 4, 4);
 
         // Classifiers
         c.setStroke(COLOR_RED);
-        c.strokeRect(toDashX(OdometryConfig.CLASSIFIER_RED_X) - 3, toDashY(OdometryConfig.CLASSIFIER_RED_Y) - 3, 6, 6);
+        strokeRectField(c, OdometryConfig.CLASSIFIER_RED_X - 3, OdometryConfig.CLASSIFIER_RED_Y - 3, 6, 6);
         c.setStroke(COLOR_BLUE);
-        c.strokeRect(toDashX(OdometryConfig.CLASSIFIER_BLUE_X) - 3, toDashY(OdometryConfig.CLASSIFIER_BLUE_Y) - 3, 6, 6);
+        strokeRectField(c, OdometryConfig.CLASSIFIER_BLUE_X - 3, OdometryConfig.CLASSIFIER_BLUE_Y - 3, 6, 6);
 
         // Base zones
         double baseHalf = OdometryConfig.BASE_ZONE_SIZE / 2.0;
         c.setStroke(COLOR_RED);
-        c.strokeRect(toDashX(OdometryConfig.BASE_ZONE_RED_CENTER_X) - baseHalf, toDashY(OdometryConfig.BASE_ZONE_RED_CENTER_Y) - baseHalf,
+        strokeRectField(c, OdometryConfig.BASE_ZONE_RED_CENTER_X - baseHalf, OdometryConfig.BASE_ZONE_RED_CENTER_Y - baseHalf,
                 OdometryConfig.BASE_ZONE_SIZE, OdometryConfig.BASE_ZONE_SIZE);
         c.setStroke(COLOR_BLUE);
-        c.strokeRect(toDashX(OdometryConfig.BASE_ZONE_BLUE_CENTER_X) - baseHalf, toDashY(OdometryConfig.BASE_ZONE_BLUE_CENTER_Y) - baseHalf,
+        strokeRectField(c, OdometryConfig.BASE_ZONE_BLUE_CENTER_X - baseHalf, OdometryConfig.BASE_ZONE_BLUE_CENTER_Y - baseHalf,
                 OdometryConfig.BASE_ZONE_SIZE, OdometryConfig.BASE_ZONE_SIZE);
 
         // Loading zones
         double loadHalf = OdometryConfig.LOADING_ZONE_SIZE / 2.0;
         c.setStroke(COLOR_WHITE);
-        c.strokeRect(toDashX(OdometryConfig.LOADING_ZONE_RED_CENTER_X) - loadHalf, toDashY(OdometryConfig.LOADING_ZONE_RED_CENTER_Y) - loadHalf,
+        strokeRectField(c, OdometryConfig.LOADING_ZONE_RED_CENTER_X - loadHalf, OdometryConfig.LOADING_ZONE_RED_CENTER_Y - loadHalf,
                 OdometryConfig.LOADING_ZONE_SIZE, OdometryConfig.LOADING_ZONE_SIZE);
-        c.strokeRect(toDashX(OdometryConfig.LOADING_ZONE_BLUE_CENTER_X) - loadHalf, toDashY(OdometryConfig.LOADING_ZONE_BLUE_CENTER_Y) - loadHalf,
+        strokeRectField(c, OdometryConfig.LOADING_ZONE_BLUE_CENTER_X - loadHalf, OdometryConfig.LOADING_ZONE_BLUE_CENTER_Y - loadHalf,
                 OdometryConfig.LOADING_ZONE_SIZE, OdometryConfig.LOADING_ZONE_SIZE);
 
         // Gates
         c.setStroke(COLOR_RED);
-        c.strokeLine(toDashX(OdometryConfig.GATE_RED_X) - 4, toDashY(OdometryConfig.GATE_RED_Y), toDashX(OdometryConfig.GATE_RED_X) + 4, toDashY(OdometryConfig.GATE_RED_Y));
+        strokeLineField(c, OdometryConfig.GATE_RED_X - 4, OdometryConfig.GATE_RED_Y,
+                OdometryConfig.GATE_RED_X + 4, OdometryConfig.GATE_RED_Y);
         c.setStroke(COLOR_BLUE);
-        c.strokeLine(toDashX(OdometryConfig.GATE_BLUE_X) - 4, toDashY(OdometryConfig.GATE_BLUE_Y), toDashX(OdometryConfig.GATE_BLUE_X) + 4, toDashY(OdometryConfig.GATE_BLUE_Y));
+        strokeLineField(c, OdometryConfig.GATE_BLUE_X - 4, OdometryConfig.GATE_BLUE_Y,
+                OdometryConfig.GATE_BLUE_X + 4, OdometryConfig.GATE_BLUE_Y);
 
         // Gate zones
         double gateHalfW = OdometryConfig.GATE_ZONE_WIDTH / 2.0;
         double gateHalfD = OdometryConfig.GATE_ZONE_DEPTH / 2.0;
         c.setFill("rgba(255,0,0,0.2)");
-        c.fillRect(toDashX(OdometryConfig.GATE_ZONE_RED_CENTER_X) - gateHalfW, toDashY(OdometryConfig.GATE_ZONE_RED_CENTER_Y) - gateHalfD,
+        fillRectField(c, OdometryConfig.GATE_ZONE_RED_CENTER_X - gateHalfW, OdometryConfig.GATE_ZONE_RED_CENTER_Y - gateHalfD,
                 OdometryConfig.GATE_ZONE_WIDTH, OdometryConfig.GATE_ZONE_DEPTH);
         c.setFill("rgba(0,0,255,0.2)");
-        c.fillRect(toDashX(OdometryConfig.GATE_ZONE_BLUE_CENTER_X) - gateHalfW, toDashY(OdometryConfig.GATE_ZONE_BLUE_CENTER_Y) - gateHalfD,
+        fillRectField(c, OdometryConfig.GATE_ZONE_BLUE_CENTER_X - gateHalfW, OdometryConfig.GATE_ZONE_BLUE_CENTER_Y - gateHalfD,
                 OdometryConfig.GATE_ZONE_WIDTH, OdometryConfig.GATE_ZONE_DEPTH);
 
         // Secret tunnels
         c.setFill("rgba(255,0,0,0.35)");
-        c.fillRect(toDashX(OdometryConfig.SECRET_TUNNEL_RED_X) - 1, toDashY(OdometryConfig.SECRET_TUNNEL_RED_Y1),
+        fillRectField(c, OdometryConfig.SECRET_TUNNEL_RED_X - 1, OdometryConfig.SECRET_TUNNEL_RED_Y1,
                 2, OdometryConfig.SECRET_TUNNEL_RED_Y2 - OdometryConfig.SECRET_TUNNEL_RED_Y1);
         c.setFill("rgba(0,0,255,0.35)");
-        c.fillRect(toDashX(OdometryConfig.SECRET_TUNNEL_BLUE_X) - 1, toDashY(OdometryConfig.SECRET_TUNNEL_BLUE_Y1),
+        fillRectField(c, OdometryConfig.SECRET_TUNNEL_BLUE_X - 1, OdometryConfig.SECRET_TUNNEL_BLUE_Y1,
                 2, OdometryConfig.SECRET_TUNNEL_BLUE_Y2 - OdometryConfig.SECRET_TUNNEL_BLUE_Y1);
 
         // Artifact rows (PGP ordering left→right when looking toward targets)
@@ -158,8 +160,8 @@ public final class DecodeFieldDrawing {
             double rowY = (motif == ObeliskSignal.Order.GPP) ? OdometryConfig.GPP_ROW_Y
                     : (motif == ObeliskSignal.Order.PPG) ? OdometryConfig.PPG_ROW_Y : OdometryConfig.PGP_ROW_Y;
             c.setStroke("#FFFFFF");
-            c.strokeLine(toDashX(OdometryConfig.LEFT_FIELD_X), toDashY(rowY + OdometryConfig.ARTIFACT_RADIUS * 1.5),
-                    toDashX(OdometryConfig.RIGHT_FIELD_X), toDashY(rowY + OdometryConfig.ARTIFACT_RADIUS * 1.5));
+            strokeLineField(c, OdometryConfig.LEFT_FIELD_X, rowY + OdometryConfig.ARTIFACT_RADIUS * 1.5,
+                    OdometryConfig.RIGHT_FIELD_X, rowY + OdometryConfig.ARTIFACT_RADIUS * 1.5);
         }
     }
 
@@ -167,36 +169,120 @@ public final class DecodeFieldDrawing {
         for (int i = 0; i < order.length; i++) {
             String color = order[i].equals("G") ? COLOR_GREEN : COLOR_PURPLE;
             c.setFill(color);
-            c.fillCircle(toDashX(startX + i * OdometryConfig.ARTIFACT_SPACING_X), toDashY(y), OdometryConfig.ARTIFACT_RADIUS);
+            fillCircleField(c, startX + i * OdometryConfig.ARTIFACT_SPACING_X, y, OdometryConfig.ARTIFACT_RADIUS);
         }
     }
 
     private static void drawPose(Canvas c, FieldPose pose) {
-        double px = toDashX(pose.x);
-        double py = toDashY(pose.y);
+        DashboardPoint center = toDashboardPoint(pose.x, pose.y);
         c.setFill("#333333");
-        c.fillCircle(px, py, 3.0);
+        c.fillCircle(center.x, center.y, 3.0);
+
         double headingRad = Math.toRadians(-pose.headingDeg); // draw CCW-positive heading in dashboard's CW-positive frame
-        double hx = px + 8.0 * Math.sin(headingRad);
-        double hy = py + 8.0 * Math.cos(headingRad);
+        double fieldHx = pose.x + 8.0 * Math.sin(headingRad);
+        double fieldHy = pose.y + 8.0 * Math.cos(headingRad);
+        DashboardPoint head = toDashboardPoint(fieldHx, fieldHy);
+
         c.setStroke("#000000");
-        c.strokeLine(px, py, hx, hy);
+        c.strokeLine(center.x, center.y, head.x, head.y);
     }
 
     private static void drawTriangle(Canvas c, double x1, double y1, double x2, double y2, double x3, double y3) {
-        double ax = toDashX(x1), ay = toDashY(y1);
-        double bx = toDashX(x2), by = toDashY(y2);
-        double cx = toDashX(x3), cy = toDashY(y3);
-        c.strokeLine(ax, ay, bx, by);
-        c.strokeLine(bx, by, cx, cy);
-        c.strokeLine(cx, cy, ax, ay);
+        strokeLineField(c, x1, y1, x2, y2);
+        strokeLineField(c, x2, y2, x3, y3);
+        strokeLineField(c, x3, y3, x1, y1);
     }
 
-    private static double toDashX(double fieldX) {
-        return fieldX; // X axes already aligned (centered field frame)
+    /*
+     * DASHBOARD ORIENTATION CHECK (manual verification):
+     * 1) Place the robot at a known field corner or (0,0) origin and verify the dot
+     *    appears in the same corner/center on the dashboard overlay.
+     * 2) Drive toward the targets; confirm the pose dot moves upward on the field view.
+     * 3) Confirm the static elements (targets, human player zones) match expected
+     *    left/right/top/bottom after applying the dashboard transform.
+     */
+    private static DashboardPoint toDashboardPoint(double fieldX, double fieldY) {
+        double x = fieldX;
+        double y = fieldY;
+        if (OdometryConfig.DASHBOARD_MIRROR_X) {
+            x = -x;
+        }
+        if (OdometryConfig.DASHBOARD_MIRROR_Y) {
+            y = -y;
+        }
+
+        double rotationDeg = normalizeRotationDeg(OdometryConfig.DASHBOARD_ROTATION_DEG);
+        double rad = Math.toRadians(rotationDeg);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        double rx = x * cos - y * sin;
+        double ry = x * sin + y * cos;
+        return new DashboardPoint(rx, ry);
     }
 
-    private static double toDashY(double fieldY) {
-        return fieldY; // Odometry now uses the dashboard-centered frame directly
+    private static double normalizeRotationDeg(double degrees) {
+        double normalized = degrees % 360.0;
+        if (normalized < 0) {
+            normalized += 360.0;
+        }
+        return normalized;
+    }
+
+    private static void strokeLineField(Canvas c, double x1, double y1, double x2, double y2) {
+        DashboardPoint a = toDashboardPoint(x1, y1);
+        DashboardPoint b = toDashboardPoint(x2, y2);
+        c.strokeLine(a.x, a.y, b.x, b.y);
+    }
+
+    private static void fillCircleField(Canvas c, double x, double y, double radius) {
+        DashboardPoint center = toDashboardPoint(x, y);
+        c.fillCircle(center.x, center.y, radius);
+    }
+
+    private static void strokeRectField(Canvas c, double x, double y, double width, double height) {
+        DashboardRect rect = toDashboardRect(x, y, width, height);
+        c.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    }
+
+    private static void fillRectField(Canvas c, double x, double y, double width, double height) {
+        DashboardRect rect = toDashboardRect(x, y, width, height);
+        c.fillRect(rect.x, rect.y, rect.width, rect.height);
+    }
+
+    private static DashboardRect toDashboardRect(double x, double y, double width, double height) {
+        DashboardPoint p1 = toDashboardPoint(x, y);
+        DashboardPoint p2 = toDashboardPoint(x + width, y);
+        DashboardPoint p3 = toDashboardPoint(x + width, y + height);
+        DashboardPoint p4 = toDashboardPoint(x, y + height);
+
+        double minX = Math.min(Math.min(p1.x, p2.x), Math.min(p3.x, p4.x));
+        double maxX = Math.max(Math.max(p1.x, p2.x), Math.max(p3.x, p4.x));
+        double minY = Math.min(Math.min(p1.y, p2.y), Math.min(p3.y, p4.y));
+        double maxY = Math.max(Math.max(p1.y, p2.y), Math.max(p3.y, p4.y));
+        return new DashboardRect(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    private static final class DashboardPoint {
+        private final double x;
+        private final double y;
+
+        private DashboardPoint(double x, double y) {
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    private static final class DashboardRect {
+        private final double x;
+        private final double y;
+        private final double width;
+        private final double height;
+
+        private DashboardRect(double x, double y, double width, double height) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
     }
 }

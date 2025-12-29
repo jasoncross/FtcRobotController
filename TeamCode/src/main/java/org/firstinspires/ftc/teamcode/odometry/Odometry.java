@@ -46,6 +46,8 @@ import static java.lang.Math.*;
  *                        reasons to diagnose Limelight fusion decisions.
  * CHANGES (2025-12-29): Removed NetworkTables localization filter fallback so
  *                        builds without WPILib NTCore remain compatible.
+ * CHANGES (2025-12-29): Switched MT2 yaw feeding to the Limelight NT
+ *                        robot_orientation_set entry with debug confirmation.
  */
 public class Odometry {
 
@@ -63,6 +65,8 @@ public class Odometry {
     private FieldPose lastRawVisionPose = null;
     private double lastRawErrorMag = Double.NaN;
     private boolean lastYawFeedOk = false;
+    private Double lastYawSentDeg = null;
+    private String lastLimelightTableName = "limelight";
     private boolean lastPoseUsedMt2 = false;
     private Long lastVisionAgeMs = null;
     private Integer lastPrimaryTagId = null;
@@ -71,6 +75,7 @@ public class Odometry {
     private String visionDebugLine = null;
     private long lastLocalizationFilterMs = 0L;
     private long lastYawFeedMs = 0L;
+    private static final String LIMELIGHT_NT_NAME = "limelight";
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -311,24 +316,36 @@ public class Odometry {
 
     private void feedLimelightYaw(double headingDeg) {
         lastYawFeedOk = false;
+        lastYawSentDeg = null;
         if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 || limelight == null) return;
-        lastYawFeedOk = invokeYawFeed(headingDeg);
+        lastYawFeedOk = writeYawToNetworkTables(headingDeg);
         if (lastYawFeedOk) {
+            lastYawSentDeg = headingDeg;
             lastYawFeedMs = System.currentTimeMillis();
         }
     }
 
-    private boolean invokeYawFeed(double headingDeg) {
+    private boolean writeYawToNetworkTables(double headingDeg) {
         try {
-            limelight.getClass().getMethod(
-                    "setRobotOrientation",
-                    double.class,
-                    double.class,
-                    double.class,
-                    double.class,
-                    double.class,
-                    double.class
-            ).invoke(limelight, headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0);
+            Class<?> instanceClass = Class.forName("edu.wpi.first.networktables.NetworkTableInstance");
+            Object instance = instanceClass.getMethod("getDefault").invoke(null);
+            Object table = instanceClass.getMethod("getTable", String.class)
+                    .invoke(instance, LIMELIGHT_NT_NAME);
+            if (table == null) return false;
+            lastLimelightTableName = LIMELIGHT_NT_NAME;
+
+            Class<?> tableClass = table.getClass();
+            Object entry = tableClass.getMethod("getEntry", String.class)
+                    .invoke(table, "robot_orientation_set");
+            if (entry == null) return false;
+
+            double[] payload = new double[]{headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0};
+            Class<?> entryClass = entry.getClass();
+            Object result = entryClass.getMethod("setDoubleArray", double[].class)
+                    .invoke(entry, (Object) payload);
+            if (result instanceof Boolean) {
+                return (Boolean) result;
+            }
             return true;
         } catch (Throwable ignored) { }
         return false;
@@ -351,10 +368,13 @@ public class Odometry {
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
         String tidStr = (lastPrimaryTagId == null) ? "--" : String.valueOf(lastPrimaryTagId);
         String errStr = Double.isFinite(lastRawErrorMag) ? String.format(Locale.US, "%.1f", lastRawErrorMag) : "--";
+        String yawSentStr = (lastYawSentDeg == null) ? "--" : String.format(Locale.US, "%.1f", lastYawSentDeg);
         visionDebugLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
                 headingDeg,
                 lastYawFeedOk,
+                yawSentStr,
+                lastLimelightTableName,
                 lastPoseUsedMt2,
                 ageStr,
                 tidStr,

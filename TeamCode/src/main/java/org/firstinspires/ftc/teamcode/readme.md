@@ -73,7 +73,7 @@ TeamCode/
 └── src/main/java/org/firstinspires/ftc/teamcode/
     Alliance.java                        ← Alliance enum for selecting RED/BLUE behaviors
     ├── odometry/
-    │   ├── DecodeFieldDrawing.java          ← FTC Dashboard field renderer using odometry coords
+    │   ├── DecodeFieldDrawing.java          ← FTC Dashboard field renderer (CCW heading arrow, odometry coords)
     │   ├── FieldPose.java                   ← Simple pose container used across TeleOp/Auto
     │   ├── Odometry.java                    ← Fused wheel/IMU/AprilTag odometry helper
     │   └── PoseStore.java                   ← Shared Auto→TeleOp pose handoff container
@@ -392,6 +392,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2025-12-29** – Corrected the FTC Dashboard pose arrow so CCW-positive heading renders properly, and fixed the drivetrain encoder ticks-per-rev constant to eliminate the ~4× odometry distance shortfall (with notes on 1x vs. quadrature counts).
 - **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection now continues through START without resets, the fallback pipeline index is tunable, and the selector remembers the last successful pipeline for tag-less autos with optional persistence and memory fallback telemetry.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are

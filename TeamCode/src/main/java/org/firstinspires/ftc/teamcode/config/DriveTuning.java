@@ -28,6 +28,9 @@
  * CHANGES (2025-11-29): Added tunable translation speed floors for Auto move
  *                        tapering so distance accuracy stays configurable per
  *                        robot without editing Drivebase.java.
+ * CHANGES (2025-12-29): Corrected encoder ticks-per-rev to match 1x (non-
+ *                        quadrature) counting so odometry distance scales
+ *                        correctly on the field.
  */
 package org.firstinspires.ftc.teamcode.config;
 
@@ -36,7 +39,7 @@ public final class DriveTuning {
 
     // Geometry & encoders
     public static double WHEEL_DIAMETER_IN = 4.098; // goBILDA 96 mm wheel ≈ 3.7795"
-    public static double TICKS_PER_REV     = 537.7;  // goBILDA 5202 312 RPM output encoder
+    public static double TICKS_PER_REV     = 134.425;  // goBILDA 5202 312 RPM output encoder (1x counts, not 4x quadrature)
     public static double GEAR_RATIO        = 1.0;    // Wheel revs per motor rev (>1 if reduced)
 
     // Strafing compensation (empirical)

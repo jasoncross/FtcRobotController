@@ -2,6 +2,9 @@ package org.firstinspires.ftc.teamcode.odometry;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
@@ -46,8 +49,8 @@ import static java.lang.Math.*;
  *                        reasons to diagnose Limelight fusion decisions.
  * CHANGES (2025-12-29): Removed NetworkTables localization filter fallback so
  *                        builds without WPILib NTCore remain compatible.
- * CHANGES (2025-12-29): Switched MT2 yaw feeding to the Limelight NT
- *                        robot_orientation_set entry with debug confirmation.
+ * CHANGES (2025-12-29): Switched MT2 yaw feeding + localization filtering to
+ *                        NetworkTables writes with debug confirmation.
  */
 public class Odometry {
 
@@ -74,7 +77,8 @@ public class Odometry {
     private String visionDebugLine = null;
     private long lastLocalizationFilterMs = 0L;
     private long lastYawFeedMs = 0L;
-    private static final String LIMELIGHT_NT_NAME = "limelight";
+    private static final String LIMELIGHT_ORIENTATION_KEY = "robot_orientation_set";
+    private static final String LIMELIGHT_FIDUCIAL_FILTER_KEY = "fiducial_id_filters_set";
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -107,8 +111,6 @@ public class Odometry {
      */
     public FieldPose update() {
         double heading = normalizeHeading(drive.heading());
-        applyLimelightLocalizationFilter();
-        feedLimelightYaw(heading);
 
         double[] wheels = drive.getWheelPositionsInches();
         long nowNs = System.nanoTime();
@@ -158,6 +160,9 @@ public class Odometry {
             lastRejectReason = "OFF";
             return base;
         }
+
+        applyLimelightLocalizationFilter();
+        feedLimelightYaw(base.headingDeg);
 
         if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S) {
             lastRejectReason = "SPEED";
@@ -273,50 +278,29 @@ public class Odometry {
     }
 
     private void applyLimelightLocalizationFilter() {
-        if (!VisionConfig.LimelightFusion.ENABLE_LL_LOCALIZATION_TAG_FILTER || limelight == null) return;
+        if (!VisionConfig.LimelightFusion.ENABLE_LL_LOCALIZATION_TAG_FILTER) return;
         int[] ids = VisionConfig.LimelightFusion.LL_LOCALIZATION_ALLOWED_TAGS;
         if (ids == null || ids.length == 0) return;
 
         long now = System.currentTimeMillis();
-        if ((now - lastLocalizationFilterMs) < 1000L) return;
+        if ((now - lastLocalizationFilterMs) < 500L) return;
 
-        boolean applied = false;
-        if (invokeLocalizationFilter(ids, "setFiducialIDFiltersOverride", int[].class)) applied = true;
-        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFiltersOverride", int[].class)) applied = true;
-        if (!applied && invokeLocalizationFilter(ids, "setFiducialIDFilters", int[].class)) applied = true;
-        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilters", int[].class)) applied = true;
-        if (!applied && invokeLocalizationFilter(ids, "setFiducialIDFilter", int[].class)) applied = true;
-        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilter", int[].class)) applied = true;
-        if (!applied) {
-            double[] doubleIds = new double[ids.length];
-            for (int i = 0; i < ids.length; i++) {
-                doubleIds[i] = ids[i];
-            }
-            if (invokeLocalizationFilter(doubleIds, "setFiducialIDFiltersOverride", double[].class)) applied = true;
-            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFiltersOverride", double[].class)) applied = true;
-            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilters", double[].class)) applied = true;
-            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilters", double[].class)) applied = true;
-            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilter", double[].class)) applied = true;
-            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilter", double[].class)) applied = true;
+        NetworkTable table = NetworkTableInstance.getDefault().getTable(VisionConfig.LimelightFusion.LL_NT_NAME);
+        NetworkTableEntry entry = table.getEntry(LIMELIGHT_FIDUCIAL_FILTER_KEY);
+        double[] payload = new double[ids.length];
+        for (int i = 0; i < ids.length; i++) {
+            payload[i] = ids[i];
         }
-        if (applied) {
+        if (entry.setDoubleArray(payload)) {
             lastLocalizationFilterMs = now;
         }
-    }
-
-    private boolean invokeLocalizationFilter(Object payload, String method, Class<?> paramType) {
-        try {
-            limelight.getClass().getMethod(method, paramType).invoke(limelight, payload);
-            return true;
-        } catch (Throwable ignored) { }
-        return false;
     }
 
 
     private void feedLimelightYaw(double headingDeg) {
         lastYawFeedOk = false;
         lastYawSentDeg = null;
-        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 || limelight == null) return;
+        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2) return;
         lastYawFeedOk = writeYawToNetworkTables(headingDeg);
         if (lastYawFeedOk) {
             lastYawSentDeg = headingDeg;
@@ -325,28 +309,12 @@ public class Odometry {
     }
 
     private boolean writeYawToNetworkTables(double headingDeg) {
-        try {
-            Class<?> instanceClass = Class.forName("edu.wpi.first.networktables.NetworkTableInstance");
-            Object instance = instanceClass.getMethod("getDefault").invoke(null);
-            Object table = instanceClass.getMethod("getTable", String.class)
-                    .invoke(instance, LIMELIGHT_NT_NAME);
-            if (table == null) return false;
-
-            Class<?> tableClass = table.getClass();
-            Object entry = tableClass.getMethod("getEntry", String.class)
-                    .invoke(table, "robot_orientation_set");
-            if (entry == null) return false;
-
-            double[] payload = new double[]{headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0};
-            Class<?> entryClass = entry.getClass();
-            Object result = entryClass.getMethod("setDoubleArray", double[].class)
-                    .invoke(entry, (Object) payload);
-            if (result instanceof Boolean) {
-                return (Boolean) result;
-            }
-            return true;
-        } catch (Throwable ignored) { }
-        return false;
+        NetworkTable table = NetworkTableInstance.getDefault().getTable(VisionConfig.LimelightFusion.LL_NT_NAME);
+        NetworkTableEntry entry = table.getEntry(LIMELIGHT_ORIENTATION_KEY);
+        double[] payload = new double[]{headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0};
+        boolean ok = entry.setDoubleArray(payload);
+        lastYawSentDeg = headingDeg;
+        return ok;
     }
 
     private void resetVisionDebug() {
@@ -372,7 +340,7 @@ public class Odometry {
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
-                LIMELIGHT_NT_NAME,
+                VisionConfig.LimelightFusion.LL_NT_NAME,
                 lastPoseUsedMt2,
                 ageStr,
                 tidStr,

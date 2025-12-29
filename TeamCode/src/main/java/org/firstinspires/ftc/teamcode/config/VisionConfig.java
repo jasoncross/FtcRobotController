@@ -40,6 +40,8 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *                        and reject off-field botpose updates.
  * CHANGES (2025-12-29): Renamed Limelight localization tunables for clarity and
  *                        added consolidated field-bound limits.
+ * CHANGES (2025-12-29): Added Limelight NetworkTables table name for MT2 yaw
+ *                        feed and localization filter writes.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -78,6 +80,7 @@ public final class VisionConfig {
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
         public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
+        public static final String LL_NT_NAME = "limelight"; // NetworkTables name used for MT2 yaw + localization filter writes
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial filter for botpose localization
         public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for botpose localization
         public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Reject vision pose if |X| or |Y| exceeds this bound (inches)

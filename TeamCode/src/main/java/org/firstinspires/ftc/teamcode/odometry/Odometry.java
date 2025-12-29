@@ -2,12 +2,15 @@ package org.firstinspires.ftc.teamcode.odometry;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 
-import java.util.Arrays;
+import java.util.Locale;
 
 import static java.lang.Math.*;
 
@@ -42,6 +45,8 @@ import static java.lang.Math.*;
  * CHANGES (2025-12-29): Added Limelight localization filters, MT2 yaw feeding,
  *                        and field-bounds gating so vision fusion stays stable
  *                        and goal-tag-only for pose updates.
+ * CHANGES (2025-12-29): Added per-loop vision debug telemetry and rejection
+ *                        reasons to diagnose Limelight fusion decisions.
  */
 public class Odometry {
 
@@ -56,8 +61,17 @@ public class Odometry {
     private long lastAcceptedVisionMs = -1L;
     private int validVisionStreak = 0;
     private FieldPose lastVisionPose = null;
-    private boolean localizationFilterApplied = false;
-    private int localizationFilterHash = 0;
+    private FieldPose lastRawVisionPose = null;
+    private double lastRawErrorMag = Double.NaN;
+    private boolean lastYawFeedOk = false;
+    private boolean lastPoseUsedMt2 = false;
+    private Long lastVisionAgeMs = null;
+    private Integer lastPrimaryTagId = null;
+    private int lastVisibleTagCount = 0;
+    private String lastRejectReason = "OK";
+    private String visionDebugLine = null;
+    private long lastLocalizationFilterMs = 0L;
+    private long lastYawFeedMs = 0L;
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -80,6 +94,9 @@ public class Odometry {
 
     /** Returns the last accepted Limelight XY pose (field frame) if available. */
     public FieldPose getLastVisionPose() { return lastVisionPose == null ? null : lastVisionPose.copy(); }
+
+    /** Returns the latest Limelight fusion debug line (null when unavailable). */
+    public String getVisionDebugLine() { return visionDebugLine; }
 
     /**
      * Update pose using wheel deltas + IMU heading. Optionally blend Limelight
@@ -127,29 +144,40 @@ public class Odometry {
 
         FieldPose blended = applyLimelightFusion(integrated, speedInPerS, turnRateDegPerS);
         pose = lowPass(pose, blended, OdometryConfig.POSE_FILTER_STRENGTH);
+        updateVisionDebugLine(heading);
         return pose.copy();
     }
 
     private FieldPose applyLimelightFusion(FieldPose base, double speedInPerS, double turnRateDegPerS) {
+        resetVisionDebug();
         if (!VisionConfig.LimelightFusion.ENABLE_POSE_FUSION || limelight == null) {
             validVisionStreak = 0;
+            lastRejectReason = "OFF";
             return base;
         }
 
-        if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S
-                || turnRateDegPerS > VisionConfig.LimelightFusion.MAX_TURN_RATE_DEG_PER_S) {
+        if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S) {
+            lastRejectReason = "SPEED";
+            return base;
+        }
+        if (turnRateDegPerS > VisionConfig.LimelightFusion.MAX_TURN_RATE_DEG_PER_S) {
+            lastRejectReason = "TURN";
             return base;
         }
 
         LLResult result = limelight.getLatestResult();
         if (result == null || !result.isValid()) {
             validVisionStreak = 0;
+            lastRejectReason = "NULL";
             return base;
         }
+        lastPrimaryTagId = readPrimaryTagId(result);
+        lastVisibleTagCount = countFiducials(result);
 
         Pose3D pose3D = selectPose(result);
         if (pose3D == null || pose3D.getPosition() == null) {
             validVisionStreak = 0;
+            lastRejectReason = "NULL";
             return base;
         }
 
@@ -157,23 +185,27 @@ public class Odometry {
         Long timestampMs = readTimestampMs(result);
         if (timestampMs != null) {
             long ageMs = nowMs - timestampMs;
+            lastVisionAgeMs = ageMs;
             if (ageMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
                 validVisionStreak = 0;
+                lastRejectReason = "AGE";
                 return base;
             }
         }
 
         validVisionStreak++;
         if (validVisionStreak < VisionConfig.LimelightFusion.MIN_VALID_FRAMES) {
+            lastRejectReason = "STREAK";
             return base;
         }
 
         double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y);
         double vx = xy[0];
         double vy = xy[1];
-        if (Math.abs(vx) > VisionConfig.LimelightFusion.MAX_FIELD_X_IN
-                || Math.abs(vy) > VisionConfig.LimelightFusion.MAX_FIELD_Y_IN) {
+        lastRawVisionPose = new FieldPose(vx, vy, base.headingDeg);
+        if (!isWithinFieldBounds(vx, vy)) {
             validVisionStreak = 0;
+            lastRejectReason = "BOUNDS";
             return base;
         }
 
@@ -190,7 +222,9 @@ public class Odometry {
         double ex = vx - base.x;
         double ey = vy - base.y;
         double errorMag = hypot(ex, ey);
+        lastRawErrorMag = errorMag;
         if (errorMag > maxJump) {
+            lastRejectReason = "JUMP";
             return base;
         }
 
@@ -200,25 +234,22 @@ public class Odometry {
                 base.y + step[1] * alpha,
                 base.headingDeg
         );
-        if (Math.abs(corrected.x) > VisionConfig.LimelightFusion.MAX_FIELD_X_IN
-                || Math.abs(corrected.y) > VisionConfig.LimelightFusion.MAX_FIELD_Y_IN) {
+        if (!isWithinFieldBounds(corrected.x, corrected.y)) {
             validVisionStreak = 0;
+            lastRejectReason = "BOUNDS";
             return base;
         }
         lastVisionPose = new FieldPose(vx, vy, base.headingDeg);
         lastAcceptedVisionMs = nowMs;
+        lastRejectReason = "OK";
         return corrected;
     }
 
     private Pose3D selectPose(LLResult result) {
         if (result == null) return null;
-        Pose3D pose = null;
-        if (VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2) {
-            pose = result.getBotpose_MT2();
-        }
-        if (pose == null) {
-            pose = result.getBotpose();
-        }
+        Pose3D mt2 = VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 ? result.getBotpose_MT2() : null;
+        Pose3D pose = (mt2 != null) ? mt2 : result.getBotpose();
+        lastPoseUsedMt2 = pose != null && mt2 != null;
         return pose;
     }
 
@@ -239,15 +270,17 @@ public class Odometry {
     }
 
     private void applyLimelightLocalizationFilter() {
-        if (!VisionConfig.LimelightFusion.LOCALIZATION_FILTER_ENABLED || limelight == null) return;
-        int[] ids = VisionConfig.LimelightFusion.LOCALIZATION_TAG_IDS;
+        if (!VisionConfig.LimelightFusion.ENABLE_LL_LOCALIZATION_TAG_FILTER || limelight == null) return;
+        int[] ids = VisionConfig.LimelightFusion.LL_LOCALIZATION_ALLOWED_TAGS;
         if (ids == null || ids.length == 0) return;
 
-        int hash = Arrays.hashCode(ids);
-        if (localizationFilterApplied && hash == localizationFilterHash) return;
+        long now = System.currentTimeMillis();
+        if ((now - lastLocalizationFilterMs) < 1000L) return;
 
         boolean applied = false;
-        if (invokeLocalizationFilter(ids, "setFiducialIDFilters", int[].class)) applied = true;
+        if (invokeLocalizationFilter(ids, "setFiducialIDFiltersOverride", int[].class)) applied = true;
+        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFiltersOverride", int[].class)) applied = true;
+        if (!applied && invokeLocalizationFilter(ids, "setFiducialIDFilters", int[].class)) applied = true;
         if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilters", int[].class)) applied = true;
         if (!applied && invokeLocalizationFilter(ids, "setFiducialIDFilter", int[].class)) applied = true;
         if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilter", int[].class)) applied = true;
@@ -256,15 +289,19 @@ public class Odometry {
             for (int i = 0; i < ids.length; i++) {
                 doubleIds[i] = ids[i];
             }
-            if (invokeLocalizationFilter(doubleIds, "setFiducialIDFilters", double[].class)) applied = true;
+            if (invokeLocalizationFilter(doubleIds, "setFiducialIDFiltersOverride", double[].class)) applied = true;
+            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFiltersOverride", double[].class)) applied = true;
+            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilters", double[].class)) applied = true;
             if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilters", double[].class)) applied = true;
             if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilter", double[].class)) applied = true;
             if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilter", double[].class)) applied = true;
         }
+        if (!applied) {
+            applied = applyLocalizationFilterNetworkTables(ids);
+        }
 
         if (applied) {
-            localizationFilterApplied = true;
-            localizationFilterHash = hash;
+            lastLocalizationFilterMs = now;
         }
     }
 
@@ -276,30 +313,168 @@ public class Odometry {
         return false;
     }
 
-    private void feedLimelightYaw(double headingDeg) {
-        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 || limelight == null) return;
-
-        if (invokeYawFeed(headingDeg, "setRobotYaw", double.class)) return;
-        if (invokeYawFeed(headingDeg, "setRobotOrientation", double.class, double.class, double.class)) return;
-        invokeYawFeed(headingDeg, "setRobotOrientation", double.class, double.class, double.class, double.class);
+    private boolean applyLocalizationFilterNetworkTables(int[] ids) {
+        NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+        if (table == null) return false;
+        double[] payload = new double[ids.length];
+        for (int i = 0; i < ids.length; i++) {
+            payload[i] = ids[i];
+        }
+        boolean applied = false;
+        NetworkTableEntry entry = table.getEntry("fiducial_id_filters_override");
+        if (entry != null) {
+            applied = entry.setDoubleArray(payload) || applied;
+        }
+        NetworkTableEntry fallbackEntry = table.getEntry("fiducial_id_filters");
+        if (fallbackEntry != null) {
+            applied = fallbackEntry.setDoubleArray(payload) || applied;
+        }
+        return applied;
     }
 
-    private boolean invokeYawFeed(double headingDeg, String method, Class<?>... paramTypes) {
+    private void feedLimelightYaw(double headingDeg) {
+        lastYawFeedOk = false;
+        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 || limelight == null) return;
+        lastYawFeedOk = invokeYawFeed(headingDeg);
+        if (lastYawFeedOk) {
+            lastYawFeedMs = System.currentTimeMillis();
+        }
+    }
+
+    private boolean invokeYawFeed(double headingDeg) {
         try {
-            if (paramTypes.length == 1) {
-                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg);
-                return true;
-            }
-            if (paramTypes.length == 3) {
-                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg, 0.0, 0.0);
-                return true;
-            }
-            if (paramTypes.length == 4) {
-                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg, 0.0, 0.0, 0.0);
-                return true;
-            }
+            limelight.getClass().getMethod(
+                    "setRobotOrientation",
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class
+            ).invoke(limelight, headingDeg, 0.0, 0.0, 0.0, 0.0, 0.0);
+            return true;
         } catch (Throwable ignored) { }
         return false;
+    }
+
+    private void resetVisionDebug() {
+        lastRawVisionPose = null;
+        lastRawErrorMag = Double.NaN;
+        lastVisionAgeMs = null;
+        lastPrimaryTagId = null;
+        lastVisibleTagCount = 0;
+        lastPoseUsedMt2 = false;
+        lastRejectReason = "OK";
+    }
+
+    private void updateVisionDebugLine(double headingDeg) {
+        String rawStr = formatPoint(lastRawVisionPose);
+        String accStr = formatPoint(lastVisionPose);
+        String fusedStr = formatPoint(pose);
+        String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
+        String tidStr = (lastPrimaryTagId == null) ? "--" : String.valueOf(lastPrimaryTagId);
+        String errStr = Double.isFinite(lastRawErrorMag) ? String.format(Locale.US, "%.1f", lastRawErrorMag) : "--";
+        visionDebugLine = String.format(Locale.US,
+                "VisionDbg h=%.1f yawOk=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
+                headingDeg,
+                lastYawFeedOk,
+                lastPoseUsedMt2,
+                ageStr,
+                tidStr,
+                lastVisibleTagCount,
+                rawStr,
+                accStr,
+                fusedStr,
+                errStr,
+                lastRejectReason);
+    }
+
+    private String formatPoint(FieldPose point) {
+        if (point == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", point.x, point.y);
+    }
+
+    private boolean isWithinFieldBounds(double x, double y) {
+        double bound = VisionConfig.LimelightFusion.LL_FUSION_FIELD_BOUNDS_IN;
+        return Math.abs(x) <= bound && Math.abs(y) <= bound;
+    }
+
+    private int countFiducials(LLResult result) {
+        if (result == null) return 0;
+        Object list = readList(result, "getFiducialResults");
+        if (list instanceof Iterable) {
+            int count = 0;
+            for (Object ignored : (Iterable<?>) list) {
+                count++;
+            }
+            return count;
+        }
+        int[] ids = readIntArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+        if (ids != null) return ids.length;
+        double[] idsDouble = readDoubleArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+        return idsDouble != null ? idsDouble.length : 0;
+    }
+
+    private Integer readPrimaryTagId(LLResult result) {
+        if (result == null) return null;
+        Integer direct = readSingleId(result, "getFiducialId", "getTid", "getTargetId");
+        if (direct != null) return direct;
+        Object list = readList(result, "getFiducialResults");
+        if (list instanceof Iterable) {
+            for (Object entry : (Iterable<?>) list) {
+                Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
+                if (id != null) return id;
+            }
+        }
+        return null;
+    }
+
+    private Object readList(Object owner, String... methods) {
+        for (String method : methods) {
+            try {
+                Object value = owner.getClass().getMethod(method).invoke(owner);
+                if (value != null) {
+                    return value;
+                }
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private Integer readSingleId(Object owner, String... methods) {
+        for (String method : methods) {
+            try {
+                Object value = owner.getClass().getMethod(method).invoke(owner);
+                if (value instanceof Number) {
+                    return ((Number) value).intValue();
+                }
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private int[] readIntArray(Object owner, String... methods) {
+        for (String method : methods) {
+            try {
+                Object value = owner.getClass().getMethod(method).invoke(owner);
+                if (value instanceof int[]) {
+                    return (int[]) value;
+                }
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private double[] readDoubleArray(Object owner, String... methods) {
+        for (String method : methods) {
+            try {
+                Object value = owner.getClass().getMethod(method).invoke(owner);
+                if (value instanceof double[]) {
+                    return (double[]) value;
+                }
+            } catch (Throwable ignored) { }
+        }
+        return null;
     }
 
     private Long readTimestampMs(LLResult result) {

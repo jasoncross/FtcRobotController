@@ -69,6 +69,8 @@
  * CHANGES (2025-12-28): Added memory fallback telemetry lines for Limelight
  *                       auto-selection without altering the urgent banner
  *                       ordering.
+ * CHANGES (2025-12-29): Added a Limelight fusion debug telemetry line to
+ *                       surface pose acceptance and yaw-feed status.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a
@@ -1185,6 +1187,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
             String runningLine = limelightAutoSelector.getRunningStatusLine();
             if (runningLine != null) {
                 mirrorLine(dashboardLines, runningLine);
+            }
+        }
+        if (odometry != null) {
+            String visionDebug = odometry.getVisionDebugLine();
+            if (visionDebug != null) {
+                telemetry.addLine(visionDebug);
             }
         }
         sendDashboard(fusedPose, "RUN", dashboardLines);

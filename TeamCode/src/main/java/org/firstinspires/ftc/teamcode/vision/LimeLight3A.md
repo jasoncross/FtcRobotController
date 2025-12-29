@@ -74,6 +74,7 @@ Primary source: **3D AprilTag pose data (botpose MT2 preferred)**
 - Localization filters fiducials to goal tags **20/24** only (obelisk tags never feed `botpose`/`botpose_MT2`).
 - MegaTag2 is stabilized by feeding the robot’s IMU yaw to Limelight every loop (0° toward +Y, CCW positive).
 - Vision fusion rejects any Limelight pose outside ±90 in X/Y to keep pose seeding on-field.
+- TeleOp exposes a compact `VisionDbg` telemetry line with yaw feed status, raw/accepted/fused poses, and rejection reasons for MT2 diagnostics.
 
 ---
 

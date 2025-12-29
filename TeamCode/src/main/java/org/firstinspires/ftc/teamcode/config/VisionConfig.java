@@ -81,18 +81,18 @@ public final class VisionConfig {
         public static final long REACQUIRE_AFTER_MS = 600; // Enter reacquire mode if no accepted vision for this long (ms)
         public static final double MAX_POS_JUMP_IN_REACQUIRE = 72.0; // Looser reject threshold after tag loss (inches)
 
-        public static final double MAX_CORRECTION_STEP_IN = 3.0; // Clamp per-update correction magnitude (inches)
+        public static final double MAX_CORRECTION_STEP_IN = 180.0; // Clamp per-update correction magnitude (inches)
         public static final double FUSION_ALPHA_NORMAL = 0.35; // Blend factor for clamped corrections during normal tracking
         public static final double FUSION_ALPHA_REACQUIRE = 0.25; // Blend factor for clamped corrections immediately after reacquire
 
         public static final double MAX_SPEED_IN_PER_S = 35.0; // Skip fusion if robot is faster than this (in/s)
         public static final double MAX_TURN_RATE_DEG_PER_S = 140.0; // Skip fusion if turning faster than this (deg/s)
 
-        public static final boolean AXIS_SWAP_XY = false; // Swap X/Y axes from Limelight pose if needed
-        public static final int X_SIGN = 1; // Flip X axis if needed (+1 normal)
+        public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose if needed
+        public static final int X_SIGN = -1; // Flip X axis if needed (+1 normal)
         public static final int Y_SIGN = 1; // Flip Y axis if needed (+1 normal)
-        public static final double X_OFFSET_IN = 0.0; // Additive X offset if needed (inches)
-        public static final double Y_OFFSET_IN = 0.0; // Additive Y offset if needed (inches)
+        public static final double X_OFFSET_IN = -110.0; // Additive X offset if needed (inches)
+        public static final double Y_OFFSET_IN = 110.0; // Additive Y offset if needed (inches)
     }
 
     public static int goalTagIdForAlliance(Alliance alliance) {

@@ -75,7 +75,7 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
     // CHANGES (2025-12-11): Recentered odometry start pose to (-12, -72, 0) in the field-center frame (human wall = −72" Y).
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
-    public Auto_Blue_Human_LongShot() { setStartingPose(-12.0, -72.0, 0.0); }
+    public Auto_Blue_Human_LongShot() { setStartingPose(-12.0, -63.0, 0.0); }
     // Telemetry label describing the expected robot orientation at init (edit
     // this string whenever the start pose changes so the Driver Station prompt
     // stays accurate).

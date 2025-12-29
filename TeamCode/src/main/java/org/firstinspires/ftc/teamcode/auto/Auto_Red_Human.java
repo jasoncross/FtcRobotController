@@ -73,7 +73,7 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-12-11): Recentered odometry start pose to (+12, -72, 0) in the field-center frame (human wall = −72" Y).
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
-    public Auto_Red_Human() { setStartingPose(12.0, -72.0, 0.0); }
+    public Auto_Red_Human() { setStartingPose(12.0, -63.0, 0.0); }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
     // this whenever start staging changes so the Start Pose telemetry stays
     // correct).

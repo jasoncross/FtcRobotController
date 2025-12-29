@@ -162,7 +162,7 @@ public class Odometry {
         double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y);
         double vx = xy[0];
         double vy = xy[1];
-        lastVisionPose = new FieldPose(vx, vy, base.headingDeg);
+
 
         long sinceLast = (lastAcceptedVisionMs < 0) ? Long.MAX_VALUE : nowMs - lastAcceptedVisionMs;
         boolean reacquire = sinceLast > VisionConfig.LimelightFusion.REACQUIRE_AFTER_MS;
@@ -186,6 +186,7 @@ public class Odometry {
                 base.y + step[1] * alpha,
                 base.headingDeg
         );
+        lastVisionPose = new FieldPose(vx, vy, base.headingDeg);
         lastAcceptedVisionMs = nowMs;
         return corrected;
     }

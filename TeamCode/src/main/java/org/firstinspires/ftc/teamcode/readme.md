@@ -106,7 +106,7 @@ TeamCode/
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
-    │   ├── VisionConfig.java                 ← Vision source selector + alliance goal tag metadata
+    │   ├── VisionConfig.java                 ← Vision source selector + goal-tag localization filters/bounds
     │   └── VisionTuning.java                 ← AprilTag range scale + camera profile/intrinsics tunables
     ├── control/
     │   └── LauncherAutoSpeedController.java  ← Distance→RPM mapping + smoothing for AutoSpeed
@@ -138,7 +138,9 @@ Limelight-targeted autos now apply alliance-only goal filtering with smoothed
 visibility (multi-frame acquire/loss counters plus a 150 ms hold on the last
 tx) so brief flickers no longer bounce the scan state. AUTO telemetry reports
 raw vs. smoothed visibility, the held tx sample, lost-frame count, and the
-active Limelight pipeline to confirm the stabilizer is engaged.
+active Limelight pipeline to confirm the stabilizer is engaged. Limelight
+localization now filters botpose to goal tags (20/24 only) while aim/RPM
+targeting stays alliance-specific via priority ID.
 
 
 ---
@@ -392,7 +394,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-29** – Corrected the FTC Dashboard pose arrow so CCW-positive heading renders properly, and fixed the drivetrain encoder ticks-per-rev constant to eliminate the ~4× odometry distance shortfall (with notes on 1x vs. quadrature counts).
+- **2025-12-29** – Restricted Limelight botpose fusion to goal tags 20/24 only (obelisk excluded), fed IMU yaw to MT2 every loop, and added field-bounds guards so vision seeding/fusion never runs off-field while aim/RPM remain alliance-priority locked.
 - **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection now continues through START without resets, the fallback pipeline index is tunable, and the selector remembers the last successful pipeline for tag-less autos with optional persistence and memory fallback telemetry.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale
   hold + tx switch hysteresis), expanded telemetry so goal-visible states, lock age, per-fiducial tx, and raw global tx are

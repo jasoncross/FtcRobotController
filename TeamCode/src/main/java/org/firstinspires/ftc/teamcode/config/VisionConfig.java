@@ -35,6 +35,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  * CHANGES (2025-12-19): Added Limelight aim-lock tunables to control how long
  *                        goal-tag locks persist and how much hysteresis applies
  *                        before switching aim samples.
+ * CHANGES (2025-12-29): Added Limelight localization filter + field-bounds
+ *                        tunables to keep pose fusion constrained to goal tags
+ *                        and reject off-field botpose updates.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -73,6 +76,10 @@ public final class VisionConfig {
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
         public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
+        public static final boolean LOCALIZATION_FILTER_ENABLED = true; // Enable Limelight fiducial filter for botpose localization
+        public static final int[] LOCALIZATION_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for botpose localization
+        public static final double MAX_FIELD_X_IN = 90.0; // Reject vision pose if |X| exceeds this field bound (inches)
+        public static final double MAX_FIELD_Y_IN = 90.0; // Reject vision pose if |Y| exceeds this field bound (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
         public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)

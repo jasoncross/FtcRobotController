@@ -7,6 +7,8 @@ import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 
+import java.util.Arrays;
+
 import static java.lang.Math.*;
 
 /*
@@ -37,6 +39,9 @@ import static java.lang.Math.*;
  * CHANGES (2025-12-12): Updated Limelight pose accessors for current API field
  *                        members to restore build compatibility on center-frame
  *                        odometry.
+ * CHANGES (2025-12-29): Added Limelight localization filters, MT2 yaw feeding,
+ *                        and field-bounds gating so vision fusion stays stable
+ *                        and goal-tag-only for pose updates.
  */
 public class Odometry {
 
@@ -51,6 +56,8 @@ public class Odometry {
     private long lastAcceptedVisionMs = -1L;
     private int validVisionStreak = 0;
     private FieldPose lastVisionPose = null;
+    private boolean localizationFilterApplied = false;
+    private int localizationFilterHash = 0;
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -80,6 +87,8 @@ public class Odometry {
      */
     public FieldPose update() {
         double heading = normalizeHeading(drive.heading());
+        applyLimelightLocalizationFilter();
+        feedLimelightYaw(heading);
 
         double[] wheels = drive.getWheelPositionsInches();
         long nowNs = System.nanoTime();
@@ -162,6 +171,11 @@ public class Odometry {
         double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y);
         double vx = xy[0];
         double vy = xy[1];
+        if (Math.abs(vx) > VisionConfig.LimelightFusion.MAX_FIELD_X_IN
+                || Math.abs(vy) > VisionConfig.LimelightFusion.MAX_FIELD_Y_IN) {
+            validVisionStreak = 0;
+            return base;
+        }
 
 
         long sinceLast = (lastAcceptedVisionMs < 0) ? Long.MAX_VALUE : nowMs - lastAcceptedVisionMs;
@@ -186,6 +200,11 @@ public class Odometry {
                 base.y + step[1] * alpha,
                 base.headingDeg
         );
+        if (Math.abs(corrected.x) > VisionConfig.LimelightFusion.MAX_FIELD_X_IN
+                || Math.abs(corrected.y) > VisionConfig.LimelightFusion.MAX_FIELD_Y_IN) {
+            validVisionStreak = 0;
+            return base;
+        }
         lastVisionPose = new FieldPose(vx, vy, base.headingDeg);
         lastAcceptedVisionMs = nowMs;
         return corrected;
@@ -217,6 +236,70 @@ public class Odometry {
         ty += VisionConfig.LimelightFusion.Y_OFFSET_IN;
 
         return new double[]{tx, ty};
+    }
+
+    private void applyLimelightLocalizationFilter() {
+        if (!VisionConfig.LimelightFusion.LOCALIZATION_FILTER_ENABLED || limelight == null) return;
+        int[] ids = VisionConfig.LimelightFusion.LOCALIZATION_TAG_IDS;
+        if (ids == null || ids.length == 0) return;
+
+        int hash = Arrays.hashCode(ids);
+        if (localizationFilterApplied && hash == localizationFilterHash) return;
+
+        boolean applied = false;
+        if (invokeLocalizationFilter(ids, "setFiducialIDFilters", int[].class)) applied = true;
+        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilters", int[].class)) applied = true;
+        if (!applied && invokeLocalizationFilter(ids, "setFiducialIDFilter", int[].class)) applied = true;
+        if (!applied && invokeLocalizationFilter(ids, "setFiducialIdFilter", int[].class)) applied = true;
+        if (!applied) {
+            double[] doubleIds = new double[ids.length];
+            for (int i = 0; i < ids.length; i++) {
+                doubleIds[i] = ids[i];
+            }
+            if (invokeLocalizationFilter(doubleIds, "setFiducialIDFilters", double[].class)) applied = true;
+            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilters", double[].class)) applied = true;
+            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilter", double[].class)) applied = true;
+            if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilter", double[].class)) applied = true;
+        }
+
+        if (applied) {
+            localizationFilterApplied = true;
+            localizationFilterHash = hash;
+        }
+    }
+
+    private boolean invokeLocalizationFilter(Object payload, String method, Class<?> paramType) {
+        try {
+            limelight.getClass().getMethod(method, paramType).invoke(limelight, payload);
+            return true;
+        } catch (Throwable ignored) { }
+        return false;
+    }
+
+    private void feedLimelightYaw(double headingDeg) {
+        if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2 || limelight == null) return;
+
+        if (invokeYawFeed(headingDeg, "setRobotYaw", double.class)) return;
+        if (invokeYawFeed(headingDeg, "setRobotOrientation", double.class, double.class, double.class)) return;
+        invokeYawFeed(headingDeg, "setRobotOrientation", double.class, double.class, double.class, double.class);
+    }
+
+    private boolean invokeYawFeed(double headingDeg, String method, Class<?>... paramTypes) {
+        try {
+            if (paramTypes.length == 1) {
+                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg);
+                return true;
+            }
+            if (paramTypes.length == 3) {
+                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg, 0.0, 0.0);
+                return true;
+            }
+            if (paramTypes.length == 4) {
+                limelight.getClass().getMethod(method, paramTypes).invoke(limelight, headingDeg, 0.0, 0.0, 0.0);
+                return true;
+            }
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     private Long readTimestampMs(LLResult result) {

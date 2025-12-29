@@ -70,9 +70,9 @@ public final class OdometryConfig {
     public static final double GOAL_BLUE_Y = 72.0;         // Blue goal tag center Y
 
     public static final double CLASSIFIER_RED_X  = 68.5;   // Red classifier center X
-    public static final double CLASSIFIER_RED_Y  = 24.0;   // Red classifier center Y
+    public static final double CLASSIFIER_RED_Y  = 0.0;   // Red classifier center Y
     public static final double CLASSIFIER_BLUE_X = -68.5;    // Blue classifier center X
-    public static final double CLASSIFIER_BLUE_Y = 24.0;   // Blue classifier center Y
+    public static final double CLASSIFIER_BLUE_Y = 0.0;   // Blue classifier center Y
 
     // ==== Gates, gate zones, secret tunnel (inches) FIX THESE ALONG WITH GATE ZONE ====
     public static final double GATE_RED_X  = -60.0;         // Red gate bar center X
@@ -80,17 +80,17 @@ public final class OdometryConfig {
     public static final double GATE_BLUE_X = 60.0;          // Blue gate bar center X
     public static final double GATE_BLUE_Y = 60.0;         // Blue gate bar center Y
 
-    public static final double GATE_ZONE_RED_CENTER_X  = 48.0;  // Red gate zone center X
-    public static final double GATE_ZONE_RED_CENTER_Y  = 36.0;  // Red gate zone center Y
-    public static final double GATE_ZONE_BLUE_CENTER_X = -48.0;   // Blue gate zone center X
-    public static final double GATE_ZONE_BLUE_CENTER_Y = 36.0;  // Blue gate zone center Y
-    public static final double GATE_ZONE_WIDTH = 24.0;           // Gate zone width, inches
-    public static final double GATE_ZONE_DEPTH = 12.0;           // Gate zone depth, inches
+    public static final double GATE_ZONE_RED_CENTER_X  = 54.0;  // Red gate zone center X
+    public static final double GATE_ZONE_RED_CENTER_Y  = 0.0;  // Red gate zone center Y
+    public static final double GATE_ZONE_BLUE_CENTER_X = -54.0;   // Blue gate zone center X
+    public static final double GATE_ZONE_BLUE_CENTER_Y = 0.0;  // Blue gate zone center Y
+    public static final double GATE_ZONE_WIDTH = 12.0;           // Gate zone width, inches
+    public static final double GATE_ZONE_DEPTH = 3.0;           // Gate zone depth, inches
 
-    public static final double SECRET_TUNNEL_RED_X  = 68.5;     // Red wall secret tunnel X
+    public static final double SECRET_TUNNEL_RED_X  = -68.5;     // Red wall secret tunnel X
     public static final double SECRET_TUNNEL_RED_Y1 = -49.25;      // Red tunnel start Y
     public static final double SECRET_TUNNEL_RED_Y2 = -2.5;      // Red tunnel end Y
-    public static final double SECRET_TUNNEL_BLUE_X  = -68.5;     // Blue wall secret tunnel X
+    public static final double SECRET_TUNNEL_BLUE_X  = 68.5;     // Blue wall secret tunnel X
     public static final double SECRET_TUNNEL_BLUE_Y1 = -49.25;     // Blue tunnel start Y
     public static final double SECRET_TUNNEL_BLUE_Y2 = -2.5;     // Blue tunnel end Y
 
@@ -127,7 +127,7 @@ public final class OdometryConfig {
 
     // ==== Initial artifact groups (alliance + row aware) ====
     public static final double RED_ARTIFACT_ROW_START_X = 42.5;    // Red-side starting X for artifact rows (index 0)
-    public static final double BLUE_ARTIFACT_ROW_START_X = -42.5;  // Blue-side starting X for artifact rows (index 0)
+    public static final double BLUE_ARTIFACT_ROW_START_X = -53;  // Blue-side starting X for artifact rows (index 0)
     public static final double GPP_ROW_Y = -37.0;                   // Y coordinate for GPP row (toward targets)
     public static final double PGP_ROW_Y = -13.0;                   // Y coordinate for PGP row
     public static final double PPG_ROW_Y = 10.5;                   // Y coordinate for PPG row (furthest toward targets)

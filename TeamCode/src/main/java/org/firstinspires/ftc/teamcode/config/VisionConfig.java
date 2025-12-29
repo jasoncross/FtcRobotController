@@ -71,7 +71,7 @@ public final class VisionConfig {
         public static final int OBELISK_PIPELINE_INDEX = 0; // LL pipeline used for obelisk motif observation
         public static final int PIPELINE_INDEX = GOAL_AIM_PIPELINE_INDEX; // Compatibility alias for TeleOp pipeline selection
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
-        public static final boolean ENABLE_POSE_FUSION = false; // Enable LL XY fusion into odometry (when Limelight selected)
+        public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose

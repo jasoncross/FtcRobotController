@@ -2,9 +2,6 @@ package org.firstinspires.ftc.teamcode.odometry;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
-import edu.wpi.first.networktables.NetworkTable;
-import edu.wpi.first.networktables.NetworkTableEntry;
-import edu.wpi.first.networktables.NetworkTableInstance;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
@@ -47,6 +44,8 @@ import static java.lang.Math.*;
  *                        and goal-tag-only for pose updates.
  * CHANGES (2025-12-29): Added per-loop vision debug telemetry and rejection
  *                        reasons to diagnose Limelight fusion decisions.
+ * CHANGES (2025-12-29): Removed NetworkTables localization filter fallback so
+ *                        builds without WPILib NTCore remain compatible.
  */
 public class Odometry {
 
@@ -296,10 +295,6 @@ public class Odometry {
             if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIDFilter", double[].class)) applied = true;
             if (!applied && invokeLocalizationFilter(doubleIds, "setFiducialIdFilter", double[].class)) applied = true;
         }
-        if (!applied) {
-            applied = applyLocalizationFilterNetworkTables(ids);
-        }
-
         if (applied) {
             lastLocalizationFilterMs = now;
         }
@@ -313,24 +308,6 @@ public class Odometry {
         return false;
     }
 
-    private boolean applyLocalizationFilterNetworkTables(int[] ids) {
-        NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
-        if (table == null) return false;
-        double[] payload = new double[ids.length];
-        for (int i = 0; i < ids.length; i++) {
-            payload[i] = ids[i];
-        }
-        boolean applied = false;
-        NetworkTableEntry entry = table.getEntry("fiducial_id_filters_override");
-        if (entry != null) {
-            applied = entry.setDoubleArray(payload) || applied;
-        }
-        NetworkTableEntry fallbackEntry = table.getEntry("fiducial_id_filters");
-        if (fallbackEntry != null) {
-            applied = fallbackEntry.setDoubleArray(payload) || applied;
-        }
-        return applied;
-    }
 
     private void feedLimelightYaw(double headingDeg) {
         lastYawFeedOk = false;

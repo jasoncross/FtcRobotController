@@ -84,7 +84,7 @@ public final class VisionConfig {
         public static final String LL_NT_NAME = "limelight"; // NetworkTables name used for MT2 yaw + localization filter writes
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial filter for botpose localization
         public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for botpose localization
-        public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Reject vision pose if |X| or |Y| exceeds this bound (inches)
+        public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Deprecated: superseded by FIELD_HALF_IN - BOUNDS_MARGIN_IN (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
         public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)
@@ -103,6 +103,7 @@ public final class VisionConfig {
 
         public static final double FIELD_HALF_IN = 72.0; // Field half-length (inches) for corner→center transform
         public static final boolean APPLY_CENTER_SHIFT = true; // Apply corner→center shift before offsets
+        public static final double BOUNDS_MARGIN_IN = 4.0; // Shrink allowed field bounds by this margin (inches)
         public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose (LOCKED)
         public static final int X_SIGN = 1; // Field X sign (LOCKED)
         public static final int Y_SIGN = -1; // Field Y sign (LOCKED)

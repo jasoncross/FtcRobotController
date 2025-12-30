@@ -82,6 +82,9 @@ public class Odometry {
     private boolean lastMt2Expected = false;
     private boolean lastMt2Active = false;
     private int lastMt2TagCount = -1;
+    private Double lastBoundsTestX = null;
+    private Double lastBoundsTestY = null;
+    private Double lastBoundsMax = null;
     private final double[] lastWheelDeltaRaw = new double[4];
     private final double[] lastWheelDeltaScaled = new double[4];
     private final int[] lastWheelDeltaTicks = new int[4];
@@ -275,7 +278,11 @@ public class Odometry {
         double vx = sample.fx;
         double vy = sample.fy;
         lastRawVisionPose = new FieldPose(sample.tx, sample.ty, base.headingDeg);
-        if (!isWithinFieldBounds(vx, vy)) {
+        double maxAllowed = boundsMaxIn();
+        lastBoundsTestX = vx;
+        lastBoundsTestY = vy;
+        lastBoundsMax = maxAllowed;
+        if (!isWithinFieldBounds(vx, vy, maxAllowed)) {
             validVisionStreak = 0;
             lastRejectReason = "BOUNDS";
             return base;
@@ -306,7 +313,10 @@ public class Odometry {
                 base.y + step[1] * alpha,
                 base.headingDeg
         );
-        if (!isWithinFieldBounds(corrected.x, corrected.y)) {
+        lastBoundsTestX = corrected.x;
+        lastBoundsTestY = corrected.y;
+        lastBoundsMax = maxAllowed;
+        if (!isWithinFieldBounds(corrected.x, corrected.y, maxAllowed)) {
             validVisionStreak = 0;
             lastRejectReason = "BOUNDS";
             return base;
@@ -478,6 +488,9 @@ public class Odometry {
         lastMt2Expected = false;
         lastMt2Active = false;
         lastMt2TagCount = -1;
+        lastBoundsTestX = null;
+        lastBoundsTestY = null;
+        lastBoundsMax = null;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -491,6 +504,7 @@ public class Odometry {
         String rawRedStr = formatPoint(lastRawRedPose);
         String llXYmStr = formatXYMeters();
         String llXYinStr = formatXYInches();
+        String testStr = formatPair(lastBoundsTestX, lastBoundsTestY);
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
@@ -503,9 +517,9 @@ public class Odometry {
         String fltAgeStr = (lastLocalizationFilterMs > 0L)
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
-        String boundStr = String.format(Locale.US, "%.0f", VisionConfig.LimelightFusion.LL_FUSION_FIELD_BOUNDS_IN);
+        String boundStr = (lastBoundsMax == null) ? "--" : String.format(Locale.US, "%.0f", lastBoundsMax);
         String baseLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s test=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -527,7 +541,8 @@ public class Odometry {
                 fusedStr,
                 errStr,
                 lastRejectReason,
-                boundStr);
+                boundStr,
+                testStr);
         if (VisionConfig.LimelightFusion.DEBUG_VERBOSE_VISION) {
             visionDebugLine = baseLine + String.format(Locale.US, " rawBlue=%s rawRed=%s", rawBlueStr, rawRedStr);
         } else {
@@ -648,9 +663,21 @@ public class Odometry {
         return String.format(Locale.US, "%.1f,%.1f", point.x, point.y);
     }
 
-    private boolean isWithinFieldBounds(double x, double y) {
-        double bound = VisionConfig.LimelightFusion.LL_FUSION_FIELD_BOUNDS_IN;
+    private boolean isWithinFieldBounds(double x, double y, double bound) {
         return Math.abs(x) <= bound && Math.abs(y) <= bound;
+    }
+
+    private double boundsMaxIn() {
+        double margin = VisionConfig.LimelightFusion.BOUNDS_MARGIN_IN;
+        if (margin < 0.0) margin = 0.0;
+        double maxMargin = VisionConfig.LimelightFusion.FIELD_HALF_IN - 1.0;
+        if (margin > maxMargin) margin = maxMargin;
+        return VisionConfig.LimelightFusion.FIELD_HALF_IN - margin;
+    }
+
+    private String formatPair(Double x, Double y) {
+        if (x == null || y == null) return "--,--";
+        return String.format(Locale.US, "%.1f,%.1f", x, y);
     }
 
     private int countFiducials(LLResult result) {

@@ -111,24 +111,6 @@ public final class LimelightHelpers {
                 "getBotpose_MT2_red");
     }
 
-    public static PoseEstimate getBotPoseEstimate_wpiBlue_MegaTag2(String name) {
-        return getPoseEstimateFromResult(name, true);
-    }
-
-    public static PoseEstimate getBotPoseEstimate_wpiRed_MegaTag2(String name) {
-        return getPoseEstimateFromResult(name, false);
-    }
-
-    private static PoseEstimate getPoseEstimateFromResult(String name, boolean blue) {
-        Limelight3A limelight = LIMELIGHTS.get(name);
-        if (limelight == null) return null;
-        LLResult result = limelight.getLatestResult();
-        if (result == null) return null;
-        Pose3D pose = blue ? getBotposeMT2Blue(result) : getBotposeMT2Red(result);
-        if (pose == null) return null;
-        return new PoseEstimate(pose, 0.0);
-    }
-
     private static Pose3D readPose(LLResult result, String... methods) {
         if (result == null) return null;
         for (String method : methods) {

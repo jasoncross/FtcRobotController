@@ -35,6 +35,13 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  * CHANGES (2025-12-19): Added Limelight aim-lock tunables to control how long
  *                        goal-tag locks persist and how much hysteresis applies
  *                        before switching aim samples.
+ * CHANGES (2025-12-29): Added Limelight localization filter + field-bounds
+ *                        tunables to keep pose fusion constrained to goal tags
+ *                        and reject off-field botpose updates.
+ * CHANGES (2025-12-29): Renamed Limelight localization tunables for clarity and
+ *                        added consolidated field-bound limits.
+ * CHANGES (2025-12-29): Added Limelight NetworkTables table name for MT2 yaw
+ *                        feed and localization filter writes.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -73,6 +80,10 @@ public final class VisionConfig {
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
         public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
+        public static final String LL_NT_NAME = "limelight"; // NetworkTables name used for MT2 yaw + localization filter writes
+        public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial filter for botpose localization
+        public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for botpose localization
+        public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Reject vision pose if |X| or |Y| exceeds this bound (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
         public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)
@@ -88,11 +99,14 @@ public final class VisionConfig {
         public static final double MAX_SPEED_IN_PER_S = 35.0; // Skip fusion if robot is faster than this (in/s)
         public static final double MAX_TURN_RATE_DEG_PER_S = 140.0; // Skip fusion if turning faster than this (deg/s)
 
-        public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose if needed
-        public static final int X_SIGN = -1; // Flip X axis if needed (+1 normal)
-        public static final int Y_SIGN = 1; // Flip Y axis if needed (+1 normal)
-        public static final double X_OFFSET_IN = -110.0; // Additive X offset if needed (inches)
-        public static final double Y_OFFSET_IN = 110.0; // Additive Y offset if needed (inches)
+        public static final double FIELD_HALF_IN = 72.0; // Field half-length (inches) for corner→center transform
+        public static final boolean APPLY_CENTER_SHIFT = true; // Subtract FIELD_HALF_IN after swap/sign to align wpiBlue to center origin
+        public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose (LOCKED)
+        public static final int X_SIGN = 1; // Field X sign (LOCKED)
+        public static final int Y_SIGN = -1; // Field Y sign (LOCKED)
+        public static final double X_OFFSET_IN = 0.0; // Additive X offset if needed (inches)
+        public static final double Y_OFFSET_IN = 0.0; // Additive Y offset if needed (inches)
+        public static final boolean DEBUG_VERBOSE_VISION = false; // Enable extra VisionDbg fields (raw meters/inches)
     }
 
     public static int goalTagIdForAlliance(Alliance alliance) {

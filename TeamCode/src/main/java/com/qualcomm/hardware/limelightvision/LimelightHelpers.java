@@ -48,15 +48,25 @@ public final class LimelightHelpers {
                                               double rollRateDegPerSec) {
         Limelight3A limelight = LIMELIGHTS.get(name);
         if (limelight == null) return false;
-        limelight.setRobotOrientation(
-                yawDeg,
-                yawRateDegPerSec,
-                pitchDeg,
-                pitchRateDegPerSec,
-                rollDeg,
-                rollRateDegPerSec
-        );
-        return true;
+        try {
+            limelight.getClass().getMethod(
+                    "setRobotOrientation",
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class
+            ).invoke(limelight,
+                    yawDeg,
+                    yawRateDegPerSec,
+                    pitchDeg,
+                    pitchRateDegPerSec,
+                    rollDeg,
+                    rollRateDegPerSec);
+            return true;
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     public static boolean SetFiducialIDFiltersOverride(String name, int[] ids) {
@@ -70,7 +80,11 @@ public final class LimelightHelpers {
     public static boolean setFiducialIDFilters(String name, int[] ids) {
         Limelight3A limelight = LIMELIGHTS.get(name);
         if (limelight == null || ids == null) return false;
-        limelight.setFiducialIDFilters(ids);
-        return true;
+        try {
+            limelight.getClass().getMethod("setFiducialIDFilters", int[].class)
+                    .invoke(limelight, (Object) ids);
+            return true;
+        } catch (Throwable ignored) { }
+        return false;
     }
 }

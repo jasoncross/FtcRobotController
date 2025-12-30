@@ -95,6 +95,7 @@ public class Odometry {
     public Odometry(Drivebase drive, Limelight3A limelight) {
         this.drive = drive;
         this.limelight = limelight;
+        LimelightHelpers.registerLimelight(VisionConfig.LimelightFusion.LL_NT_NAME, limelight);
     }
 
     /** Initialize odometry to a known pose (robot center). */

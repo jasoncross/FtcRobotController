@@ -321,6 +321,9 @@ public class Odometry {
         tx *= VisionConfig.LimelightFusion.X_SIGN;
         ty *= VisionConfig.LimelightFusion.Y_SIGN;
 
+        tx -= VisionConfig.LimelightFusion.FIELD_HALF_IN;
+        ty -= VisionConfig.LimelightFusion.FIELD_HALF_IN;
+
         if (applyOffset) {
             tx += VisionConfig.LimelightFusion.X_OFFSET_IN;
             ty += VisionConfig.LimelightFusion.Y_OFFSET_IN;

@@ -53,7 +53,7 @@ public final class OdometryConfig {
     public static final double CAMERA_OFFSET_Z = 10.25;      // Camera height above floor, inches
     public static final double CAMERA_PITCH_DEG = 14.0;    // Camera pitch downward (-) relative to robot frame, degrees
     public static final double CAMERA_YAW_DEG   = 0.0;      // Camera yaw relative to robot heading, degrees
-    public static final double ODOMETRY_DISTANCE_SCALE = 1.0; // Scale factor for odometry-only wheel deltas (unitless)
+    public static final double ODOMETRY_DISTANCE_SCALE = 4.0; // Scale factor for odometry-only wheel deltas (unitless)
 
     // ==== AprilTag goal poses (inches/degrees) ====
     public static final double TAG_RED_GOAL_X       = 56.5;   // Red goal AprilTag center X, inches

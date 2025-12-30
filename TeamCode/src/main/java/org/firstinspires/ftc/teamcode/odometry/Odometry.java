@@ -610,7 +610,11 @@ public class Odometry {
 
         Pose3D pose3D = null;
         try {
-            pose3D = LimelightHelpers.getBotposeMT2Blue(limelight.getLatestResult());
+            pose3D = readMt2PoseFromHelpers(limelight.getLatestResult(),
+                    "getBotposeMT2Blue",
+                    "getBotpose_MT2_WPIBlue",
+                    "getBotpose_MT2_Blue",
+                    "getBotpose_MT2_blue");
         } catch (Throwable ignored) { }
         if (pose3D != null && pose3D.getPosition() != null) {
             sample.ok = true;

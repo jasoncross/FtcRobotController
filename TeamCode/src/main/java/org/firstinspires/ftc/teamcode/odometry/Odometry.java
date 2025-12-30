@@ -319,8 +319,9 @@ public class Odometry {
         long now = System.currentTimeMillis();
         if ((now - lastLocalizationFilterMs) < 500L) return;
 
-        LimelightHelpers.setFiducialIDFilters(VisionConfig.LimelightFusion.LL_NT_NAME, ids);
-        lastLocalizationFilterMs = now;
+        if (LimelightHelpers.setFiducialIDFilters(VisionConfig.LimelightFusion.LL_NT_NAME, ids)) {
+            lastLocalizationFilterMs = now;
+        }
     }
 
 
@@ -336,7 +337,7 @@ public class Odometry {
     }
 
     private boolean writeYawToNetworkTables(double headingDeg) {
-        LimelightHelpers.setRobotOrientation(
+        boolean ok = LimelightHelpers.setRobotOrientation(
                 VisionConfig.LimelightFusion.LL_NT_NAME,
                 headingDeg,
                 0.0,
@@ -345,7 +346,6 @@ public class Odometry {
                 0.0,
                 0.0
         );
-        boolean ok = true;
         lastYawSentDeg = headingDeg;
         return ok;
     }

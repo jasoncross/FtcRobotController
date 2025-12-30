@@ -82,8 +82,16 @@ public final class VisionConfig {
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
         public static final boolean USE_LLRESULT_BOTPOSE_MT2 = false; // Use LLResult.getBotpose_MT2() when available (diagnostic only)
         public static final String LL_NT_NAME = "limelight"; // NetworkTables name used for MT2 yaw + localization filter writes
-        public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial filter for botpose localization
-        public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for botpose localization
+        public static final boolean ENABLE_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial whitelist for localization
+        public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
+        public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
+        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = {
+                VisionAprilTag.TAG_OBELISK_GPP,
+                VisionAprilTag.TAG_OBELISK_PGP,
+                VisionAprilTag.TAG_OBELISK_PPG
+        }; // Tag IDs explicitly excluded from localization
+        public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER
+        public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Deprecated: use LOCALIZATION_VALID_TAG_IDS
         public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Deprecated: superseded by FIELD_HALF_IN - BOUNDS_MARGIN_IN (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose

@@ -101,6 +101,8 @@ public class Odometry {
     private boolean lastLocalizationFilterOk = false;
     private int lastLocalizationFilterHash = 0;
     private long lastYawFeedMs = 0L;
+    private int[] lastLocalizationIds = null;
+    private boolean lastLocalizationTidOk = false;
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -234,6 +236,7 @@ public class Odometry {
         }
         lastPrimaryTagId = readPrimaryTagId(result);
         lastVisibleTagCount = countFiducials(result);
+        lastLocalizationTidOk = isTagAllowedForLocalization(lastPrimaryTagId, lastLocalizationIds);
 
         Pose3D pose3D = selectPose(result);
         lastMt2Expected = VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2;
@@ -379,13 +382,29 @@ public class Odometry {
     }
 
     private void applyLimelightLocalizationFilter() {
-        if (!VisionConfig.LimelightFusion.ENABLE_LL_LOCALIZATION_TAG_FILTER) return;
-        int[] ids = VisionConfig.LimelightFusion.LL_LOCALIZATION_ALLOWED_TAGS;
-        if (ids == null || ids.length == 0) return;
+        if (!VisionConfig.LimelightFusion.ENABLE_LOCALIZATION_TAG_FILTER) {
+            lastLocalizationFilterOk = false;
+            lastLocalizationIds = null;
+            return;
+        }
+
+        int[] base = VisionConfig.LimelightFusion.LOCALIZATION_VALID_TAG_IDS;
+        if (base == null || base.length == 0) {
+            base = new int[]{VisionConfig.GOAL_TAG_BLUE, VisionConfig.GOAL_TAG_RED};
+        }
+        int[] excluded = VisionConfig.LimelightFusion.LOCALIZATION_EXCLUDED_TAG_IDS;
+        int[] ids = filterIds(base, excluded);
+        if (ids.length == 0) {
+            lastLocalizationFilterOk = false;
+            lastLocalizationIds = null;
+            return;
+        }
 
         long now = System.currentTimeMillis();
         int hash = Arrays.hashCode(ids);
-        boolean shouldApply = (now - lastLocalizationFilterMs) >= 500L || hash != lastLocalizationFilterHash;
+        boolean shouldApply = VisionConfig.LimelightFusion.LOCALIZATION_FILTER_APPLY_EVERY_FRAME
+                || (now - lastLocalizationFilterMs) >= 500L
+                || hash != lastLocalizationFilterHash;
         if (!shouldApply) return;
 
         boolean ok = invokeHelpersFiducialOverride(ids);
@@ -394,6 +413,7 @@ public class Odometry {
         }
 
         lastLocalizationFilterOk = ok;
+        lastLocalizationIds = ids;
         if (ok) {
             lastLocalizationFilterMs = now;
             lastLocalizationFilterHash = hash;
@@ -491,6 +511,8 @@ public class Odometry {
         lastBoundsTestX = null;
         lastBoundsTestY = null;
         lastBoundsMax = null;
+        lastLocalizationIds = null;
+        lastLocalizationTidOk = false;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -505,6 +527,8 @@ public class Odometry {
         String llXYmStr = formatXYMeters();
         String llXYinStr = formatXYInches();
         String testStr = formatPair(lastBoundsTestX, lastBoundsTestY);
+        String locIdsStr = formatIds(lastLocalizationIds);
+        String tidOkStr = String.valueOf(lastLocalizationTidOk);
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
@@ -519,13 +543,16 @@ public class Odometry {
                 : "--";
         String boundStr = (lastBoundsMax == null) ? "--" : String.format(Locale.US, "%.0f", lastBoundsMax);
         String baseLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s test=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s test=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
                 yawAgeStr,
                 lastLocalizationFilterOk,
                 fltAgeStr,
+                VisionConfig.LimelightFusion.ENABLE_LOCALIZATION_TAG_FILTER,
+                locIdsStr,
+                tidOkStr,
                 VisionConfig.LimelightFusion.LL_NT_NAME,
                 lastPoseSrc,
                 lastMt2Expected,
@@ -678,6 +705,44 @@ public class Odometry {
     private String formatPair(Double x, Double y) {
         if (x == null || y == null) return "--,--";
         return String.format(Locale.US, "%.1f,%.1f", x, y);
+    }
+
+    private String formatIds(int[] ids) {
+        if (ids == null || ids.length == 0) return "--";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(ids[i]);
+        }
+        return sb.toString();
+    }
+
+    private boolean isTagAllowedForLocalization(Integer tagId, int[] allowed) {
+        if (tagId == null || allowed == null || allowed.length == 0) return false;
+        for (int id : allowed) {
+            if (tagId == id) return true;
+        }
+        return false;
+    }
+
+    private int[] filterIds(int[] base, int[] excluded) {
+        if (base == null || base.length == 0) return new int[0];
+        if (excluded == null || excluded.length == 0) return Arrays.copyOf(base, base.length);
+        int[] tmp = new int[base.length];
+        int count = 0;
+        for (int id : base) {
+            boolean skip = false;
+            for (int ex : excluded) {
+                if (id == ex) {
+                    skip = true;
+                    break;
+                }
+            }
+            if (!skip) {
+                tmp[count++] = id;
+            }
+        }
+        return Arrays.copyOf(tmp, count);
     }
 
     private int countFiducials(LLResult result) {

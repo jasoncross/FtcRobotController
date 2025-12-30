@@ -8,6 +8,7 @@ import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 
+import java.util.Arrays;
 import java.util.Locale;
 
 import static java.lang.Math.*;
@@ -51,6 +52,10 @@ import static java.lang.Math.*;
  *                        LimelightHelpers so FTC builds avoid WPILib NTCore.
  * CHANGES (2025-12-29): Added an odometry-only distance scale to isolate Auto
  *                        move distance from pose calibration.
+ * CHANGES (2025-12-30): Routed MT2 yaw feed through LimelightHelpers static
+ *                        orientation calls (SetRobotOrientation / setRobotOrientation),
+ *                        added yaw/filter age telemetry, and preferred Helpers
+ *                        fiducial override calls with Limelight3A fallback.
  */
 public class Odometry {
 
@@ -81,6 +86,8 @@ public class Odometry {
     private String visionDebugLine = null;
     private String odometryDebugLine = null;
     private long lastLocalizationFilterMs = 0L;
+    private boolean lastLocalizationFilterOk = false;
+    private int lastLocalizationFilterHash = 0;
     private long lastYawFeedMs = 0L;
 
     private static final double M_TO_IN = 39.37007874;
@@ -88,7 +95,6 @@ public class Odometry {
     public Odometry(Drivebase drive, Limelight3A limelight) {
         this.drive = drive;
         this.limelight = limelight;
-        LimelightHelpers.registerLimelight(VisionConfig.LimelightFusion.LL_NT_NAME, limelight);
     }
 
     /** Initialize odometry to a known pose (robot center). */
@@ -317,10 +323,19 @@ public class Odometry {
         if (ids == null || ids.length == 0) return;
 
         long now = System.currentTimeMillis();
-        if ((now - lastLocalizationFilterMs) < 500L) return;
+        int hash = Arrays.hashCode(ids);
+        boolean shouldApply = (now - lastLocalizationFilterMs) >= 500L || hash != lastLocalizationFilterHash;
+        if (!shouldApply) return;
 
-        if (LimelightHelpers.setFiducialIDFilters(VisionConfig.LimelightFusion.LL_NT_NAME, ids)) {
+        boolean ok = invokeHelpersFiducialOverride(ids);
+        if (!ok) {
+            ok = invokeLimelightFiducialFilter(ids);
+        }
+
+        lastLocalizationFilterOk = ok;
+        if (ok) {
             lastLocalizationFilterMs = now;
+            lastLocalizationFilterHash = hash;
         }
     }
 
@@ -329,25 +344,75 @@ public class Odometry {
         lastYawFeedOk = false;
         lastYawSentDeg = null;
         if (!VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2) return;
-        lastYawFeedOk = writeYawToNetworkTables(headingDeg);
-        if (lastYawFeedOk) {
-            lastYawSentDeg = headingDeg;
-            lastYawFeedMs = System.currentTimeMillis();
-        }
+        lastYawFeedOk = invokeHelpersYawFeed(headingDeg);
     }
 
-    private boolean writeYawToNetworkTables(double headingDeg) {
-        boolean ok = LimelightHelpers.setRobotOrientation(
-                VisionConfig.LimelightFusion.LL_NT_NAME,
-                headingDeg,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0
-        );
-        lastYawSentDeg = headingDeg;
-        return ok;
+    private boolean invokeHelpersYawFeed(double headingDeg) {
+        try {
+            return invokeLimelightHelpersOrientation("SetRobotOrientation", headingDeg)
+                    || invokeLimelightHelpersOrientation("setRobotOrientation", headingDeg);
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private boolean invokeLimelightHelpersOrientation(String methodName, double headingDeg) {
+        try {
+            LimelightHelpers.class.getMethod(
+                    methodName,
+                    String.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class,
+                    double.class
+            ).invoke(
+                    null,
+                    VisionConfig.LimelightFusion.LL_NT_NAME,
+                    headingDeg,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+            );
+            lastYawSentDeg = headingDeg;
+            lastYawFeedMs = System.currentTimeMillis();
+            return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private boolean invokeHelpersFiducialOverride(int[] ids) {
+        try {
+            return invokeLimelightHelpersFiducialOverride("SetFiducialIDFiltersOverride", ids)
+                    || invokeLimelightHelpersFiducialOverride("setFiducialIDFiltersOverride", ids);
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private boolean invokeLimelightHelpersFiducialOverride(String methodName, int[] ids) {
+        try {
+            LimelightHelpers.class.getMethod(methodName, String.class, int[].class)
+                    .invoke(null, VisionConfig.LimelightFusion.LL_NT_NAME, (Object) ids);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private boolean invokeLimelightFiducialFilter(int[] ids) {
+        if (limelight == null) return false;
+        try {
+            limelight.getClass().getMethod("setFiducialIDFilters", int[].class)
+                    .invoke(limelight, (Object) ids);
+            return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     private void resetVisionDebug() {
@@ -368,11 +433,20 @@ public class Odometry {
         String tidStr = (lastPrimaryTagId == null) ? "--" : String.valueOf(lastPrimaryTagId);
         String errStr = Double.isFinite(lastRawErrorMag) ? String.format(Locale.US, "%.1f", lastRawErrorMag) : "--";
         String yawSentStr = (lastYawSentDeg == null) ? "--" : String.format(Locale.US, "%.1f", lastYawSentDeg);
+        String yawAgeStr = (lastYawFeedOk && lastYawFeedMs > 0L)
+                ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastYawFeedMs))
+                : "--";
+        String fltAgeStr = (lastLocalizationFilterMs > 0L)
+                ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
+                : "--";
         visionDebugLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
+                yawAgeStr,
+                lastLocalizationFilterOk,
+                fltAgeStr,
                 VisionConfig.LimelightFusion.LL_NT_NAME,
                 lastPoseUsedMt2,
                 ageStr,

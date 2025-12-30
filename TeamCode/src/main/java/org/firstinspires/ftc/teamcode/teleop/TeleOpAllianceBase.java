@@ -71,6 +71,8 @@
  *                       ordering.
  * CHANGES (2025-12-29): Added a Limelight fusion debug telemetry line to
  *                       surface pose acceptance and yaw-feed status.
+ * CHANGES (2025-12-29): Added a concise odometry debug line showing raw and
+ *                       scaled wheel deltas plus fused pose for calibration.
  * CHANGES (2025-12-19): Added target-percentage annotations to the RPM
  *                       telemetry line so drivers can see how close each
  *                       flywheel is tracking to the current setpoint at a
@@ -1190,6 +1192,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
         if (odometry != null) {
+            String odometryDebug = odometry.getOdometryDebugLine();
+            if (odometryDebug != null) {
+                telemetry.addLine(odometryDebug);
+            }
             String visionDebug = odometry.getVisionDebugLine();
             if (visionDebug != null) {
                 telemetry.addLine(visionDebug);

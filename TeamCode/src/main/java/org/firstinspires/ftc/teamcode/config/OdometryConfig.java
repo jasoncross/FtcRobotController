@@ -25,6 +25,8 @@ package org.firstinspires.ftc.teamcode.config;
  * CHANGES (2025-12-11): Recentered all field geometry to the FTC-standard
  *                        field-center origin (+Y toward targets, +X right)
  *                        ahead of Limelight-only position fusion.
+ * CHANGES (2025-12-29): Added a dedicated odometry distance scale so pose
+ *                        calibration no longer affects Auto drive distances.
  */
 public final class OdometryConfig {
 
@@ -51,6 +53,7 @@ public final class OdometryConfig {
     public static final double CAMERA_OFFSET_Z = 10.25;      // Camera height above floor, inches
     public static final double CAMERA_PITCH_DEG = 14.0;    // Camera pitch downward (-) relative to robot frame, degrees
     public static final double CAMERA_YAW_DEG   = 0.0;      // Camera yaw relative to robot heading, degrees
+    public static final double ODOMETRY_DISTANCE_SCALE = 1.0; // Scale factor for odometry-only wheel deltas (unitless)
 
     // ==== AprilTag goal poses (inches/degrees) ====
     public static final double TAG_RED_GOAL_X       = 56.5;   // Red goal AprilTag center X, inches

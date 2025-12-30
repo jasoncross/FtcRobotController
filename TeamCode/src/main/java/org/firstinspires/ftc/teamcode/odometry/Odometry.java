@@ -49,6 +49,8 @@ import static java.lang.Math.*;
  *                        builds without WPILib NTCore remain compatible.
  * CHANGES (2025-12-29): Switched MT2 yaw feeding + localization filtering to
  *                        LimelightHelpers so FTC builds avoid WPILib NTCore.
+ * CHANGES (2025-12-29): Added an odometry-only distance scale to isolate Auto
+ *                        move distance from pose calibration.
  */
 public class Odometry {
 
@@ -56,6 +58,7 @@ public class Odometry {
     private final Limelight3A limelight;
 
     private final double[] lastWheelInches = new double[4];
+    private final int[] lastWheelTicks = new int[4];
     private boolean initialized = false;
     private FieldPose pose = new FieldPose();
 
@@ -64,6 +67,9 @@ public class Odometry {
     private int validVisionStreak = 0;
     private FieldPose lastVisionPose = null;
     private FieldPose lastRawVisionPose = null;
+    private final double[] lastWheelDeltaRaw = new double[4];
+    private final double[] lastWheelDeltaScaled = new double[4];
+    private final int[] lastWheelDeltaTicks = new int[4];
     private double lastRawErrorMag = Double.NaN;
     private boolean lastYawFeedOk = false;
     private Double lastYawSentDeg = null;
@@ -73,6 +79,7 @@ public class Odometry {
     private int lastVisibleTagCount = 0;
     private String lastRejectReason = "OK";
     private String visionDebugLine = null;
+    private String odometryDebugLine = null;
     private long lastLocalizationFilterMs = 0L;
     private long lastYawFeedMs = 0L;
 
@@ -81,6 +88,7 @@ public class Odometry {
     public Odometry(Drivebase drive, Limelight3A limelight) {
         this.drive = drive;
         this.limelight = limelight;
+        LimelightHelpers.registerLimelight(VisionConfig.LimelightFusion.LL_NT_NAME, limelight);
     }
 
     /** Initialize odometry to a known pose (robot center). */
@@ -89,7 +97,9 @@ public class Odometry {
         pose.y = y;
         pose.headingDeg = headingDeg;
         double[] cur = drive.getWheelPositionsInches();
+        int[] ticks = drive.getWheelPositionsTicks();
         System.arraycopy(cur, 0, lastWheelInches, 0, lastWheelInches.length);
+        System.arraycopy(ticks, 0, lastWheelTicks, 0, lastWheelTicks.length);
         initialized = true;
     }
 
@@ -101,6 +111,9 @@ public class Odometry {
     /** Returns the latest Limelight fusion debug line (null when unavailable). */
     public String getVisionDebugLine() { return visionDebugLine; }
 
+    /** Returns the latest odometry debug line (null when unavailable). */
+    public String getOdometryDebugLine() { return odometryDebugLine; }
+
     /**
      * Update pose using wheel deltas + IMU heading. Optionally blend Limelight
      * XY corrections (heading remains IMU-only).
@@ -108,6 +121,7 @@ public class Odometry {
     public FieldPose update() {
         double heading = normalizeHeading(drive.heading());
 
+        int[] ticks = drive.getWheelPositionsTicks();
         double[] wheels = drive.getWheelPositionsInches();
         long nowNs = System.nanoTime();
         double dtSec = (lastUpdateNanos > 0) ? (nowNs - lastUpdateNanos) / 1e9 : 0.0;
@@ -115,10 +129,17 @@ public class Odometry {
 
         if (!initialized) {
             System.arraycopy(wheels, 0, lastWheelInches, 0, wheels.length);
+            System.arraycopy(ticks, 0, lastWheelTicks, 0, ticks.length);
             pose.headingDeg = heading;
             initialized = true;
             return pose.copy();
         }
+
+        lastWheelDeltaTicks[0] = ticks[0] - lastWheelTicks[0];
+        lastWheelDeltaTicks[1] = ticks[1] - lastWheelTicks[1];
+        lastWheelDeltaTicks[2] = ticks[2] - lastWheelTicks[2];
+        lastWheelDeltaTicks[3] = ticks[3] - lastWheelTicks[3];
+        System.arraycopy(ticks, 0, lastWheelTicks, 0, ticks.length);
 
         double fl = wheels[0] - lastWheelInches[0];
         double fr = wheels[1] - lastWheelInches[1];
@@ -126,8 +147,24 @@ public class Odometry {
         double br = wheels[3] - lastWheelInches[3];
         System.arraycopy(wheels, 0, lastWheelInches, 0, wheels.length);
 
-        double forward = -(fl + fr + bl + br) / 4.0; // +Y toward targets (invert to match field frame)
-        double strafeRaw = -(fl - fr - bl + br) / 4.0; // +X right (invert to match field frame)
+        lastWheelDeltaRaw[0] = fl;
+        lastWheelDeltaRaw[1] = fr;
+        lastWheelDeltaRaw[2] = bl;
+        lastWheelDeltaRaw[3] = br;
+
+        double scale = OdometryConfig.ODOMETRY_DISTANCE_SCALE;
+        double flScaled = fl * scale;
+        double frScaled = fr * scale;
+        double blScaled = bl * scale;
+        double brScaled = br * scale;
+
+        lastWheelDeltaScaled[0] = flScaled;
+        lastWheelDeltaScaled[1] = frScaled;
+        lastWheelDeltaScaled[2] = blScaled;
+        lastWheelDeltaScaled[3] = brScaled;
+
+        double forward = -(flScaled + frScaled + blScaled + brScaled) / 4.0; // +Y toward targets (invert to match field frame)
+        double strafeRaw = -(flScaled - frScaled - blScaled + brScaled) / 4.0; // +X right (invert to match field frame)
         double strafe = strafeRaw / Drivebase.STRAFE_CORRECTION;
 
         double hRad = toRadians(heading);
@@ -146,6 +183,7 @@ public class Odometry {
         FieldPose blended = applyLimelightFusion(integrated, speedInPerS, turnRateDegPerS);
         pose = lowPass(pose, blended, OdometryConfig.POSE_FILTER_STRENGTH);
         updateVisionDebugLine(heading);
+        updateOdometryDebugLine();
         return pose.copy();
     }
 
@@ -345,6 +383,32 @@ public class Odometry {
                 fusedStr,
                 errStr,
                 lastRejectReason);
+    }
+
+    private void updateOdometryDebugLine() {
+        String ticks = String.format(Locale.US, "%d/%d/%d/%d",
+                lastWheelDeltaTicks[0],
+                lastWheelDeltaTicks[1],
+                lastWheelDeltaTicks[2],
+                lastWheelDeltaTicks[3]);
+        String raw = String.format(Locale.US, "%.2f/%.2f/%.2f/%.2f",
+                lastWheelDeltaRaw[0],
+                lastWheelDeltaRaw[1],
+                lastWheelDeltaRaw[2],
+                lastWheelDeltaRaw[3]);
+        String scaled = String.format(Locale.US, "%.2f/%.2f/%.2f/%.2f",
+                lastWheelDeltaScaled[0],
+                lastWheelDeltaScaled[1],
+                lastWheelDeltaScaled[2],
+                lastWheelDeltaScaled[3]);
+        odometryDebugLine = String.format(Locale.US,
+                "OdoDbg ticks=%s raw=%s in scaled=%s in pose=%.1f,%.1f h=%.1f",
+                ticks,
+                raw,
+                scaled,
+                pose.x,
+                pose.y,
+                pose.headingDeg);
     }
 
     private String formatPoint(FieldPose point) {

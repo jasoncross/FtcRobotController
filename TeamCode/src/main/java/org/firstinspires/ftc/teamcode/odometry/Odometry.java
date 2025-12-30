@@ -72,6 +72,8 @@ public class Odometry {
     private int validVisionStreak = 0;
     private FieldPose lastVisionPose = null;
     private FieldPose lastRawVisionPose = null;
+    private FieldPose lastRawBluePose = null;
+    private FieldPose lastRawRedPose = null;
     private final double[] lastWheelDeltaRaw = new double[4];
     private final double[] lastWheelDeltaScaled = new double[4];
     private final int[] lastWheelDeltaTicks = new int[4];
@@ -248,7 +250,9 @@ public class Odometry {
             return base;
         }
 
-        double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y);
+        updateRawFrameDebug(result);
+
+        double[] xy = transformVisionXY(pose3D.getPosition().x, pose3D.getPosition().y, true);
         double vx = xy[0];
         double vy = xy[1];
         lastRawVisionPose = new FieldPose(vx, vy, base.headingDeg);
@@ -302,7 +306,7 @@ public class Odometry {
         return pose;
     }
 
-    private double[] transformVisionXY(double xMeters, double yMeters) {
+    private double[] transformVisionXY(double xMeters, double yMeters, boolean applyOffset) {
         double xIn = xMeters * M_TO_IN;
         double yIn = yMeters * M_TO_IN;
 
@@ -312,8 +316,10 @@ public class Odometry {
         tx *= VisionConfig.LimelightFusion.X_SIGN;
         ty *= VisionConfig.LimelightFusion.Y_SIGN;
 
-        tx += VisionConfig.LimelightFusion.X_OFFSET_IN;
-        ty += VisionConfig.LimelightFusion.Y_OFFSET_IN;
+        if (applyOffset) {
+            tx += VisionConfig.LimelightFusion.X_OFFSET_IN;
+            ty += VisionConfig.LimelightFusion.Y_OFFSET_IN;
+        }
 
         return new double[]{tx, ty};
     }
@@ -418,6 +424,8 @@ public class Odometry {
 
     private void resetVisionDebug() {
         lastRawVisionPose = null;
+        lastRawBluePose = null;
+        lastRawRedPose = null;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -428,6 +436,8 @@ public class Odometry {
 
     private void updateVisionDebugLine(double headingDeg) {
         String rawStr = formatPoint(lastRawVisionPose);
+        String rawBlueStr = formatPoint(lastRawBluePose);
+        String rawRedStr = formatPoint(lastRawRedPose);
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
@@ -441,7 +451,7 @@ public class Odometry {
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
         visionDebugLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s ll=%s mt2=%s age=%s tid=%s n=%d raw=%s acc=%s fused=%s err=%s rej=%s rawBlue=%s rawRed=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -457,7 +467,24 @@ public class Odometry {
                 accStr,
                 fusedStr,
                 errStr,
-                lastRejectReason);
+                lastRejectReason,
+                rawBlueStr,
+                rawRedStr);
+    }
+
+    private void updateRawFrameDebug(LLResult result) {
+        Pose3D bluePose = LimelightHelpers.getBotposeMT2Blue(result);
+        Pose3D redPose = LimelightHelpers.getBotposeMT2Red(result);
+
+        if (bluePose != null && bluePose.getPosition() != null) {
+            double[] blueXY = transformVisionXY(bluePose.getPosition().x, bluePose.getPosition().y, false);
+            lastRawBluePose = new FieldPose(blueXY[0], blueXY[1], pose.headingDeg);
+        }
+
+        if (redPose != null && redPose.getPosition() != null) {
+            double[] redXY = transformVisionXY(redPose.getPosition().x, redPose.getPosition().y, false);
+            lastRawRedPose = new FieldPose(redXY[0], redXY[1], pose.headingDeg);
+        }
     }
 
     private void updateOdometryDebugLine() {

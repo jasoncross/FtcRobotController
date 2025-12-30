@@ -103,7 +103,7 @@ public final class VisionConfig {
         public static final int X_SIGN = -1; // Flip X axis if needed (+1 normal)
         public static final int Y_SIGN = 1; // Flip Y axis if needed (+1 normal)
         public static final double X_OFFSET_IN = -110.0; // Additive X offset if needed (inches)
-        public static final double Y_OFFSET_IN = 110.0; // Additive Y offset if needed (inches)
+        public static final double Y_OFFSET_IN = 118.0; // Additive Y offset if needed (inches)
     }
 
     public static int goalTagIdForAlliance(Alliance alliance) {

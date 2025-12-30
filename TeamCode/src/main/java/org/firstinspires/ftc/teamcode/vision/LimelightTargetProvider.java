@@ -75,11 +75,15 @@ import java.util.function.Supplier;
  * CHANGES (2025-12-28): Added a public ensureStarted() helper so pipeline
  *                       auto-selection can guarantee Limelight is running
  *                       before sampling frames.
+ * CHANGES (2025-12-29): Asserted alliance-specific Limelight priority IDs for
+ *                       aim targeting so tx/ty lock stays on the goal tag
+ *                       while localization remains independent.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
     private static final long OBELISK_STALE_MS = 1500L;
     private static final long PIPELINE_REASSERT_MS = 750L;       // Minimum gap between repeated pipeline assertions
+    private static final long PRIORITY_REASSERT_MS = 750L;       // Minimum gap between repeated priority-id assertions
     private static final int GOAL_ACQUIRE_FRAMES = VisionConfig.LimelightAimLock.AIM_SWITCH_CONFIRM_FRAMES; // Require N consecutive hits before declaring visible
     private static final int GOAL_LOST_FRAMES = 6;               // Frames without the goal before clearing smoothed state
     private static final long GOAL_HOLD_MS = 150L;               // Hold last tx for this many ms after loss (short to avoid stale tx while turning fast)
@@ -106,6 +110,8 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     private Long lastProcessedFrameTimestampMs = null;
     private TargetSnapshot cachedSnapshot = null;
     private long lastSnapshotWallMs = 0L;
+    private Integer lastPriorityTagId = null;
+    private long lastPriorityCommandMs = 0L;
 
     public LimelightTargetProvider(Limelight3A limelight, Supplier<Alliance> allianceSupplier) {
         this.limelight = limelight;
@@ -193,6 +199,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
     @Override
     public void ensureGoalAimMode(Alliance alliance) {
         assertPipeline(VisionConfig.LimelightFusion.GOAL_AIM_PIPELINE_INDEX);
+        assertPriorityTagId(VisionConfig.goalTagIdForAlliance(alliance));
         startIfNeeded();
     }
 
@@ -355,6 +362,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
 
         Alliance alliance = allianceSupplier != null ? allianceSupplier.get() : Alliance.BLUE;
         int allianceGoalId = VisionConfig.goalTagIdForAlliance(alliance);
+        assertPriorityTagId(allianceGoalId);
 
         FiducialObservation goalObs = selectBestGoalObservation(allianceGoalId, observationsById);
         if (goalObs == null || goalObs.txDeg == null) {
@@ -512,6 +520,43 @@ public class LimelightTargetProvider implements VisionTargetProvider {
             activePipelineIndex = pipelineIndex;
             lastPipelineCommandMs = now;
         }
+    }
+
+    private void assertPriorityTagId(int tagId) {
+        if (limelight == null) return;
+        long now = System.currentTimeMillis();
+        if (lastPriorityTagId != null && lastPriorityTagId == tagId && (now - lastPriorityCommandMs) < PRIORITY_REASSERT_MS) {
+            return;
+        }
+
+        boolean changed = false;
+        if (invokePriorityMethod(tagId, "setPriorityTagID", int.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityTagId", int.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityID", int.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityId", int.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityTagID", double.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityTagId", double.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityID", double.class)) changed = true;
+        if (!changed && invokePriorityMethod(tagId, "setPriorityId", double.class)) changed = true;
+
+        if (changed) {
+            lastPriorityTagId = tagId;
+            lastPriorityCommandMs = now;
+        }
+    }
+
+    private boolean invokePriorityMethod(int tagId, String method, Class<?> paramType) {
+        try {
+            if (paramType == int.class) {
+                limelight.getClass().getMethod(method, int.class).invoke(limelight, tagId);
+                return true;
+            }
+            if (paramType == double.class) {
+                limelight.getClass().getMethod(method, double.class).invoke(limelight, (double) tagId);
+                return true;
+            }
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     private void startIfNeeded() {

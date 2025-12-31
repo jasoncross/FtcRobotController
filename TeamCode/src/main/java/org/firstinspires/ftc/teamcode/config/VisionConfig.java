@@ -110,7 +110,7 @@ public final class VisionConfig {
         public static final double MAX_TURN_RATE_DEG_PER_S = 140.0; // Skip fusion if turning faster than this (deg/s)
 
         public static final double FIELD_HALF_IN = 72.0; // Field half-length (inches) for corner→center transform
-        public static final boolean APPLY_CENTER_SHIFT = true; // Apply corner→center shift before offsets
+        public static final boolean APPLY_CENTER_SHIFT = false; // Apply corner→center shift before offsets
         public static final double BOUNDS_MARGIN_IN = 4.0; // Shrink allowed field bounds by this margin (inches)
         public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose (LOCKED)
         public static final int X_SIGN = 1; // Field X sign (LOCKED)

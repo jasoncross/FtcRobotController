@@ -175,6 +175,8 @@
  *                       longer latches AutoAim on once streaming stops.
  * CHANGES (2025-12-30): Aligned TeleOp pose seeding with IMU heading offsets
  *                       so Auto handoff poses retain their final heading.
+ * CHANGES (2025-12-31): Fixed Auto pose handoff telemetry formatting so INIT
+ *                       prints x/y/heading cleanly with separate IMU context.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -530,10 +532,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
             odometry.setPoseWithImuAlignment(storedPose.x, storedPose.y, storedPose.headingDeg);
             poseSeeded = true;
             telemetry.addLine(String.format(Locale.US,
-                    "INIT pose from Auto: x=%.1f y=%.1f hdg=%.1f imu=%.1f off=%.1f",
+                    "INIT pose from Auto: x=%.1f y=%.1f hdg=%.1f",
                     storedPose.x,
                     storedPose.y,
-                    storedPose.headingDeg,
+                    storedPose.headingDeg));
+            telemetry.addLine(String.format(Locale.US,
+                    "INIT pose IMU: imu=%.1f off=%.1f",
                     drive.heading(),
                     odometry.getHeadingOffsetDeg()));
         } else {

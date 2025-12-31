@@ -65,6 +65,8 @@ import static java.lang.Math.*;
  * CHANGES (2025-12-30): Added IMU-aligned pose seeding and adaptive vision
  *                        correction clamps so long-distance tag reacquire
  *                        converges smoothly without one-frame snapping.
+ * CHANGES (2025-12-31): Captured IMU yaw-at-seed and aligned heading offset
+ *                        telemetry with the seeding definition used in Auto.
  */
 public class Odometry {
 

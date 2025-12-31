@@ -2,6 +2,7 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
+**2025-12-31 update:** No new tunables were introduced; documentation refreshed to reflect Auto dashboard pose caching and pose-handoff fixes.
 **2025-12-30 update:** Added Limelight fusion seeding and adaptive correction tunables to keep long-distance tag reacquire stable while converging quickly, including the opt-in init vision seed toggle.
 
 > **How to read the tables**

@@ -142,7 +142,9 @@ active Limelight pipeline to confirm the stabilizer is engaged. Limelight
 localization now filters botpose to goal tags (20/24 only) while aim/RPM
 targeting stays alliance-specific via priority ID, and odometry rejects any
 MT2 update whenever obelisk tags are visible (with a debug override for drift
-reproduction).
+reproduction). Odometry start-pose seeding now aligns the IMU heading offset so
+Auto/TeleOp handoffs preserve heading, and adaptive cautious/confirm clamps
+keep long-range tag reacquire stable without one-frame snaps.
 
 
 ---
@@ -396,7 +398,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2025-12-30** – Hardened Limelight MT2 odometry fusion by rejecting any frame that sees obelisk tags (with a debug override), expanded VisionDbg to include visible/obelisk IDs plus accept/reject state, documented the obelisk-safe localization guardrails alongside the existing MT2 yaw feed + localization filter telemetry, and fixed a missing Odometry import to keep builds clean.
+- **2025-12-30** – Aligned Auto/TeleOp odometry seeding with IMU heading offsets so start poses and end-of-auto headings persist, made init vision seeding opt-in, ensured Auto dashboard updates use freshly updated odometry each loop, and added adaptive fusion clamps with cautious/confirm modes to stabilize long-range tag reacquire (plus matching VisionDbg telemetry and tunables).
 - **2025-12-29** – Reworked Limelight MT2 yaw feeding to use `LimelightHelpers.setRobotOrientation(...)` each loop with telemetry confirmation (reflection-safe for SDK compatibility), enforced goal‑tag‑only localization via `LimelightHelpers.setFiducialIDFilters(...)` (20/24), added field-bounds gates, restored Drivebase encoder distance math to physical counts, and added an odometry-only distance scale plus `OdoDbg` telemetry to keep Auto moves accurate while pose calibration remains adjustable.
 - **2025-12-28** – Hardened Limelight pipeline auto-selection with goal/opposing hit-count qualification, ensured Limelight starts before sampling, and clarified that post-start auto-selection continues until lock or timeout (START no longer forces fallback) while keeping fallback banners first and successful profiles at the end-group; selection now continues through START without resets, the fallback pipeline index is tunable, and the selector remembers the last successful pipeline for tag-less autos with optional persistence and memory fallback telemetry.
 - **2025-12-19** – Locked Limelight AutoAim to the alliance goal fiducial’s own tx/tz samples, added aim-lock tunables (stale

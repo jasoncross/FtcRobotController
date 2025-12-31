@@ -62,6 +62,9 @@ import static java.lang.Math.*;
  *                        VisionDbg line to surface tag participation details.
  * CHANGES (2025-12-30): Added missing List import for fiducial ID collection
  *                        helpers to keep Odometry builds clean.
+ * CHANGES (2025-12-30): Added IMU-aligned pose seeding and adaptive vision
+ *                        correction clamps so long-distance tag reacquire
+ *                        converges smoothly without one-frame snapping.
  */
 public class Odometry {
 
@@ -112,6 +115,14 @@ public class Odometry {
     private int[] lastVisibleIds = null;
     private int[] lastObeliskIds = null;
     private boolean lastObeliskSeen = false;
+    private double imuHeadingOffsetDeg = 0.0;
+    private int stableVisionFrames = 0;
+    private Double lastStableVisionX = null;
+    private Double lastStableVisionY = null;
+    private Double lastCorrectionDx = null;
+    private Double lastCorrectionDy = null;
+    private Double lastCorrectionDh = null;
+    private String lastFusionMode = "--";
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -123,6 +134,20 @@ public class Odometry {
 
     /** Initialize odometry to a known pose (robot center). */
     public void setPose(double x, double y, double headingDeg) {
+        setPoseWithImuAlignment(x, y, headingDeg);
+    }
+
+    /** Initialize odometry pose and align IMU-based heading integration to the provided heading. */
+    public void setPoseWithImuAlignment(double x, double y, double headingDeg) {
+        double rawImu = (drive != null) ? drive.heading() : headingDeg;
+        imuHeadingOffsetDeg = normHeading(headingDeg - rawImu - OdometryConfig.IMU_HEADING_OFFSET_DEG);
+        setPoseInternal(x, y, headingDeg);
+    }
+
+    /** Returns the current IMU-to-odometry heading offset applied during integration. */
+    public double getHeadingOffsetDeg() { return imuHeadingOffsetDeg; }
+
+    private void setPoseInternal(double x, double y, double headingDeg) {
         pose.x = x;
         pose.y = y;
         pose.headingDeg = headingDeg;
@@ -221,6 +246,7 @@ public class Odometry {
         resetVisionDebug();
         if (!VisionConfig.LimelightFusion.ENABLE_POSE_FUSION || limelight == null) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "OFF";
             return base;
         }
@@ -229,10 +255,12 @@ public class Odometry {
         feedLimelightYaw(base.headingDeg);
 
         if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S) {
+            stableVisionFrames = 0;
             lastRejectReason = "SPEED";
             return base;
         }
         if (turnRateDegPerS > VisionConfig.LimelightFusion.MAX_TURN_RATE_DEG_PER_S) {
+            stableVisionFrames = 0;
             lastRejectReason = "TURN";
             return base;
         }
@@ -240,6 +268,7 @@ public class Odometry {
         LLResult result = limelight.getLatestResult();
         if (result == null || !result.isValid()) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "NULL";
             return base;
         }
@@ -252,6 +281,7 @@ public class Odometry {
 
         if (lastObeliskSeen && VisionConfig.LimelightFusion.DEBUG_REJECT_ON_OBELISK) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "OBELISK";
             return base;
         }
@@ -267,6 +297,7 @@ public class Odometry {
 
         if (pose3D == null || pose3D.getPosition() == null) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "NULL";
             return base;
         }
@@ -276,8 +307,9 @@ public class Odometry {
         if (timestampMs != null) {
             long ageMs = nowMs - timestampMs;
             lastVisionAgeMs = ageMs;
-            if (ageMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
+            if (ageMs > VisionConfig.LimelightFusion.MAX_VISION_AGE_MS) {
                 validVisionStreak = 0;
+                stableVisionFrames = 0;
                 lastRejectReason = "AGE";
                 return base;
             }
@@ -285,6 +317,7 @@ public class Odometry {
 
         validVisionStreak++;
         if (validVisionStreak < VisionConfig.LimelightFusion.MIN_VALID_FRAMES) {
+            stableVisionFrames = 0;
             lastRejectReason = "STREAK";
             return base;
         }
@@ -305,6 +338,7 @@ public class Odometry {
         lastBoundsMax = maxAllowed;
         if (!isWithinFieldBounds(vx, vy, maxAllowed)) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "BOUNDS";
             return base;
         }
@@ -312,26 +346,53 @@ public class Odometry {
 
         long sinceLast = (lastAcceptedVisionMs < 0) ? Long.MAX_VALUE : nowMs - lastAcceptedVisionMs;
         boolean reacquire = sinceLast > VisionConfig.LimelightFusion.REACQUIRE_AFTER_MS;
+        if (reacquire) {
+            stableVisionFrames = 0;
+        }
+        updateStability(vx, vy, lastVisibleTagCount);
+        String fusionMode = (stableVisionFrames >= VisionConfig.LimelightFusion.REACQUIRE_STABLE_FRAMES)
+                ? "CONFIDENT"
+                : "CAUTIOUS";
+        lastFusionMode = fusionMode;
         double maxJump = reacquire
                 ? VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_REACQUIRE
                 : VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_NORMAL;
         double alpha = reacquire
                 ? VisionConfig.LimelightFusion.FUSION_ALPHA_REACQUIRE
                 : VisionConfig.LimelightFusion.FUSION_ALPHA_NORMAL;
+        double maxStep = "CONFIDENT".equals(fusionMode)
+                ? VisionConfig.LimelightFusion.MAX_POS_STEP_IN_CONFIDENT
+                : VisionConfig.LimelightFusion.MAX_POS_STEP_IN_CAUTIOUS;
+        if (maxStep <= 0.0) {
+            maxStep = VisionConfig.LimelightFusion.MAX_CORRECTION_STEP_IN;
+        }
+        double maxHeadingStep = "CONFIDENT".equals(fusionMode)
+                ? VisionConfig.LimelightFusion.MAX_HEADING_STEP_DEG_CONFIDENT
+                : VisionConfig.LimelightFusion.MAX_HEADING_STEP_DEG_CAUTIOUS;
+        if (maxHeadingStep < 0.0) {
+            maxHeadingStep = 0.0;
+        }
 
         double ex = vx - base.x;
         double ey = vy - base.y;
         double errorMag = hypot(ex, ey);
         lastRawErrorMag = errorMag;
         if (errorMag > maxJump) {
+            stableVisionFrames = 0;
             lastRejectReason = "JUMP";
             return base;
         }
 
-        double[] step = clampMagnitude(ex, ey, VisionConfig.LimelightFusion.MAX_CORRECTION_STEP_IN);
+        double[] step = clampMagnitude(ex, ey, maxStep);
+        double appliedDx = step[0] * alpha;
+        double appliedDy = step[1] * alpha;
+        double appliedDh = clampValue(0.0, -maxHeadingStep, maxHeadingStep);
+        lastCorrectionDx = appliedDx;
+        lastCorrectionDy = appliedDy;
+        lastCorrectionDh = appliedDh;
         FieldPose corrected = new FieldPose(
-                base.x + step[0] * alpha,
-                base.y + step[1] * alpha,
+                base.x + appliedDx,
+                base.y + appliedDy,
                 base.headingDeg
         );
         lastBoundsTestX = corrected.x;
@@ -339,6 +400,7 @@ public class Odometry {
         lastBoundsMax = maxAllowed;
         if (!isWithinFieldBounds(corrected.x, corrected.y, maxAllowed)) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "BOUNDS";
             return base;
         }
@@ -534,6 +596,10 @@ public class Odometry {
         lastVisibleIds = null;
         lastObeliskIds = null;
         lastObeliskSeen = false;
+        lastCorrectionDx = null;
+        lastCorrectionDy = null;
+        lastCorrectionDh = null;
+        lastFusionMode = "--";
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -557,6 +623,7 @@ public class Odometry {
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
         String tidStr = (lastPrimaryTagId == null) ? "--" : String.valueOf(lastPrimaryTagId);
         String errStr = Double.isFinite(lastRawErrorMag) ? String.format(Locale.US, "%.1f", lastRawErrorMag) : "--";
+        String stepStr = formatTriple(lastCorrectionDx, lastCorrectionDy, lastCorrectionDh);
         String yawSentStr = (lastYawSentDeg == null) ? "--" : String.format(Locale.US, "%.1f", lastYawSentDeg);
         String yawAgeStr = (lastYawFeedOk && lastYawFeedMs > 0L)
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastYawFeedMs))
@@ -567,7 +634,7 @@ public class Odometry {
         String boundStr = (lastBoundsMax == null) ? "--" : String.format(Locale.US, "%.0f", lastBoundsMax);
         boolean accepted = "OK".equals(lastRejectReason);
         String baseLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d visibleIDs=%s obeliskSeen=%s obeliskIDs=%s llm=%s lli=%s raw=%s acc=%s fused=%s err=%s accepted=%s rejectReason=%s bnd=%s test=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d visibleIDs=%s obeliskSeen=%s obeliskIDs=%s mode=%s step=%s llm=%s lli=%s raw=%s acc=%s fused=%s err=%s accepted=%s rejectReason=%s bnd=%s test=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -588,6 +655,8 @@ public class Odometry {
                 visibleIdsStr,
                 lastObeliskSeen,
                 obeliskIdsStr,
+                lastFusionMode,
+                stepStr,
                 llXYmStr,
                 llXYinStr,
                 rawStr,
@@ -733,6 +802,11 @@ public class Odometry {
     private String formatPair(Double x, Double y) {
         if (x == null || y == null) return "--,--";
         return String.format(Locale.US, "%.1f,%.1f", x, y);
+    }
+
+    private String formatTriple(Double x, Double y, Double h) {
+        if (x == null || y == null || h == null) return "--,--,--";
+        return String.format(Locale.US, "%.1f,%.1f,%.1f", x, y, h);
     }
 
     private String formatIds(int[] ids) {
@@ -927,12 +1001,28 @@ public class Odometry {
         );
     }
 
+    private void updateStability(double vx, double vy, int tagCount) {
+        boolean tagOk = tagCount >= VisionConfig.LimelightFusion.STABLE_MIN_TAGS;
+        boolean deltaOk = true;
+        if (lastStableVisionX != null && lastStableVisionY != null) {
+            double delta = hypot(vx - lastStableVisionX, vy - lastStableVisionY);
+            deltaOk = delta <= VisionConfig.LimelightFusion.STABLE_POSE_DELTA_IN;
+        }
+        if (tagOk && deltaOk) {
+            stableVisionFrames++;
+        } else {
+            stableVisionFrames = 0;
+        }
+        lastStableVisionX = vx;
+        lastStableVisionY = vy;
+    }
+
     /**
      * Normalize IMU heading into the shared odometry frame where 0° faces the
      * target wall (+Y) and positive angles turn counter-clockwise toward +X.
      */
     private double normalizeHeading(double rawHeadingDeg) {
-        double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG;
+        double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG + imuHeadingOffsetDeg;
         double fieldFrame = shifted; // align IMU basis (0° = +X) to odometry basis (0° = +Y)
         return normHeading(fieldFrame);
     }

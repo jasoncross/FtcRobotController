@@ -177,6 +177,8 @@
  *                       so Auto handoff poses retain their final heading.
  * CHANGES (2025-12-31): Fixed Auto pose handoff telemetry formatting so INIT
  *                       prints x/y/heading cleanly with separate IMU context.
+ * CHANGES (2025-12-31): Gated FeedStop release so TeleOp feed/eject actions
+ *                       wait for the launcher RPM window before opening.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -232,6 +234,7 @@ import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;      // distance→RPM curve + smoothing
 import org.firstinspires.ftc.teamcode.config.LauncherTuning;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults; // TeleOp-only workflow + manual ranges
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;    // TeleOp-only eject routine
 import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rumble envelopes
@@ -273,6 +276,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-12-02): Allow tap-to-fire to work even when the FeedStop release hold window is
     //                       configured to 0 ms by gating the single-shot block on a nonzero release
     //                       window while keeping continuous holds immediate when enabled.
+    // CHANGES (2025-12-31): Deferred FeedStop opening until launcher RPM is within tolerance for
+    //                       TeleOp feeds and the eject routine.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -304,6 +309,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private AutoSpeedRumble autoSpeedToggleRumble = AutoSpeedRumble.NONE;
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
     private boolean longShotMode     = false;                     // Sticky long/normal shot window selection
+    private long launcherReadyStartMs = 0L;                       // Time launcher first entered the RPM window
 
     // AutoRPM tweak (per-press percentage scaling while AutoSpeed is enabled)
     private double autoRpmTweakScale  = TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE;
@@ -1816,6 +1822,29 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
+    /** Returns true once the launcher has stayed within the RPM window long enough to feed. */
+    private boolean isLauncherReadyForFeed(long nowMs) {
+        if (launcher == null) {
+            launcherReadyStartMs = 0L;
+            return false;
+        }
+        if (launcher.targetRpm <= 0.0) {
+            launcherReadyStartMs = 0L;
+            return false;
+        }
+        double tolerance = SharedRobotTuning.RPM_TOLERANCE;
+        double error = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
+        if (error <= tolerance) {
+            if (launcherReadyStartMs == 0L) {
+                launcherReadyStartMs = nowMs;
+            }
+            long settleMs = Math.max(0L, SharedRobotTuning.RPM_READY_SETTLE_MS);
+            return (nowMs - launcherReadyStartMs) >= settleMs;
+        }
+        launcherReadyStartMs = 0L;
+        return false;
+    }
+
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
         long holdDuration = continuousFireHeld
@@ -1825,6 +1854,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         boolean holdBlocksSingle = continuousFireHeld && holdThreshold > 0L && holdDuration >= holdThreshold;
 
         if (ejectPhase != EjectPhase.IDLE || continuousFireActive || holdBlocksSingle) return;
+        long nowMs = System.currentTimeMillis();
+        if (!isLauncherReadyForFeed(nowMs)) return;
         boolean wasOn = intake.isOn();
         if (feed.beginFeedCycle()) {
             requestAutoAimNudge();
@@ -1892,7 +1923,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         if (ejectPhase == EjectPhase.FEED) {
-            if (!ejectFeedStarted) {
+            if (!ejectFeedStarted && isLauncherReadyForFeed(now)) {
                 ejectFeedStarted = feed.beginFeedCycle();
             }
             if (!ejectFeedStarted) {
@@ -1985,6 +2016,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         if (holdReady && !ejectActive) {
             if (!continuousFireActive) {
+                if (!isLauncherReadyForFeed(System.currentTimeMillis())) {
+                    return;
+                }
                 continuousFireActive = true;
                 boolean wasOn = intake.isOn();
                 feed.startContinuousFeed();

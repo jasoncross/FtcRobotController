@@ -198,6 +198,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        dashboard poses use fresh odometry updates each loop.
     // CHANGES (2025-12-31): Ensured Auto saves the final fused pose on stop/cleanup, removed
     //                        double-update dashboard paths, and aligned heading offset telemetry
+    // CHANGES (2025-12-31): Deferred FeedStop opening in continuous-fire steps until the launcher
+    //                        is inside the RPM tolerance window.
     //                        with the IMU seed definition.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
@@ -810,6 +812,37 @@ public abstract class BaseAuto extends LinearOpMode {
             }
         }
         launcher.setTargetRpm(holdTarget);
+
+        long settleMs = rpmSettleMs();
+        long settleStart = -1L;
+        while (opModeIsActive()) {
+            updateIntakeFlowForAuto();
+            FieldPose loopPose = updateOdometryPose();
+            long now = System.currentTimeMillis();
+            double currentRpm = launcher.getCurrentRpm();
+            double error = Math.abs(currentRpm - launcher.targetRpm);
+            boolean withinBand = error <= rpmTol();
+            if (withinBand) {
+                if (settleStart < 0) {
+                    settleStart = now;
+                }
+                if ((now - settleStart) >= settleMs) {
+                    break;
+                }
+            } else {
+                settleStart = -1L;
+            }
+            updateStatusWithPose(label + " – wait for RPM", lockedForRun || !requireLock, loopPose);
+            telemetry.addData("Target RPM", launcher.targetRpm);
+            telemetry.addData("Current RPM", currentRpm);
+            telemetry.addData("Tolerance", rpmTol());
+            telemetry.addData("Within band", withinBand);
+            telemetry.update();
+            idle();
+        }
+        if (!opModeIsActive()) {
+            return;
+        }
 
         boolean intakeWasOn = intake.isOn();
         if (!intakeWasOn) intake.set(true);

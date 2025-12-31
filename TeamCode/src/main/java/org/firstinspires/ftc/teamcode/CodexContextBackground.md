@@ -78,6 +78,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Coordinated with launcher readiness and StopAll safety.
 - FeedStop homing is now queued until START so INIT stays motionless; the servo homes and parks at the blocking angle as soon as
   the match begins.
+- FeedStop can open immediately, but the feed motor now waits for the launcher RPM window (with the shared settle time) before
+  moving, and the FeedStop return timer starts when the feed motor actually begins so the gate does not close early.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.

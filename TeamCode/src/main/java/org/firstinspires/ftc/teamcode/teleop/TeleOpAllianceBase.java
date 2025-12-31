@@ -177,8 +177,8 @@
  *                       so Auto handoff poses retain their final heading.
  * CHANGES (2025-12-31): Fixed Auto pose handoff telemetry formatting so INIT
  *                       prints x/y/heading cleanly with separate IMU context.
- * CHANGES (2025-12-31): Gated FeedStop release so TeleOp feed/eject actions
- *                       wait for the launcher RPM window before opening.
+ * CHANGES (2025-12-31): Gated FeedStop release and feed motor output so TeleOp
+ *                       feeds/ejects wait for the launcher RPM window.
 */
 package org.firstinspires.ftc.teamcode.teleop;
 
@@ -276,8 +276,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     // CHANGES (2025-12-02): Allow tap-to-fire to work even when the FeedStop release hold window is
     //                       configured to 0 ms by gating the single-shot block on a nonzero release
     //                       window while keeping continuous holds immediate when enabled.
-    // CHANGES (2025-12-31): Deferred FeedStop opening until launcher RPM is within tolerance for
-    //                       TeleOp feeds and the eject routine.
+    // CHANGES (2025-12-31): Deferred FeedStop opening and feed motor output until launcher RPM is
+    //                       within tolerance for TeleOp feeds and the eject routine.
     protected abstract Alliance alliance();
 
     // ---------------- Startup Defaults (edit here) ----------------
@@ -782,8 +782,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void loop() {
         long now = System.currentTimeMillis();
-        if (feed != null) feed.update();
-        updateIntakeFlow();
         updatePendingToggleRumbles(now);
         List<String> dashboardLines = new ArrayList<>();
 
@@ -989,6 +987,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 if (rpmBottom > 0 && currentCmd < rpmBottom) launcher.setTargetRpm(rpmBottom);
             }
         }
+
+        if (feed != null) {
+            long readyNow = System.currentTimeMillis();
+            feed.setFeedAllowed(isLauncherReadyForFeed(readyNow));
+            feed.update();
+        }
+        updateIntakeFlow();
 
         if (autoDistIn != null) {
             currentDistanceInches = autoDistIn;

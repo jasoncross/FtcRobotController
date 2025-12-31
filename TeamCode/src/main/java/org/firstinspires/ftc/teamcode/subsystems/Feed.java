@@ -76,6 +76,8 @@ public class Feed {
     //                       until a deliberate hold after the standard single-shot window.
     // CHANGES (2025-12-16): Deferred FeedStop homing/parking until START so INIT remains motionless
     //                       while still queuing homing for the first post-START loops.
+    // CHANGES (2025-12-31): Added launcher-ready gating hooks so feed cycles and continuous
+    //                       streams only open the gate and run the motor when allowed.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -108,6 +110,9 @@ public class Feed {
     private long releaseUntilMs = 0L;
     private long feedAllowedAfterMs = 0L;
     private boolean continuousFeedActive = false;
+    private boolean feedAllowed = true;
+    private boolean pendingReleaseHold = false;
+    private boolean pendingContinuousRelease = false;
 
     private boolean useAutoScale = false;
     private boolean autoScaleApplied = false;
@@ -186,6 +191,9 @@ public class Feed {
         releaseUntilMs = 0L;
         feedAllowedAfterMs = 0L;
         continuousFeedActive = false;
+        feedAllowed = true;
+        pendingReleaseHold = false;
+        pendingContinuousRelease = false;
         scaleTelemetryEmitted = false;
         windowLimitReached = false;
         angleClamped = false;
@@ -298,9 +306,24 @@ public class Feed {
         long now = System.currentTimeMillis();
         updateHoming(now);
 
+        if (!feedAllowed) {
+            if (continuousFeedActive) {
+                applySafetyConfig();
+                motor.setPower(0.0);
+                setHold();
+            } else if (cycleState != FeedCycleState.IDLE) {
+                applyIdleHoldPower();
+                setHold();
+            }
+            return;
+        }
+
         if (continuousFeedActive) {
             applySafetyConfig();
-            if (feedStopReady && feedStop != null) {
+            if (pendingContinuousRelease) {
+                setRelease();
+                pendingContinuousRelease = false;
+            } else if (feedStopReady && feedStop != null) {
                 commandAngleImmediate(releaseAngleDeg);
                 feedStopState = FeedStopState.RELEASE;
             }
@@ -494,11 +517,9 @@ public class Feed {
         if (cycleState != FeedCycleState.IDLE) return false;
         if (continuousFeedActive) return false;
         if (!canFire()) return false;
-        requestReleaseHold();
         lastFire = System.currentTimeMillis();
-        if (feedAllowedAfterMs <= 0L) {
-            feedAllowedAfterMs = lastFire;
-        }
+        pendingReleaseHold = true;
+        feedAllowedAfterMs = 0L;
         cycleState = FeedCycleState.WAIT_FOR_LEAD;
         cycleStateStartMs = lastFire;
         applySafetyConfig();
@@ -514,19 +535,27 @@ public class Feed {
     public void startContinuousFeed() {
         if (continuousFeedActive) return;
         continuousFeedActive = true;
+        pendingContinuousRelease = !feedAllowed;
         lastFire = System.currentTimeMillis();
         feedAllowedAfterMs = lastFire;
         releaseUntilMs = 0L;
         cycleState = FeedCycleState.IDLE;
         applySafetyConfig();
-        setRelease();
-        motor.setPower(firePower);
+        if (feedAllowed) {
+            setRelease();
+            motor.setPower(firePower);
+        } else {
+            setHold();
+            motor.setPower(0.0);
+        }
     }
 
     /** Stop continuous-feed mode and return the gate to HOLD. */
     public void stopContinuousFeed() {
         if (!continuousFeedActive) return;
         continuousFeedActive = false;
+        pendingContinuousRelease = false;
+        pendingReleaseHold = false;
         applyIdleHoldPower();
         setHold();
         cycleState = FeedCycleState.IDLE;
@@ -541,6 +570,8 @@ public class Feed {
     public void stop() {
         applySafetyConfig();
         continuousFeedActive = false;
+        pendingContinuousRelease = false;
+        pendingReleaseHold = false;
         applyIdleHoldPower();
         setHome();
         cycleState = FeedCycleState.IDLE;
@@ -551,9 +582,16 @@ public class Feed {
         idleHoldActive = false;
         applySafetyConfig();
         continuousFeedActive = false;
+        pendingContinuousRelease = false;
+        pendingReleaseHold = false;
         motor.setPower(0.0);
         setHome();
         cycleState = FeedCycleState.IDLE;
+    }
+
+    /** Allow or block feed motion and FeedStop release (used for RPM readiness gating). */
+    public void setFeedAllowed(boolean allowed) {
+        feedAllowed = allowed;
     }
 
     /** Helper exposed for safety fallbacks and testing. */
@@ -589,10 +627,17 @@ public class Feed {
     }
 
     private void updateFeedCycle(long now) {
+        if (pendingReleaseHold && cycleState != FeedCycleState.IDLE) {
+            requestReleaseHold();
+            pendingReleaseHold = false;
+        }
         switch (cycleState) {
             case IDLE:
                 return;
             case WAIT_FOR_LEAD:
+                if (pendingReleaseHold) {
+                    return;
+                }
                 if (now >= feedAllowedAfterMs) {
                     motor.setPower(firePower);
                     cycleState = FeedCycleState.FEEDING;

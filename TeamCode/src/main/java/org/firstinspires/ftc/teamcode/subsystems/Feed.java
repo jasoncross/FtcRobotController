@@ -688,7 +688,7 @@ public class Feed {
         releaseUntilMs = 0L;
         feedAllowedAfterMs = 0L;
         feedStopState = FeedStopState.UNKNOWN;
-        homeState = HomeState.SAFE_OPEN_INIT;
+        homeState = FeedStopConfig.SKIP_SAFE_OPEN_ON_START ? HomeState.MOVE_TO_ZERO : HomeState.SAFE_OPEN_INIT;
         homeStateStartMs = 0L;
         scaleTelemetryEmitted = false;
     }

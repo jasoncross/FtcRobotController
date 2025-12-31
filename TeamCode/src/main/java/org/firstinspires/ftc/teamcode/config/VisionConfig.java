@@ -51,8 +51,10 @@ import java.util.Arrays;
  *                        tunables so long-distance reacquire corrections remain
  *                        stable while converging quickly.
  * CHANGES (2025-12-31): Refined obelisk handling so localization only rejects
- *                        obelisk-only/primary frames, plus added a strict-primary
- *                        toggle for localization gating.
+ *                        obelisk-only/primary-only frames, plus added a mixed
+ *                        primary guard for obelisk-first solves.
+ * CHANGES (2025-12-31): Added a mixed-primary guard that can require multiple
+ *                        tags when the Limelight primary ID is obelisk.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -102,7 +104,7 @@ public final class VisionConfig {
         public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
         public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
         public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = OBELISK_TAG_IDS; // Tag IDs explicitly excluded from localization
-        public static final boolean LOCALIZATION_STRICT_PRIMARY_ONLY = true; // Reject localization when primary tag is obelisk
+        public static final boolean REQUIRE_2_TAGS_IF_PRIMARY_OBELISK_AND_MIXED = true; // Require >=2 tags when obelisk is primary but goal tag is visible
         public static final boolean DEBUG_REJECT_ON_OBELISK = false; // Debug override: reject MT2 fusion when any obelisk tag is visible
         public static final boolean INIT_ALLOW_VISION_SEED = false; // Allow vision to override explicit Auto start pose during INIT
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER

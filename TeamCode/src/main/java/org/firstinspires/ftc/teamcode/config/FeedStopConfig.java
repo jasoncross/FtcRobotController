@@ -21,6 +21,9 @@
  *         toward the stop, how far the safe sweep may travel before aborting,
  *         how far to back away after seating, and how long to dwell on the
  *         hard stop to establish a repeatable zero.
+ *   - SKIP_SAFE_OPEN_ON_START
+ *       • When true, the homing routine skips the safe-open pre-sweep and
+ *         goes straight to the blocking stop after START to avoid gate twitch.
  *   - HOLD_ANGLE_DEG / RELEASE_ANGLE_DEG
  *       • Target angles (relative to zero) used while blocking the feed path
  *         and fully releasing for a shot.
@@ -48,8 +51,10 @@ public final class FeedStopConfig {
     //                       degrees-per-unit constant in favor of runtime span math.
     // CHANGES (2025-11-09): Default to full-span servo travel, added USE_AUTO_SCALE toggle, and retired SCALE_MIN/MAX tunables.
     // CHANGES (2025-11-07): Added guarded homing presets (safe open + travel cap) and soft-limit clamps for degrees-based control.
+    // CHANGES (2025-12-31): Added SKIP_SAFE_OPEN_ON_START to prevent a brief gate dip at START.
     public static boolean USE_AUTO_SCALE = false;    // Optional servo auto-scaling toggle (default full span)
     public static double DIRECTION_SIGN = +1.0;      // +1 when release is toward higher PWM, -1 when toward lower PWM
+    public static boolean SKIP_SAFE_OPEN_ON_START = true; // Skip the safe-open sweep when homing after START
     public static double SAFE_PRESET_OPEN_DEG = 40.0; // Target angle used during the homing safe-open approach (deg)
     public static double HOME_OVERSHOOT_DEG = 12.0;  // Legacy alias for SAFE_PRESET_OPEN_DEG (kept for backward compatibility)
     public static double MAX_HOME_TRAVEL_DEG = 120.0; // Maximum degrees allowed during homing safe-open sweep (deg)

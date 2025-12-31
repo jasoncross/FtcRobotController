@@ -78,6 +78,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Coordinated with launcher readiness and StopAll safety.
 - FeedStop homing is now queued until START so INIT stays motionless; the servo homes and parks at the blocking angle as soon as
   the match begins.
+- FeedStop release and feed motor output are gated by the launcher RPM window, so TeleOp feeds/ejects and Auto continuous-fire
+  steps only open the gate and run the pusher once the flywheels are within the shared tolerance for the configured settle time.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.

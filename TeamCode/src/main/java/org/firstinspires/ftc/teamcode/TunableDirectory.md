@@ -2,7 +2,7 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
-**2025-12-31 update:** No new tunables were introduced; documentation refreshed to reflect Auto dashboard pose caching and pose-handoff fixes.
+**2025-12-31 update:** No new tunables were introduced; documentation refreshed to reflect Auto dashboard pose caching, pose-handoff fixes, and FeedStop RPM-ready gate + feed motor gating.
 **2025-12-30 update:** Added Limelight fusion seeding and adaptive correction tunables to keep long-distance tag reacquire stable while converging quickly, including the opt-in init vision seed toggle.
 
 > **How to read the tables**
@@ -31,8 +31,8 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | `LauncherTuning.MANUAL_RPM_STEP` | `config/LauncherTuning.java` | TeleOp | D-pad step applied to manual RPM adjustments when AutoSpeed is OFF **and Manual Lock is engaged**. | Matches RPM Test mode by default; reduce for finer nudges or raise for quicker swings. | `25 RPM` for precise tweaks; `75 RPM` for rapid tuning. |
 | `TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE` | `config/TeleOpDriverDefaults.java` | TeleOp | Percentage applied per D-pad left/right press while AutoSpeed is enabled to nudge the AutoRPM output. | Scales the AutoSpeed calculation without changing the calibration table; clamps inside TeleOp to a safe range. | `0.02` (2%) default; bump to `0.03` for faster tweaks or lower for finer steps. |
 | `TeleOpDriverDefaults.RPM_BOTTOM` / `RPM_TOP` | `config/TeleOpDriverDefaults.java` | TeleOp | Manual-mode RPM slider limits. | Independent of the launcher clamp; ensure `RPM_TOP ≤ LauncherTuning.RPM_MAX`. | Set bottom to `500 RPM` to keep wheels warm; lower top to `5500 RPM` if browning out. |
-| `SharedRobotTuning.RPM_TOLERANCE` | `config/SharedRobotTuning.java` | Both | Global readiness window for AutoSpeed. | Overrides `BaseAuto.rpmTol()` and seeds `assist/AutoAimSpeed.rpmTolerance`; TeleOp follows unless it overrides locally. Tune here for shared behavior. | `35 RPM` for precise volleys; `75 RPM` if batteries sag. |
-| `SharedRobotTuning.RPM_READY_SETTLE_MS` | `config/SharedRobotTuning.java` | Both | Minimum time inside the RPM window before launcher readiness is declared. | `BaseAuto.readyLauncherUntilReady(...)` and TeleOp status lights honor this settle timer; keep modest so volleys stay responsive. | `100–200 ms` covers most flywheel recovery checks. |
+| `SharedRobotTuning.RPM_TOLERANCE` | `config/SharedRobotTuning.java` | Both | Global readiness window for AutoSpeed; FeedStop release and feed motor output wait for this window before opening in TeleOp feed/eject actions and Auto continuous-fire steps. | Overrides `BaseAuto.rpmTol()` and seeds `assist/AutoAimSpeed.rpmTolerance`; TeleOp follows unless it overrides locally. Tune here for shared behavior. | `35 RPM` for precise volleys; `75 RPM` if batteries sag. |
+| `SharedRobotTuning.RPM_READY_SETTLE_MS` | `config/SharedRobotTuning.java` | Both | Minimum time inside the RPM window before launcher readiness is declared and before FeedStop release + feed motor output are allowed to run. | `BaseAuto.readyLauncherUntilReady(...)` and TeleOp readiness checks honor this settle timer; keep modest so volleys stay responsive. | `100–200 ms` covers most flywheel recovery checks. |
 | `assist/AutoAimSpeed.rpmTolerance` | `assist/AutoAimSpeed.java` | Both | AutoAim-specific readiness window. | Defaults to `SharedRobotTuning.RPM_TOLERANCE`; overriding here affects AutoAim only, not the rest of AutoSpeed usage. | Narrow to `30 RPM` when AutoAim needs stricter gating. |
 
 ## Shot cadence, feed, and eject

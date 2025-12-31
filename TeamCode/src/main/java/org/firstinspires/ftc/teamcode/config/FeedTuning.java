@@ -36,5 +36,5 @@ public final class FeedTuning {
     public static int FIRE_TIME_MS  = 800;          // Duration (ms) to run the feed motor per shot
     public static int MIN_CYCLE_MS  = 1000;         // Minimum spacing (ms) between successive feed pulses
     public static int INTAKE_ASSIST_MS = 250; // Intake assist duration (ms) after a feed when intake was off
-    public static double IDLE_HOLD_POWER = 0.0; // Idle counter-rotation power (0 = BRAKE only)
+    public static double IDLE_HOLD_POWER = -0.1; // Idle counter-rotation power (0 = BRAKE only)
 }

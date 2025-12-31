@@ -532,7 +532,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             odometry.setPoseWithImuAlignment(storedPose.x, storedPose.y, storedPose.headingDeg);
             poseSeeded = true;
             telemetry.addLine(String.format(Locale.US,
-                    "INIT pose from Auto: x=%.1f y=%.1f hdg=%.1f",
+                    "INIT pose from Auto: x=%.1f, y=%.1f, hdg=%.1f",
                     storedPose.x,
                     storedPose.y,
                     storedPose.headingDeg));

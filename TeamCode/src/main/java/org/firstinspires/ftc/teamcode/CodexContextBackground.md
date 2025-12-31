@@ -148,7 +148,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Shared Auto initialization, seeding, and aim/RPM helpers.
 - LL3A corrections will drive long-range shot consistency and positional accuracy.
 - Start-pose seeding now aligns the IMU heading offset and INIT telemetry reports the seed pose, IMU yaw, and any vision override reason.
-- Auto dashboard updates are now driven from a single cached odometry update each loop so the field overlay stays in lockstep with motion without double-updating.
+- Auto dashboard updates are now driven from a single cached odometry update each loop so the field overlay stays in lockstep with motion without double-updating; Auto loops should call `updateOdometryPose()` once per iteration and pass the cached pose into `updateStatusWithPose(...)`.
 - Auto saves the final fused pose (including heading) to `PoseStore` on stop/cleanup, and TeleOp restores that pose on init to preserve heading continuity.
 - AutoSequence `move(...)` steps now treat the heading argument as **relative to the robot’s current facing** so translation
   vectors stay robot-centric even after mid-match heading changes; the builder resolves the absolute heading internally and

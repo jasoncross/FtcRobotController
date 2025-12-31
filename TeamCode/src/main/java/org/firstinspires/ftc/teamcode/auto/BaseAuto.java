@@ -368,14 +368,16 @@ public abstract class BaseAuto extends LinearOpMode {
             } else {
                 ensureLimelightObeliskMode();
             }
+            FieldPose initPose = updateOdometryPose();
             maybeSeedStartPoseFromVision();
-            updateStatusWithPose("INIT", false, updateOdometryPose());
+            updateStatusWithPose("INIT", false, initPose);
             onPreStartLoop();
             telemetry.update();
             sleep(20);
         }
         if (isStopRequested()) {
-            saveFinalPoseForTeleOp();
+            FieldPose finalPose = updateOdometryPose();
+            saveFinalPoseForTeleOp(finalPose);
             stopVisionIfAny();
             return;
         }
@@ -389,7 +391,8 @@ public abstract class BaseAuto extends LinearOpMode {
 
         try { runSequence(); }
         finally {
-            FieldPose finalPose = saveFinalPoseForTeleOp();
+            FieldPose finalPose = updateOdometryPose();
+            saveFinalPoseForTeleOp(finalPose);
             stopAll();
             stopVisionIfAny();
             updateStatusWithPose("COMPLETE", false, finalPose);
@@ -472,10 +475,11 @@ public abstract class BaseAuto extends LinearOpMode {
         long startMs = System.currentTimeMillis();
 
         while (opModeIsActive()) {
+            FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (timeoutMs > 0 && (now - startMs) >= timeoutMs) {
                 drive.stopAll();
-                updateStatusWithPose(label + " – timeout", false, updateOdometryPose());
+                updateStatusWithPose(label + " – timeout", false, loopPose);
                 telemetry.addData("Bearing (deg)", "---");
                 telemetry.addData("Turn speed (|twist|)", twist);
                 telemetry.addData("Sweep offsets (deg)", sweepSummary);
@@ -505,7 +509,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 lockedNow = lockWindow.contains(err);
                 if (lockedNow) {
                     drive.stopAll();
-                    updateStatusWithPose(label + " – lock", true, updateOdometryPose());
+                    updateStatusWithPose(label + " – lock", true, loopPose);
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
@@ -571,7 +575,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.addData("Scan state", state);
             }
 
-            updateStatusWithPose(label, lockedNow, updateOdometryPose());
+            updateStatusWithPose(label, lockedNow, loopPose);
             telemetry.addData("Bearing (deg)", bearing);
             telemetry.addData("Turn speed (|twist|)", twist);
             telemetry.addData("Sweep offsets (deg)", sweepSummary);
@@ -582,7 +586,8 @@ public abstract class BaseAuto extends LinearOpMode {
             idle();
         }
         drive.stopAll();
-        updateStatusWithPose(label + " – cancelled", false, updateOdometryPose());
+        FieldPose cancelPose = updateOdometryPose();
+        updateStatusWithPose(label + " – cancelled", false, cancelPose);
         telemetry.update();
         return false;
     }
@@ -614,9 +619,10 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive()) {
             updateIntakeFlowForAuto();
+            FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (now >= deadline) {
-                updateStatusWithPose(phase + " – timeout", false, updateOdometryPose());
+                updateStatusWithPose(phase + " – timeout", false, loopPose);
                 telemetry.addData("Phase", phase);
                 telemetry.addData("Distance (in)", "---");
                 telemetry.addData("Target RPM", launcher.targetRpm);
@@ -651,7 +657,7 @@ public abstract class BaseAuto extends LinearOpMode {
             if (withinBand && hadLock) {
                 if (settleStart < 0) settleStart = now;
                 if ((now - settleStart) >= settleMs) {
-                    updateStatusWithPose(phase + " – ready", true, updateOdometryPose());
+                    updateStatusWithPose(phase + " – ready", true, loopPose);
                     telemetry.addData("Phase", phase);
                     telemetry.addData("Distance (in)", distanceText);
                     telemetry.addData("Target RPM", launcher.targetRpm);
@@ -667,7 +673,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 settleStart = -1L;
             }
 
-            updateStatusWithPose(phase, hadLock && distanceIn != null, updateOdometryPose());
+            updateStatusWithPose(phase, hadLock && distanceIn != null, loopPose);
             telemetry.addData("Phase", phase);
             telemetry.addData("Distance (in)", distanceText);
             telemetry.addData("Target RPM", launcher.targetRpm);
@@ -733,7 +739,8 @@ public abstract class BaseAuto extends LinearOpMode {
             // REQUIRE at-speed
             while (opModeIsActive()) {
                 updateIntakeFlowForAuto();
-                updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, updateOdometryPose());
+                FieldPose loopPose = updateOdometryPose();
+                updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, loopPose);
                 telemetry.addData("Target RPM", launcher.targetRpm);
                 telemetry.addData("Current RPM", launcher.getCurrentRpm());
                 telemetry.update();
@@ -1261,10 +1268,16 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     private FieldPose saveFinalPoseForTeleOp() {
-        FieldPose finalPose = (odometry != null) ? odometry.update() : startPose;
-        try { PoseStore.setLastKnownPose(finalPose); } catch (Throwable ignored) {}
-        lastDashboardPose = finalPose;
-        return finalPose;
+        return saveFinalPoseForTeleOp(null);
+    }
+
+    private FieldPose saveFinalPoseForTeleOp(FieldPose finalPose) {
+        FieldPose resolved = (finalPose != null)
+                ? finalPose
+                : (odometry != null ? odometry.update() : startPose);
+        try { PoseStore.setLastKnownPose(resolved); } catch (Throwable ignored) {}
+        lastDashboardPose = resolved;
+        return resolved;
     }
 
     private int allianceGoalTagId() {

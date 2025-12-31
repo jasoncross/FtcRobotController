@@ -69,7 +69,7 @@ public class Drivebase {
 
     // ======= TUNE THESE =======
     public static final double WHEEL_DIAMETER_IN = DriveTuning.WHEEL_DIAMETER_IN; // goBILDA 96mm wheel ≈ 3.7795"
-    public static final double TICKS_PER_REV     = DriveTuning.TICKS_PER_REV;     // goBILDA 5202 312RPM output encoder
+    public static final double TICKS_PER_REV     = DriveTuning.TICKS_PER_REV;     // Encoder ticks per motor revolution
     public static final double GEAR_RATIO        = DriveTuning.GEAR_RATIO;        // wheel revs per motor rev (set >1 if reduced)
     public static final double TICKS_PER_IN      = (TICKS_PER_REV * GEAR_RATIO) / (Math.PI * WHEEL_DIAMETER_IN);
 
@@ -113,6 +113,8 @@ public class Drivebase {
     //                        translation stays aligned to the requested heading while twisting, and replaced
     //                        the fixed-direction tick target with encoder-derived translation accumulation to
     //                        keep distance termination accurate during turns.
+    // CHANGES (2025-12-29): Restored encoder distance conversion to physical ticks so Auto distances
+    //                        are no longer affected by odometry calibration.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;

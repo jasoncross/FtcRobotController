@@ -35,6 +35,13 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  * CHANGES (2025-12-19): Added Limelight aim-lock tunables to control how long
  *                        goal-tag locks persist and how much hysteresis applies
  *                        before switching aim samples.
+ * CHANGES (2025-12-29): Added Limelight localization filter + field-bounds
+ *                        tunables to keep pose fusion constrained to goal tags
+ *                        and reject off-field botpose updates.
+ * CHANGES (2025-12-29): Renamed Limelight localization tunables for clarity and
+ *                        added consolidated field-bound limits.
+ * CHANGES (2025-12-29): Added Limelight NetworkTables table name for MT2 yaw
+ *                        feed and localization filter writes.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -73,9 +80,23 @@ public final class VisionConfig {
         public static final int POLL_HZ = 30; // Limelight polling rate target (Hz)
         public static final boolean ENABLE_POSE_FUSION = true; // Enable LL XY fusion into odometry (when Limelight selected)
         public static final boolean PREFER_MEGA_TAG_2 = true; // Prefer MT2 pose when available
+        public static final boolean USE_LLRESULT_BOTPOSE_MT2 = false; // Use LLResult.getBotpose_MT2() when available (diagnostic only)
+        public static final String LL_NT_NAME = "limelight"; // NetworkTables name used for MT2 yaw + localization filter writes
+        public static final boolean ENABLE_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial whitelist for localization
+        public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
+        public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
+        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = {
+                VisionAprilTag.TAG_OBELISK_GPP,
+                VisionAprilTag.TAG_OBELISK_PGP,
+                VisionAprilTag.TAG_OBELISK_PPG
+        }; // Tag IDs explicitly excluded from localization
+        public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER
+        public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Deprecated: use LOCALIZATION_VALID_TAG_IDS
+        public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Deprecated: superseded by FIELD_HALF_IN - BOUNDS_MARGIN_IN (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
         public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)
+        public static final long YAW_MAX_AGE_MS = 250; // Max age for yaw feed when considering MT2 active (ms)
 
         public static final double MAX_POS_JUMP_IN_NORMAL = 18.0; // Reject vision if disagreement exceeds this (inches) while tracking
         public static final long REACQUIRE_AFTER_MS = 600; // Enter reacquire mode if no accepted vision for this long (ms)
@@ -88,11 +109,15 @@ public final class VisionConfig {
         public static final double MAX_SPEED_IN_PER_S = 35.0; // Skip fusion if robot is faster than this (in/s)
         public static final double MAX_TURN_RATE_DEG_PER_S = 140.0; // Skip fusion if turning faster than this (deg/s)
 
-        public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose if needed
-        public static final int X_SIGN = -1; // Flip X axis if needed (+1 normal)
-        public static final int Y_SIGN = 1; // Flip Y axis if needed (+1 normal)
-        public static final double X_OFFSET_IN = -110.0; // Additive X offset if needed (inches)
-        public static final double Y_OFFSET_IN = 110.0; // Additive Y offset if needed (inches)
+        public static final double FIELD_HALF_IN = 72.0; // Field half-length (inches) for corner→center transform
+        public static final boolean APPLY_CENTER_SHIFT = true; // Apply corner→center shift before offsets
+        public static final double BOUNDS_MARGIN_IN = 4.0; // Shrink allowed field bounds by this margin (inches)
+        public static final boolean AXIS_SWAP_XY = true; // Swap X/Y axes from Limelight pose (LOCKED)
+        public static final int X_SIGN = 1; // Field X sign (LOCKED)
+        public static final int Y_SIGN = -1; // Field Y sign (LOCKED)
+        public static final double X_OFFSET_IN = 0.0; // Additive X offset if needed (inches)
+        public static final double Y_OFFSET_IN = 0.0; // Additive Y offset if needed (inches)
+        public static final boolean DEBUG_VERBOSE_VISION = false; // Append extra MT2 frame debug fields to VisionDbg
     }
 
     public static int goalTagIdForAlliance(Alliance alliance) {

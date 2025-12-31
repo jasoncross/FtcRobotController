@@ -56,6 +56,9 @@ import static java.lang.Math.*;
  *                        orientation calls (SetRobotOrientation / setRobotOrientation),
  *                        added yaw/filter age telemetry, and preferred Helpers
  *                        fiducial override calls with Limelight3A fallback.
+ * CHANGES (2025-12-30): Rejected Limelight fusion updates when obelisk tags
+ *                        are visible (with debug override) and expanded the
+ *                        VisionDbg line to surface tag participation details.
  */
 public class Odometry {
 
@@ -103,6 +106,9 @@ public class Odometry {
     private long lastYawFeedMs = 0L;
     private int[] lastLocalizationIds = null;
     private boolean lastLocalizationTidOk = false;
+    private int[] lastVisibleIds = null;
+    private int[] lastObeliskIds = null;
+    private boolean lastObeliskSeen = false;
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -236,7 +242,16 @@ public class Odometry {
         }
         lastPrimaryTagId = readPrimaryTagId(result);
         lastVisibleTagCount = countFiducials(result);
+        lastVisibleIds = readVisibleFiducialIds(result);
+        lastObeliskIds = filterObeliskIds(lastVisibleIds);
+        lastObeliskSeen = lastObeliskIds.length > 0;
         lastLocalizationTidOk = isTagAllowedForLocalization(lastPrimaryTagId, lastLocalizationIds);
+
+        if (lastObeliskSeen && VisionConfig.LimelightFusion.DEBUG_REJECT_ON_OBELISK) {
+            validVisionStreak = 0;
+            lastRejectReason = "OBELISK";
+            return base;
+        }
 
         Pose3D pose3D = selectPose(result);
         lastMt2Expected = VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2;
@@ -513,6 +528,9 @@ public class Odometry {
         lastBoundsMax = null;
         lastLocalizationIds = null;
         lastLocalizationTidOk = false;
+        lastVisibleIds = null;
+        lastObeliskIds = null;
+        lastObeliskSeen = false;
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -528,6 +546,8 @@ public class Odometry {
         String llXYinStr = formatXYInches();
         String testStr = formatPair(lastBoundsTestX, lastBoundsTestY);
         String locIdsStr = formatIds(lastLocalizationIds);
+        String visibleIdsStr = formatIds(lastVisibleIds);
+        String obeliskIdsStr = formatIds(lastObeliskIds);
         String tidOkStr = String.valueOf(lastLocalizationTidOk);
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
@@ -542,8 +562,9 @@ public class Odometry {
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
         String boundStr = (lastBoundsMax == null) ? "--" : String.format(Locale.US, "%.0f", lastBoundsMax);
+        boolean accepted = "OK".equals(lastRejectReason);
         String baseLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s test=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d visibleIDs=%s obeliskSeen=%s obeliskIDs=%s llm=%s lli=%s raw=%s acc=%s fused=%s err=%s accepted=%s rejectReason=%s bnd=%s test=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -561,12 +582,16 @@ public class Odometry {
                 ageStr,
                 tidStr,
                 lastVisibleTagCount,
+                visibleIdsStr,
+                lastObeliskSeen,
+                obeliskIdsStr,
                 llXYmStr,
                 llXYinStr,
                 rawStr,
                 accStr,
                 fusedStr,
                 errStr,
+                accepted,
                 lastRejectReason,
                 boundStr,
                 testStr);
@@ -797,6 +822,55 @@ public class Odometry {
             } catch (Throwable ignored) { }
         }
         return null;
+    }
+
+    private int[] readVisibleFiducialIds(LLResult result) {
+        List<Integer> ids = new java.util.ArrayList<>();
+        Object list = readList(result, "getFiducialResults");
+        if (list instanceof Iterable) {
+            for (Object entry : (Iterable<?>) list) {
+                Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        if (ids.isEmpty()) {
+            int[] raw = readIntArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+            if (raw != null) {
+                for (int id : raw) {
+                    ids.add(id);
+                }
+            } else {
+                double[] rawDouble = readDoubleArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+                if (rawDouble != null) {
+                    for (double id : rawDouble) {
+                        ids.add((int) Math.round(id));
+                    }
+                }
+            }
+        }
+        if (ids.isEmpty()) return new int[0];
+        java.util.Set<Integer> unique = new java.util.HashSet<>(ids);
+        int[] out = new int[unique.size()];
+        int idx = 0;
+        for (Integer id : unique) {
+            out[idx++] = id;
+        }
+        Arrays.sort(out);
+        return out;
+    }
+
+    private int[] filterObeliskIds(int[] ids) {
+        if (ids == null || ids.length == 0) return new int[0];
+        int[] tmp = new int[ids.length];
+        int count = 0;
+        for (int id : ids) {
+            if (VisionConfig.isObeliskTagId(id)) {
+                tmp[count++] = id;
+            }
+        }
+        return Arrays.copyOf(tmp, count);
     }
 
     private int[] readIntArray(Object owner, String... methods) {

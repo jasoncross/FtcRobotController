@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.config;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 
+import java.util.Arrays;
+
 /*
  * FILE: VisionConfig.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/
@@ -42,6 +44,9 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *                        added consolidated field-bound limits.
  * CHANGES (2025-12-29): Added Limelight NetworkTables table name for MT2 yaw
  *                        feed and localization filter writes.
+ * CHANGES (2025-12-30): Centralized obelisk tag IDs and added a debug toggle
+ *                        to reject MT2 fusion frames whenever obelisk tags
+ *                        appear in the visible fiducial set.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -55,6 +60,11 @@ public final class VisionConfig {
 
     public static final int GOAL_TAG_BLUE = VisionAprilTag.TAG_BLUE_GOAL;    // Blue alliance scoring tag ID
     public static final int GOAL_TAG_RED = VisionAprilTag.TAG_RED_GOAL;      // Red alliance scoring tag ID
+    public static final int[] OBELISK_TAG_IDS = {
+            VisionAprilTag.TAG_OBELISK_GPP,
+            VisionAprilTag.TAG_OBELISK_PGP,
+            VisionAprilTag.TAG_OBELISK_PPG
+    }; // Obelisk motif tag IDs (21/22/23)
 
     public static final double GOAL_RED_X_IN = OdometryConfig.TAG_RED_GOAL_X;       // Red goal tag X on field (inches)
     public static final double GOAL_RED_Y_IN = OdometryConfig.TAG_RED_GOAL_Y;       // Red goal tag Y on field (inches)
@@ -85,11 +95,8 @@ public final class VisionConfig {
         public static final boolean ENABLE_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial whitelist for localization
         public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
         public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
-        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = {
-                VisionAprilTag.TAG_OBELISK_GPP,
-                VisionAprilTag.TAG_OBELISK_PGP,
-                VisionAprilTag.TAG_OBELISK_PPG
-        }; // Tag IDs explicitly excluded from localization
+        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = OBELISK_TAG_IDS; // Tag IDs explicitly excluded from localization
+        public static final boolean DEBUG_REJECT_ON_OBELISK = true; // Reject MT2 fusion frames when any obelisk tag is visible
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER
         public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Deprecated: use LOCALIZATION_VALID_TAG_IDS
         public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Deprecated: superseded by FIELD_HALF_IN - BOUNDS_MARGIN_IN (inches)
@@ -130,6 +137,17 @@ public final class VisionConfig {
 
     public static double goalYMeters(Alliance alliance) {
         return inchesToMeters(alliance == Alliance.RED ? GOAL_RED_Y_IN : GOAL_BLUE_Y_IN);
+    }
+
+    public static boolean isObeliskTagId(int tagId) {
+        for (int id : OBELISK_TAG_IDS) {
+            if (id == tagId) return true;
+        }
+        return false;
+    }
+
+    public static int[] getObeliskTagIds() {
+        return Arrays.copyOf(OBELISK_TAG_IDS, OBELISK_TAG_IDS.length);
     }
 
     private static double inchesToMeters(double inches) {

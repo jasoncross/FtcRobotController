@@ -71,7 +71,7 @@ Primary source: **3D AprilTag pose data (botpose MT2 preferred)**
 - MegaTag2: 3D localization fused with robot IMU yaw (still ignored for odometry heading)
 - Used for odometry correction in autos/TeleOp as XY-only inputs (no yaw fusion)
 - Consumed by odometry with two-phase gating (tight outlier rejection while tracking, larger reacquire window after `reacquireAfterMs`), per-step clamps, and speed/turn-rate motion gates to prevent snapping.
-- Localization filters fiducials to goal tags **20/24** only (obelisk tags never feed `botpose`/`botpose_MT2`).
+- Localization filters fiducials to goal tags **20/24** only (obelisk tags never feed `botpose`/`botpose_MT2`), and odometry hard-rejects any MT2 frame that reports obelisk tag participation (debug override available for drift reproduction).
 - MegaTag2 is stabilized by feeding the robot’s IMU yaw to Limelight every loop (0° toward +Y, CCW positive).
 - Vision fusion rejects any Limelight pose outside ±90 in X/Y to keep pose seeding on-field.
 - TeleOp exposes a compact `VisionDbg` telemetry line with yaw feed status, raw/accepted/fused poses, and rejection reasons for MT2 diagnostics.

@@ -243,7 +243,9 @@ public abstract class BaseAuto extends LinearOpMode {
     private FieldPose odometrySeedPose = null;
     private double seedImuYawDeg = 0.0;
     private double seedHeadingOffsetDeg = 0.0;
+    private double seedHeadingDeg = 0.0;
     private String visionSeedReason = "startPose";
+    private FieldPose lastDashboardPose = null;
     protected FtcDashboard dashboard;               // Shared FTC Dashboard instance
 
     // Local defaults if config fails (protects against missing SharedRobotTuning definitions).
@@ -381,12 +383,13 @@ public abstract class BaseAuto extends LinearOpMode {
         try { runSequence(); }
         finally {
             try {
-                FieldPose finalPose = (odometry != null) ? odometry.update() : startPose;
+                FieldPose finalPose = (lastDashboardPose != null) ? lastDashboardPose
+                        : ((odometry != null) ? odometry.update() : startPose);
                 PoseStore.setLastKnownPose(finalPose);
             } catch (Throwable ignored) {}
             stopAll();
             stopVisionIfAny();
-            updateStatus("COMPLETE", false);
+            updateStatus("COMPLETE", false, (lastDashboardPose != null) ? lastDashboardPose : startPose);
             telemetry.addLine("Auto complete – DS will queue TeleOp."); telemetry.update();
             sleep(250);
         }
@@ -1055,11 +1058,11 @@ public abstract class BaseAuto extends LinearOpMode {
         return getClass().getSimpleName();
     }
 
-    protected final void updateStatus(String phase, boolean tagLocked) {
+    protected final void updateStatus(String phase, boolean tagLocked, FieldPose poseForDashboard) {
         if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
             limelightAutoSelector.update();
         }
-        FieldPose poseForDashboard = (odometry != null) ? odometry.update() : startPose;
+        lastDashboardPose = (poseForDashboard != null) ? poseForDashboard : startPose;
         if (feed != null) {
             try { feed.update(); } catch (Throwable ignored) {}
         }
@@ -1099,19 +1102,30 @@ public abstract class BaseAuto extends LinearOpMode {
                     ? "--,--,--"
                     : String.format(Locale.US, "%.1f,%.1f,%.1f", odometrySeedPose.x, odometrySeedPose.y, odometrySeedPose.headingDeg);
             String startPoseStr = String.format(Locale.US, "%.1f,%.1f,%.1f", startPose.x, startPose.y, startPose.headingDeg);
+            String seedHeadingStr = String.format(Locale.US, "%.1f", seedHeadingDeg);
             telemetry.addData("Start Pose Seed", startPoseStr);
             telemetry.addData("Odo After Seed", seedPoseStr);
-            telemetry.addData("IMU Yaw Raw", String.format(Locale.US, "%.1f", seedImuYawDeg));
+            telemetry.addData("IMU Yaw At Seed", String.format(Locale.US, "%.1f", seedImuYawDeg));
+            telemetry.addData("Seed Heading", seedHeadingStr);
             telemetry.addData("Heading Offset", String.format(Locale.US, "%.1f", seedHeadingOffsetDeg));
             telemetry.addData("Vision Seeded", visionSeededStart);
             telemetry.addData("Vision Seed Reason", visionSeedReason);
             mirroredLines.add("Start Pose Seed: " + startPoseStr);
             mirroredLines.add("Odo After Seed: " + seedPoseStr);
-            mirroredLines.add("IMU Yaw Raw: " + String.format(Locale.US, "%.1f", seedImuYawDeg));
+            mirroredLines.add("IMU Yaw At Seed: " + String.format(Locale.US, "%.1f", seedImuYawDeg));
+            mirroredLines.add("Seed Heading: " + seedHeadingStr);
             mirroredLines.add("Heading Offset: " + String.format(Locale.US, "%.1f", seedHeadingOffsetDeg));
             mirroredLines.add("Vision Seeded: " + visionSeededStart);
             mirroredLines.add("Vision Seed Reason: " + visionSeedReason);
         }
+        double imuYawNow = (drive != null)
+                ? normDeg(drive.heading() + OdometryConfig.IMU_HEADING_OFFSET_DEG)
+                : 0.0;
+        double fusedHeadingNow = (poseForDashboard != null) ? poseForDashboard.headingDeg : 0.0;
+        telemetry.addData("IMU Yaw Now", String.format(Locale.US, "%.1f", imuYawNow));
+        telemetry.addData("Fused Heading Now", String.format(Locale.US, "%.1f", fusedHeadingNow));
+        mirroredLines.add("IMU Yaw Now: " + String.format(Locale.US, "%.1f", imuYawNow));
+        mirroredLines.add("Fused Heading Now: " + String.format(Locale.US, "%.1f", fusedHeadingNow));
 
         boolean goalVisibleRaw = visionTargetProvider != null && visionTargetProvider.isGoalVisibleRaw();
         boolean goalVisibleSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalVisibleSmoothed();
@@ -1217,15 +1231,20 @@ public abstract class BaseAuto extends LinearOpMode {
                 mirroredLines.add(runningLine);
             }
         }
-        sendDashboard(poseForDashboard, statusPhase, mirroredLines);
+        sendDashboard(lastDashboardPose, statusPhase, mirroredLines);
+    }
+
+    protected final void updateStatus(String phase, boolean tagLocked) {
+        updateStatus(phase, tagLocked, updateOdometryPose());
     }
 
     private void seedOdometryFromPose(FieldPose pose, String reason, boolean fromVision) {
         if (odometry == null || pose == null) return;
         odometry.setPoseWithImuAlignment(pose.x, pose.y, pose.headingDeg);
         odometrySeedPose = odometry.getPose();
-        seedImuYawDeg = drive.heading();
+        seedImuYawDeg = odometry.getImuYawAtSeedDeg();
         seedHeadingOffsetDeg = odometry.getHeadingOffsetDeg();
+        seedHeadingDeg = pose.headingDeg;
         visionSeededStart = fromVision;
         visionSeedReason = (reason == null || reason.isEmpty()) ? "startPose" : reason;
     }

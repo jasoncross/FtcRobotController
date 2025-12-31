@@ -116,6 +116,7 @@ public class Odometry {
     private int[] lastObeliskIds = null;
     private boolean lastObeliskSeen = false;
     private double imuHeadingOffsetDeg = 0.0;
+    private double lastSeedImuYawDeg = 0.0;
     private int stableVisionFrames = 0;
     private Double lastStableVisionX = null;
     private Double lastStableVisionY = null;
@@ -140,12 +141,17 @@ public class Odometry {
     /** Initialize odometry pose and align IMU-based heading integration to the provided heading. */
     public void setPoseWithImuAlignment(double x, double y, double headingDeg) {
         double rawImu = (drive != null) ? drive.heading() : headingDeg;
-        imuHeadingOffsetDeg = normHeading(headingDeg - rawImu - OdometryConfig.IMU_HEADING_OFFSET_DEG);
+        double imuYawAtSeed = rawImu + OdometryConfig.IMU_HEADING_OFFSET_DEG;
+        lastSeedImuYawDeg = normHeading(imuYawAtSeed);
+        imuHeadingOffsetDeg = normHeading(headingDeg - imuYawAtSeed);
         setPoseInternal(x, y, headingDeg);
     }
 
     /** Returns the current IMU-to-odometry heading offset applied during integration. */
     public double getHeadingOffsetDeg() { return imuHeadingOffsetDeg; }
+
+    /** Returns the IMU yaw (with IMU offset applied) captured during the last pose seed. */
+    public double getImuYawAtSeedDeg() { return lastSeedImuYawDeg; }
 
     private void setPoseInternal(double x, double y, double headingDeg) {
         pose.x = x;

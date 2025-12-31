@@ -2,6 +2,8 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
+**2025-12-30 update:** No new tunables were added in the latest maintenance pass; this directory was refreshed to stay aligned with the current Limelight odometry guardrails and build fixes.
+
 > **How to read the tables**
 >
 > * **Parameter** — Name of the constant, field, or call that you edit in code.

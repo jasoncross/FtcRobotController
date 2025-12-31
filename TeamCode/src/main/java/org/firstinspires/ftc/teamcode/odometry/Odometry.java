@@ -9,6 +9,7 @@ import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 import static java.lang.Math.*;
@@ -59,6 +60,8 @@ import static java.lang.Math.*;
  * CHANGES (2025-12-30): Rejected Limelight fusion updates when obelisk tags
  *                        are visible (with debug override) and expanded the
  *                        VisionDbg line to surface tag participation details.
+ * CHANGES (2025-12-30): Added missing List import for fiducial ID collection
+ *                        helpers to keep Odometry builds clean.
  */
 public class Odometry {
 

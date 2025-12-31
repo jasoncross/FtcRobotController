@@ -169,6 +169,7 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 | **Launcher** | RPM load variance | PIDF tuning + tag-based AutoSpeed | Consistent volleys |
 | **Vision** | P480 instability | **Migrated to Limelight 3A** (with TeleOp pipeline alias retained post split) | Reliable heading/distance |
 | **TeleOp** | Button logic duplication | Centralized bindings | Cleaner driver workflow |
+| **Maintenance** | Odometry build warning | Restored missing List import after vision guard updates | Clean FTC SDK compile |
 
 ---
 

@@ -30,9 +30,9 @@ behavior consistent across all autos.
 
 ### Start pose seeding & TeleOp handoff
 
-- Use `setStartingPose(x, y, headingDeg)` inside your auto class (constructor or field initializer) to seed the fused odometry pose during INIT. This is a BaseAuto helper, **not** a chained AutoSequence step, so it fires once up front rather than inside `sequence()`.
-- BaseAuto attempts an AprilTag re-localization during INIT whenever either goal tag is visible to refine the seed before START, and continues to blend goal-tag observations into odometry throughout the auto run.
-- At the end of each Auto, the fused pose is written to the shared `odometry/PoseStore`, and TeleOp reads it during INIT (or re-localizes from tags) so field-aware telemetry and Dashboard drawings remain continuous between phases. TeleOp keeps applying tag corrections whenever a goal tag is visible.
+- Use `setStartingPose(x, y, headingDeg)` inside your auto class (constructor or field initializer) to seed the fused odometry pose during INIT. This is a BaseAuto helper, **not** a chained AutoSequence step, so it fires once up front rather than inside `sequence()`. BaseAuto aligns the IMU heading offset to that seed so heading does not snap back to IMU zero.
+- BaseAuto can optionally re-localize from AprilTags during INIT **only** when `VisionConfig.LimelightFusion.INIT_ALLOW_VISION_SEED` is true; otherwise the explicit start pose remains authoritative until tags are fused later in the run.
+- At the end of each Auto, the latest fused pose is written to the shared `odometry/PoseStore`, and TeleOp reads it during INIT (or re-localizes from tags) so field-aware telemetry and Dashboard drawings remain continuous between phases. TeleOp keeps applying tag corrections whenever a goal tag is visible.
 
 ---
 
@@ -291,4 +291,4 @@ handoffs and mentor reviews.
 
 ---
 
-*Last updated: 2025‑11‑25*
+*Last updated: 2025‑12‑30*

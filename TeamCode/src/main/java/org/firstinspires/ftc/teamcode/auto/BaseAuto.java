@@ -193,6 +193,12 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        continuous-fire telemetry stays live while AutoSpeed maintains RPM.
     // CHANGES (2025-12-28): Added INIT Limelight pipeline auto-selection with tunable profiles,
     //                        AprilTag precedence scoring, and telemetry severity rules.
+    // CHANGES (2025-12-30): Aligned odometry start pose with IMU heading offsets, made init vision
+    //                        seeding opt-in, refreshed init telemetry with seed details, and ensured
+    //                        dashboard poses use fresh odometry updates each loop.
+    // CHANGES (2025-12-31): Ensured Auto saves the final fused pose on stop/cleanup, removed
+    //                        double-update dashboard paths, and aligned heading offset telemetry
+    //                        with the IMU seed definition.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -237,6 +243,12 @@ public abstract class BaseAuto extends LinearOpMode {
     protected Odometry odometry;                     // Fused drive + IMU + AprilTag pose
     protected FieldPose startPose = new FieldPose(0.0, OdometryConfig.HUMAN_WALL_Y, 0.0); // Staging pose seeded by derived autos
     private boolean visionSeededStart = false;
+    private FieldPose odometrySeedPose = null;
+    private double seedImuYawDeg = 0.0;
+    private double seedHeadingOffsetDeg = 0.0;
+    private double seedHeadingDeg = 0.0;
+    private String visionSeedReason = "startPose";
+    private FieldPose lastDashboardPose = null;
     protected FtcDashboard dashboard;               // Shared FTC Dashboard instance
 
     // Local defaults if config fails (protects against missing SharedRobotTuning definitions).
@@ -345,7 +357,7 @@ public abstract class BaseAuto extends LinearOpMode {
         feed.safeInit();
         intake.safeInit();
         feed.initFeedStop(hardwareMap, telemetry);
-        odometry.setPose(startPose.x, startPose.y, startPose.headingDeg);
+        seedOdometryFromPose(startPose, "startPose", false);
 
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {} // Sync AutoSpeed curve
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
@@ -356,13 +368,19 @@ public abstract class BaseAuto extends LinearOpMode {
             } else {
                 ensureLimelightObeliskMode();
             }
+            FieldPose initPose = updateOdometryPose();
             maybeSeedStartPoseFromVision();
-            updateStatus("INIT", false);
+            updateStatusWithPose("INIT", false, initPose);
             onPreStartLoop();
             telemetry.update();
             sleep(20);
         }
-        if (isStopRequested()) { stopVisionIfAny(); return; }
+        if (isStopRequested()) {
+            FieldPose finalPose = updateOdometryPose();
+            saveFinalPoseForTeleOp(finalPose);
+            stopVisionIfAny();
+            return;
+        }
         if (limelightAutoSelector != null) {
             limelightAutoSelector.notifyOpModeStarted();
         }
@@ -373,10 +391,11 @@ public abstract class BaseAuto extends LinearOpMode {
 
         try { runSequence(); }
         finally {
-            try { PoseStore.setLastKnownPose((odometry != null) ? odometry.getPose() : startPose); } catch (Throwable ignored) {}
+            FieldPose finalPose = updateOdometryPose();
+            saveFinalPoseForTeleOp(finalPose);
             stopAll();
             stopVisionIfAny();
-            updateStatus("COMPLETE", false);
+            updateStatusWithPose("COMPLETE", false, finalPose);
             telemetry.addLine("Auto complete – DS will queue TeleOp."); telemetry.update();
             sleep(250);
         }
@@ -456,10 +475,11 @@ public abstract class BaseAuto extends LinearOpMode {
         long startMs = System.currentTimeMillis();
 
         while (opModeIsActive()) {
+            FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (timeoutMs > 0 && (now - startMs) >= timeoutMs) {
                 drive.stopAll();
-                updateStatus(label + " – timeout", false);
+                updateStatusWithPose(label + " – timeout", false, loopPose);
                 telemetry.addData("Bearing (deg)", "---");
                 telemetry.addData("Turn speed (|twist|)", twist);
                 telemetry.addData("Sweep offsets (deg)", sweepSummary);
@@ -489,7 +509,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 lockedNow = lockWindow.contains(err);
                 if (lockedNow) {
                     drive.stopAll();
-                    updateStatus(label + " – lock", true);
+                    updateStatusWithPose(label + " – lock", true, loopPose);
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
@@ -555,7 +575,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.addData("Scan state", state);
             }
 
-            updateStatus(label, lockedNow);
+            updateStatusWithPose(label, lockedNow, loopPose);
             telemetry.addData("Bearing (deg)", bearing);
             telemetry.addData("Turn speed (|twist|)", twist);
             telemetry.addData("Sweep offsets (deg)", sweepSummary);
@@ -566,7 +586,8 @@ public abstract class BaseAuto extends LinearOpMode {
             idle();
         }
         drive.stopAll();
-        updateStatus(label + " – cancelled", false);
+        FieldPose cancelPose = updateOdometryPose();
+        updateStatusWithPose(label + " – cancelled", false, cancelPose);
         telemetry.update();
         return false;
     }
@@ -598,9 +619,10 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive()) {
             updateIntakeFlowForAuto();
+            FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (now >= deadline) {
-                updateStatus(phase + " – timeout", false);
+                updateStatusWithPose(phase + " – timeout", false, loopPose);
                 telemetry.addData("Phase", phase);
                 telemetry.addData("Distance (in)", "---");
                 telemetry.addData("Target RPM", launcher.targetRpm);
@@ -635,7 +657,7 @@ public abstract class BaseAuto extends LinearOpMode {
             if (withinBand && hadLock) {
                 if (settleStart < 0) settleStart = now;
                 if ((now - settleStart) >= settleMs) {
-                    updateStatus(phase + " – ready", true);
+                    updateStatusWithPose(phase + " – ready", true, loopPose);
                     telemetry.addData("Phase", phase);
                     telemetry.addData("Distance (in)", distanceText);
                     telemetry.addData("Target RPM", launcher.targetRpm);
@@ -651,7 +673,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 settleStart = -1L;
             }
 
-            updateStatus(phase, hadLock && distanceIn != null);
+            updateStatusWithPose(phase, hadLock && distanceIn != null, loopPose);
             telemetry.addData("Phase", phase);
             telemetry.addData("Distance (in)", distanceText);
             telemetry.addData("Target RPM", launcher.targetRpm);
@@ -664,7 +686,7 @@ public abstract class BaseAuto extends LinearOpMode {
             idle();
         }
 
-        updateStatus(phase + " – timeout", false);
+        updateStatusWithPose(phase + " – timeout", false, updateOdometryPose());
         telemetry.addData("Phase", phase);
         telemetry.addData("Distance (in)", "---");
         telemetry.addData("Target RPM", launcher.targetRpm);
@@ -698,7 +720,7 @@ public abstract class BaseAuto extends LinearOpMode {
             if (requireLock) {
                 lockedForShot = requireLockOrTimeOut(1200, shotPhase + " – acquire lock");
                 if (!lockedForShot) {
-                    updateStatus("Hold position", false);
+                    updateStatusWithPose("Hold position", false, updateOdometryPose());
                     telemetry.addLine("⚠️ No tag lock — skipping shot " + (i + 1));
                     telemetry.update();
                     continue; // do not free-fire when lock required
@@ -717,7 +739,8 @@ public abstract class BaseAuto extends LinearOpMode {
             // REQUIRE at-speed
             while (opModeIsActive()) {
                 updateIntakeFlowForAuto();
-                updateStatus(shotPhase + " – wait for RPM", lockedForShot || !requireLock);
+                FieldPose loopPose = updateOdometryPose();
+                updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, loopPose);
                 telemetry.addData("Target RPM", launcher.targetRpm);
                 telemetry.addData("Current RPM", launcher.getCurrentRpm());
                 telemetry.update();
@@ -728,7 +751,7 @@ public abstract class BaseAuto extends LinearOpMode {
             // Feed once with intake assist
             boolean wasOn = intake.isOn();
             if (!wasOn) intake.set(true);
-            updateStatus(shotPhase + " – feed", lockedForShot || !requireLock);
+            updateStatusWithPose(shotPhase + " – feed", lockedForShot || !requireLock, updateOdometryPose());
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.update();
@@ -755,7 +778,7 @@ public abstract class BaseAuto extends LinearOpMode {
             feed.update();
             updateIntakeFlowForAuto();
             drive.stopAll();
-            updateStatus("Stabilize after volley", lockedForShot || !requireLock);
+            updateStatusWithPose("Stabilize after volley", lockedForShot || !requireLock, updateOdometryPose());
             telemetry.update();
         }
     }
@@ -771,7 +794,7 @@ public abstract class BaseAuto extends LinearOpMode {
         if (requireLock) {
             lockedForRun = lastReadyHadLock || requireLockOrTimeOut(1200, label + " – acquire lock");
             if (!lockedForRun) {
-                updateStatus(label + " – skipped (no lock)", false);
+                updateStatusWithPose(label + " – skipped (no lock)", false, updateOdometryPose());
                 telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
                 telemetry.update();
                 return;
@@ -802,7 +825,7 @@ public abstract class BaseAuto extends LinearOpMode {
             feed.update();
             updateIntakeFlowForAuto();
 
-            updateStatus(label, lockedForRun || !requireLock);
+            updateStatusWithPose(label, lockedForRun || !requireLock, updateOdometryPose());
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
             telemetry.addData("Time remaining (ms)", Math.max(0L, runMs - (System.currentTimeMillis() - start)));
@@ -854,7 +877,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 boolean locked = Math.abs(err) <= tol;
                 if (locked) {
                     drive.stopAll();
-                    updateStatus(label, true);
+                    updateStatusWithPose(label, true, updateOdometryPose());
                     telemetry.addData("Bearing (deg)", err);
                     telemetry.update();
                     return true;
@@ -862,20 +885,20 @@ public abstract class BaseAuto extends LinearOpMode {
                 double cmdRaw = aim.turnPower();
                 double cmd = clamp(TagAimController.applyDriveTwistSign(cmdRaw), -cap, +cap);
                 drive.drive(0, 0, cmd * 0.6);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Bearing (deg)", err);
             } else {
                 long now = System.currentTimeMillis();
                 if (now - lastFlip > 600) { scanSign *= -1.0; lastFlip = now; }
                 drive.drive(0, 0, scanSign * 0.25 * cap);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Bearing (deg)", Double.NaN);
             }
             telemetry.update();
             idle();
         }
         drive.stopAll();
-        updateStatus(label + " – timeout", false);
+        updateStatusWithPose(label + " – timeout", false, updateOdometryPose());
         telemetry.update();
         return false;
     }
@@ -906,7 +929,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected final void setStartingPose(double x, double y, double headingDeg) {
         startPose = new FieldPose(x, y, headingDeg);
         if (odometry != null) {
-            odometry.setPose(x, y, headingDeg);
+            seedOdometryFromPose(startPose, "startPose", false);
         }
     }
 
@@ -918,6 +941,10 @@ public abstract class BaseAuto extends LinearOpMode {
 
     private void maybeSeedStartPoseFromVision() {
         if (visionSeededStart || odometry == null) return;
+        if (!VisionConfig.LimelightFusion.INIT_ALLOW_VISION_SEED) {
+            visionSeedReason = "disabled";
+            return;
+        }
         FieldPose guess = odometry.getLastVisionPose();
         if (guess == null && VisionConfig.VISION_SOURCE == VisionConfig.VisionSource.LIMELIGHT) {
             odometry.update();
@@ -925,8 +952,10 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         if (guess != null) {
             startPose = guess;
-            odometry.setPose(guess.x, guess.y, guess.headingDeg);
+            seedOdometryFromPose(guess, "vision", true);
             visionSeededStart = true;
+        } else {
+            visionSeedReason = "no_tag";
         }
     }
 
@@ -939,7 +968,7 @@ public abstract class BaseAuto extends LinearOpMode {
         if (distance < 1e-3) return;
         double headingDeg = Math.toDegrees(Math.atan2(dx, dy));
         drive.moveWithTwist(distance, headingDeg, finalHeadingDeg, clampTranslationSpeed(speedCap), clampTurnSpeed(speedCap));
-        updateStatus(label, true);
+        updateStatusWithPose(label, true, updateOdometryPose());
         telemetry.update();
         updateOdometryPose();
     }
@@ -1039,10 +1068,11 @@ public abstract class BaseAuto extends LinearOpMode {
         return getClass().getSimpleName();
     }
 
-    protected final void updateStatus(String phase, boolean tagLocked) {
+    protected final void updateStatusWithPose(String phase, boolean tagLocked, FieldPose poseForDashboard) {
         if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
             limelightAutoSelector.update();
         }
+        lastDashboardPose = (poseForDashboard != null) ? poseForDashboard : startPose;
         if (feed != null) {
             try { feed.update(); } catch (Throwable ignored) {}
         }
@@ -1077,6 +1107,35 @@ public abstract class BaseAuto extends LinearOpMode {
         String startPoseText = startPoseDescription();
         telemetry.addData("Start Pose", startPoseText);
         mirroredLines.add("Start Pose: " + startPoseText);
+        if (!isStarted()) {
+            String seedPoseStr = (odometrySeedPose == null)
+                    ? "--,--,--"
+                    : String.format(Locale.US, "%.1f,%.1f,%.1f", odometrySeedPose.x, odometrySeedPose.y, odometrySeedPose.headingDeg);
+            String startPoseStr = String.format(Locale.US, "%.1f,%.1f,%.1f", startPose.x, startPose.y, startPose.headingDeg);
+            String seedHeadingStr = String.format(Locale.US, "%.1f", seedHeadingDeg);
+            telemetry.addData("Start Pose Seed", startPoseStr);
+            telemetry.addData("Odo After Seed", seedPoseStr);
+            telemetry.addData("IMU Yaw At Seed", String.format(Locale.US, "%.1f", seedImuYawDeg));
+            telemetry.addData("Seed Heading", seedHeadingStr);
+            telemetry.addData("Heading Offset", String.format(Locale.US, "%.1f", seedHeadingOffsetDeg));
+            telemetry.addData("Vision Seeded", visionSeededStart);
+            telemetry.addData("Vision Seed Reason", visionSeedReason);
+            mirroredLines.add("Start Pose Seed: " + startPoseStr);
+            mirroredLines.add("Odo After Seed: " + seedPoseStr);
+            mirroredLines.add("IMU Yaw At Seed: " + String.format(Locale.US, "%.1f", seedImuYawDeg));
+            mirroredLines.add("Seed Heading: " + seedHeadingStr);
+            mirroredLines.add("Heading Offset: " + String.format(Locale.US, "%.1f", seedHeadingOffsetDeg));
+            mirroredLines.add("Vision Seeded: " + visionSeededStart);
+            mirroredLines.add("Vision Seed Reason: " + visionSeedReason);
+        }
+        double imuYawNow = (drive != null)
+                ? normDeg(drive.heading() + OdometryConfig.IMU_HEADING_OFFSET_DEG)
+                : 0.0;
+        double fusedHeadingNow = (poseForDashboard != null) ? poseForDashboard.headingDeg : 0.0;
+        telemetry.addData("IMU Yaw Now", String.format(Locale.US, "%.1f", imuYawNow));
+        telemetry.addData("Fused Heading Now", String.format(Locale.US, "%.1f", fusedHeadingNow));
+        mirroredLines.add("IMU Yaw Now: " + String.format(Locale.US, "%.1f", imuYawNow));
+        mirroredLines.add("Fused Heading Now: " + String.format(Locale.US, "%.1f", fusedHeadingNow));
 
         boolean goalVisibleRaw = visionTargetProvider != null && visionTargetProvider.isGoalVisibleRaw();
         boolean goalVisibleSmoothed = visionTargetProvider != null && visionTargetProvider.isGoalVisibleSmoothed();
@@ -1182,8 +1241,18 @@ public abstract class BaseAuto extends LinearOpMode {
                 mirroredLines.add(runningLine);
             }
         }
-        FieldPose poseForDashboard = (odometry != null) ? odometry.getPose() : startPose;
-        sendDashboard(poseForDashboard, statusPhase, mirroredLines);
+        sendDashboard(lastDashboardPose, statusPhase, mirroredLines);
+    }
+
+    private void seedOdometryFromPose(FieldPose pose, String reason, boolean fromVision) {
+        if (odometry == null || pose == null) return;
+        odometry.setPoseWithImuAlignment(pose.x, pose.y, pose.headingDeg);
+        odometrySeedPose = odometry.getPose();
+        seedImuYawDeg = odometry.getImuYawAtSeedDeg();
+        seedHeadingOffsetDeg = odometry.getHeadingOffsetDeg();
+        seedHeadingDeg = pose.headingDeg;
+        visionSeededStart = fromVision;
+        visionSeedReason = (reason == null || reason.isEmpty()) ? "startPose" : reason;
     }
 
     private void sendDashboard(FieldPose pose, String statusLabel, List<String> mirroredLines) {
@@ -1196,6 +1265,19 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         DecodeFieldDrawing.drawField(packet, pose, alliance(), ObeliskSignal.get());
         dashboard.sendTelemetryPacket(packet);
+    }
+
+    private FieldPose saveFinalPoseForTeleOp() {
+        return saveFinalPoseForTeleOp(null);
+    }
+
+    private FieldPose saveFinalPoseForTeleOp(FieldPose finalPose) {
+        FieldPose resolved = (finalPose != null)
+                ? finalPose
+                : (odometry != null ? odometry.update() : startPose);
+        try { PoseStore.setLastKnownPose(resolved); } catch (Throwable ignored) {}
+        lastDashboardPose = resolved;
+        return resolved;
     }
 
     private int allianceGoalTagId() {
@@ -1270,7 +1352,7 @@ public abstract class BaseAuto extends LinearOpMode {
         double target = autoCtrl.hold();
         if (target <= 0) { target = seed; }
         launcher.setTargetRpm(target);
-        updateStatus(label, false);
+        updateStatusWithPose(label, false, updateOdometryPose());
         telemetry.addData("Target RPM", target);
         telemetry.addData("Auto default RPM", seed);
         telemetry.update();
@@ -1299,7 +1381,7 @@ public abstract class BaseAuto extends LinearOpMode {
             return addStep(() -> {
                 storedHeading = drive.heading();
                 String label = resolveLabel(phase, "Record heading");
-                updateStatus(label, lastLock);
+                updateStatusWithPose(label, lastLock, updateOdometryPose());
                 telemetry.addData("Stored heading (deg)", storedHeading);
                 telemetry.update();
             });
@@ -1315,7 +1397,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 double targetHeading = normDeg(startHeading + twistDeg);
                 double absoluteHeading = normDeg(startHeading + headingDeg);
                 double turnSpeed = clampTurnSpeed(speedCap);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Distance (in)", distanceInches);
                 telemetry.addData("Heading offset (deg)", headingDeg);
                 telemetry.addData("Resolved heading (deg)", absoluteHeading);
@@ -1326,7 +1408,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.update();
                 drive.moveWithTwist(distanceInches, absoluteHeading, targetHeading, speed, turnSpeed);
                 drive.stopAll();
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }
@@ -1337,12 +1419,12 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
                 double speed = clampTurnSpeed(speedCap);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Delta (deg)", degrees);
                 telemetry.addData("Speed cap", speed);
                 telemetry.update();
                 drive.turn(degrees, speed);
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }
@@ -1353,13 +1435,13 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
                 double speed = clampTurnSpeed(speedCap);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Target heading (deg)", headingDeg);
                 telemetry.addData("Speed cap", speed);
                 telemetry.update();
                 double delta = shortestDiff(headingDeg, drive.heading());
                 drive.turn(delta, speed);
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }
@@ -1429,7 +1511,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 String label = resolveLabel(phase, "Select vision profile");
                 lastLock = false;
                 lastAimReady = false;
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
 
                 VisionConfig.VisionSource source;
                 try { source = VisionConfig.VISION_SOURCE; }
@@ -1472,7 +1554,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 String label = resolveLabel(phase, enabled ? "Enable intake" : "Disable intake");
                 lastLock = false;
                 lastAimReady = false;
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Intake state", enabled ? "ON" : "OFF");
                 telemetry.update();
                 intake.set(enabled);
@@ -1484,10 +1566,10 @@ public abstract class BaseAuto extends LinearOpMode {
                 String label = resolveLabel(phase, "Stop all");
                 lastLock = false;
                 lastAimReady = false;
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.update();
                 stopAll();
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }
@@ -1514,7 +1596,7 @@ public abstract class BaseAuto extends LinearOpMode {
         public AutoSequence waitFor(String phase, long milliseconds) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Wait");
-                updateStatus(label, lastLock);
+                updateStatusWithPose(label, lastLock, updateOdometryPose());
                 telemetry.addData("Duration (ms)", milliseconds);
                 telemetry.update();
                 sleep(milliseconds);
@@ -1525,12 +1607,12 @@ public abstract class BaseAuto extends LinearOpMode {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Fire");
                 if (requireLock && !lastLock) {
-                    updateStatus(label + " – skipped (no lock)", false);
+                    updateStatusWithPose(label + " – skipped (no lock)", false, updateOdometryPose());
                     telemetry.addLine("⚠️ Fire skipped because tag lock was not achieved");
                     telemetry.update();
                     return;
                 }
-                updateStatus(label, !requireLock || lastLock);
+                updateStatusWithPose(label, !requireLock || lastLock, updateOdometryPose());
                 telemetry.addData("Shots", shots);
                 telemetry.addData("Lock required", requireLock);
                 telemetry.addData("Between shots (ms)", betweenShotsMs);
@@ -1546,12 +1628,12 @@ public abstract class BaseAuto extends LinearOpMode {
                 String label = resolveLabel(phase, "Continuous fire");
                 boolean lockSatisfied = lastLock || lastReadyHadLock;
                 if (requireLock && !lockSatisfied) {
-                    updateStatus(label + " – skipped (no lock)", false);
+                    updateStatusWithPose(label + " – skipped (no lock)", false, updateOdometryPose());
                     telemetry.addLine("⚠️ Continuous fire skipped because tag lock was not achieved");
                     telemetry.update();
                     return;
                 }
-                updateStatus(label, !requireLock || lockSatisfied);
+                updateStatusWithPose(label, !requireLock || lockSatisfied, updateOdometryPose());
                 telemetry.addData("Duration (ms)", durationMs);
                 telemetry.addData("Lock required", requireLock);
                 telemetry.update();
@@ -1567,7 +1649,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
 
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Eject RPM", TeleOpEjectTuning.RPM);
                 telemetry.addData("Eject duration (ms)", TeleOpEjectTuning.TIME_MS);
                 telemetry.update();
@@ -1614,7 +1696,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     launcher.setTargetRpm(restoreRpm);
                 }
 
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }
@@ -1626,13 +1708,13 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
                 double speed = clampTurnSpeed(speedCap);
-                updateStatus(label, false);
+                updateStatusWithPose(label, false, updateOdometryPose());
                 telemetry.addData("Target heading (deg)", target);
                 telemetry.addData("Speed cap", speed);
                 telemetry.update();
                 double delta = shortestDiff(target, drive.heading());
                 drive.turn(delta, speed);
-                updateStatus(label + " complete", false);
+                updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
             });
         }

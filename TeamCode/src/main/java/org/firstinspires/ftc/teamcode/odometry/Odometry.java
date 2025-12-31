@@ -9,6 +9,7 @@ import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 import static java.lang.Math.*;
@@ -56,6 +57,20 @@ import static java.lang.Math.*;
  *                        orientation calls (SetRobotOrientation / setRobotOrientation),
  *                        added yaw/filter age telemetry, and preferred Helpers
  *                        fiducial override calls with Limelight3A fallback.
+ * CHANGES (2025-12-30): Rejected Limelight fusion updates when obelisk tags
+ *                        are visible (with debug override) and expanded the
+ *                        VisionDbg line to surface tag participation details.
+ * CHANGES (2025-12-30): Added missing List import for fiducial ID collection
+ *                        helpers to keep Odometry builds clean.
+ * CHANGES (2025-12-30): Added IMU-aligned pose seeding and adaptive vision
+ *                        correction clamps so long-distance tag reacquire
+ *                        converges smoothly without one-frame snapping.
+ * CHANGES (2025-12-31): Captured IMU yaw-at-seed and aligned heading offset
+ *                        telemetry with the seeding definition used in Auto.
+ * CHANGES (2025-12-31): Allowed mixed goal+obelisk frames through cautious
+ *                        fusion clamps while rejecting obelisk-only or
+ *                        obelisk-primary-only localization frames, including
+ *                        primary-obelisk mixed-tag handling.
  */
 public class Odometry {
 
@@ -103,6 +118,21 @@ public class Odometry {
     private long lastYawFeedMs = 0L;
     private int[] lastLocalizationIds = null;
     private boolean lastLocalizationTidOk = false;
+    private int[] lastVisibleIds = null;
+    private int[] lastObeliskIds = null;
+    private boolean lastObeliskSeen = false;
+    private boolean lastHasValidNonObeliskVisible = false;
+    private boolean lastOnlyObeliskVisible = false;
+    private boolean lastPrimaryIsObelisk = false;
+    private double imuHeadingOffsetDeg = 0.0;
+    private double lastSeedImuYawDeg = 0.0;
+    private int stableVisionFrames = 0;
+    private Double lastStableVisionX = null;
+    private Double lastStableVisionY = null;
+    private Double lastCorrectionDx = null;
+    private Double lastCorrectionDy = null;
+    private Double lastCorrectionDh = null;
+    private String lastFusionMode = "--";
 
     private static final double M_TO_IN = 39.37007874;
 
@@ -114,6 +144,25 @@ public class Odometry {
 
     /** Initialize odometry to a known pose (robot center). */
     public void setPose(double x, double y, double headingDeg) {
+        setPoseWithImuAlignment(x, y, headingDeg);
+    }
+
+    /** Initialize odometry pose and align IMU-based heading integration to the provided heading. */
+    public void setPoseWithImuAlignment(double x, double y, double headingDeg) {
+        double rawImu = (drive != null) ? drive.heading() : headingDeg;
+        double imuYawAtSeed = rawImu + OdometryConfig.IMU_HEADING_OFFSET_DEG;
+        lastSeedImuYawDeg = normHeading(imuYawAtSeed);
+        imuHeadingOffsetDeg = normHeading(headingDeg - imuYawAtSeed);
+        setPoseInternal(x, y, headingDeg);
+    }
+
+    /** Returns the current IMU-to-odometry heading offset applied during integration. */
+    public double getHeadingOffsetDeg() { return imuHeadingOffsetDeg; }
+
+    /** Returns the IMU yaw (with IMU offset applied) captured during the last pose seed. */
+    public double getImuYawAtSeedDeg() { return lastSeedImuYawDeg; }
+
+    private void setPoseInternal(double x, double y, double headingDeg) {
         pose.x = x;
         pose.y = y;
         pose.headingDeg = headingDeg;
@@ -212,6 +261,7 @@ public class Odometry {
         resetVisionDebug();
         if (!VisionConfig.LimelightFusion.ENABLE_POSE_FUSION || limelight == null) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "OFF";
             return base;
         }
@@ -220,10 +270,12 @@ public class Odometry {
         feedLimelightYaw(base.headingDeg);
 
         if (speedInPerS > VisionConfig.LimelightFusion.MAX_SPEED_IN_PER_S) {
+            stableVisionFrames = 0;
             lastRejectReason = "SPEED";
             return base;
         }
         if (turnRateDegPerS > VisionConfig.LimelightFusion.MAX_TURN_RATE_DEG_PER_S) {
+            stableVisionFrames = 0;
             lastRejectReason = "TURN";
             return base;
         }
@@ -231,12 +283,48 @@ public class Odometry {
         LLResult result = limelight.getLatestResult();
         if (result == null || !result.isValid()) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "NULL";
             return base;
         }
         lastPrimaryTagId = readPrimaryTagId(result);
         lastVisibleTagCount = countFiducials(result);
+        lastVisibleIds = readVisibleFiducialIds(result);
+        lastObeliskIds = filterObeliskIds(lastVisibleIds);
+        lastObeliskSeen = lastObeliskIds.length > 0;
+        lastHasValidNonObeliskVisible = hasValidNonObeliskVisible(lastVisibleIds);
+        lastOnlyObeliskVisible = lastObeliskSeen && !lastHasValidNonObeliskVisible;
         lastLocalizationTidOk = isTagAllowedForLocalization(lastPrimaryTagId, lastLocalizationIds);
+
+        boolean primaryIsObelisk = lastPrimaryTagId != null && VisionConfig.isObeliskTagId(lastPrimaryTagId);
+        lastPrimaryIsObelisk = primaryIsObelisk;
+        if (lastOnlyObeliskVisible) {
+            validVisionStreak = 0;
+            stableVisionFrames = 0;
+            lastRejectReason = "OBELISK_ONLY";
+            return base;
+        }
+        if (primaryIsObelisk && !lastHasValidNonObeliskVisible) {
+            validVisionStreak = 0;
+            stableVisionFrames = 0;
+            lastRejectReason = "OBELISK_PRIMARY_ONLY";
+            return base;
+        }
+        if (primaryIsObelisk
+                && lastHasValidNonObeliskVisible
+                && VisionConfig.LimelightFusion.REQUIRE_2_TAGS_IF_PRIMARY_OBELISK_AND_MIXED
+                && lastVisibleTagCount < 2) {
+            validVisionStreak = 0;
+            stableVisionFrames = 0;
+            lastRejectReason = "PRIMARY_OBELISK_NEED_2_TAGS";
+            return base;
+        }
+        if (lastObeliskSeen && VisionConfig.LimelightFusion.DEBUG_REJECT_ON_OBELISK) {
+            validVisionStreak = 0;
+            stableVisionFrames = 0;
+            lastRejectReason = "OBELISK_DEBUG";
+            return base;
+        }
 
         Pose3D pose3D = selectPose(result);
         lastMt2Expected = VisionConfig.LimelightFusion.PREFER_MEGA_TAG_2;
@@ -249,6 +337,7 @@ public class Odometry {
 
         if (pose3D == null || pose3D.getPosition() == null) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "NULL";
             return base;
         }
@@ -258,8 +347,9 @@ public class Odometry {
         if (timestampMs != null) {
             long ageMs = nowMs - timestampMs;
             lastVisionAgeMs = ageMs;
-            if (ageMs > VisionConfig.LimelightFusion.MAX_AGE_MS) {
+            if (ageMs > VisionConfig.LimelightFusion.MAX_VISION_AGE_MS) {
                 validVisionStreak = 0;
+                stableVisionFrames = 0;
                 lastRejectReason = "AGE";
                 return base;
             }
@@ -267,6 +357,7 @@ public class Odometry {
 
         validVisionStreak++;
         if (validVisionStreak < VisionConfig.LimelightFusion.MIN_VALID_FRAMES) {
+            stableVisionFrames = 0;
             lastRejectReason = "STREAK";
             return base;
         }
@@ -287,6 +378,7 @@ public class Odometry {
         lastBoundsMax = maxAllowed;
         if (!isWithinFieldBounds(vx, vy, maxAllowed)) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "BOUNDS";
             return base;
         }
@@ -294,26 +386,57 @@ public class Odometry {
 
         long sinceLast = (lastAcceptedVisionMs < 0) ? Long.MAX_VALUE : nowMs - lastAcceptedVisionMs;
         boolean reacquire = sinceLast > VisionConfig.LimelightFusion.REACQUIRE_AFTER_MS;
+        if (reacquire) {
+            stableVisionFrames = 0;
+        }
+        updateStability(vx, vy, lastVisibleTagCount);
+        boolean obeliskPrimaryMix = primaryIsObelisk && lastHasValidNonObeliskVisible;
+        boolean obeliskMix = !obeliskPrimaryMix && lastObeliskSeen && lastHasValidNonObeliskVisible;
+        String fusionMode = obeliskPrimaryMix
+                ? "CAUTIOUS_OBELISK_PRIMARY_MIX"
+                : (obeliskMix
+                ? "CAUTIOUS_OBELISK_MIX"
+                : (stableVisionFrames >= VisionConfig.LimelightFusion.REACQUIRE_STABLE_FRAMES ? "CONFIDENT" : "CAUTIOUS"));
+        lastFusionMode = fusionMode;
         double maxJump = reacquire
                 ? VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_REACQUIRE
                 : VisionConfig.LimelightFusion.MAX_POS_JUMP_IN_NORMAL;
         double alpha = reacquire
                 ? VisionConfig.LimelightFusion.FUSION_ALPHA_REACQUIRE
                 : VisionConfig.LimelightFusion.FUSION_ALPHA_NORMAL;
+        double maxStep = "CONFIDENT".equals(fusionMode)
+                ? VisionConfig.LimelightFusion.MAX_POS_STEP_IN_CONFIDENT
+                : VisionConfig.LimelightFusion.MAX_POS_STEP_IN_CAUTIOUS;
+        if (maxStep <= 0.0) {
+            maxStep = VisionConfig.LimelightFusion.MAX_CORRECTION_STEP_IN;
+        }
+        double maxHeadingStep = "CONFIDENT".equals(fusionMode)
+                ? VisionConfig.LimelightFusion.MAX_HEADING_STEP_DEG_CONFIDENT
+                : VisionConfig.LimelightFusion.MAX_HEADING_STEP_DEG_CAUTIOUS;
+        if (maxHeadingStep < 0.0) {
+            maxHeadingStep = 0.0;
+        }
 
         double ex = vx - base.x;
         double ey = vy - base.y;
         double errorMag = hypot(ex, ey);
         lastRawErrorMag = errorMag;
         if (errorMag > maxJump) {
+            stableVisionFrames = 0;
             lastRejectReason = "JUMP";
             return base;
         }
 
-        double[] step = clampMagnitude(ex, ey, VisionConfig.LimelightFusion.MAX_CORRECTION_STEP_IN);
+        double[] step = clampMagnitude(ex, ey, maxStep);
+        double appliedDx = step[0] * alpha;
+        double appliedDy = step[1] * alpha;
+        double appliedDh = clampValue(0.0, -maxHeadingStep, maxHeadingStep);
+        lastCorrectionDx = appliedDx;
+        lastCorrectionDy = appliedDy;
+        lastCorrectionDh = appliedDh;
         FieldPose corrected = new FieldPose(
-                base.x + step[0] * alpha,
-                base.y + step[1] * alpha,
+                base.x + appliedDx,
+                base.y + appliedDy,
                 base.headingDeg
         );
         lastBoundsTestX = corrected.x;
@@ -321,6 +444,7 @@ public class Odometry {
         lastBoundsMax = maxAllowed;
         if (!isWithinFieldBounds(corrected.x, corrected.y, maxAllowed)) {
             validVisionStreak = 0;
+            stableVisionFrames = 0;
             lastRejectReason = "BOUNDS";
             return base;
         }
@@ -513,6 +637,16 @@ public class Odometry {
         lastBoundsMax = null;
         lastLocalizationIds = null;
         lastLocalizationTidOk = false;
+        lastVisibleIds = null;
+        lastObeliskIds = null;
+        lastObeliskSeen = false;
+        lastHasValidNonObeliskVisible = false;
+        lastOnlyObeliskVisible = false;
+        lastPrimaryIsObelisk = false;
+        lastCorrectionDx = null;
+        lastCorrectionDy = null;
+        lastCorrectionDh = null;
+        lastFusionMode = "--";
         lastRawErrorMag = Double.NaN;
         lastVisionAgeMs = null;
         lastPrimaryTagId = null;
@@ -528,12 +662,18 @@ public class Odometry {
         String llXYinStr = formatXYInches();
         String testStr = formatPair(lastBoundsTestX, lastBoundsTestY);
         String locIdsStr = formatIds(lastLocalizationIds);
+        String visibleIdsStr = formatIds(lastVisibleIds);
+        String obeliskIdsStr = formatIds(lastObeliskIds);
         String tidOkStr = String.valueOf(lastLocalizationTidOk);
+        String validNonObeliskStr = String.valueOf(lastHasValidNonObeliskVisible);
+        String onlyObeliskStr = String.valueOf(lastOnlyObeliskVisible);
+        String primaryObeliskStr = String.valueOf(lastPrimaryIsObelisk);
         String accStr = formatPoint(lastVisionPose);
         String fusedStr = formatPoint(pose);
         String ageStr = (lastVisionAgeMs == null) ? "--" : String.format(Locale.US, "%d", lastVisionAgeMs);
         String tidStr = (lastPrimaryTagId == null) ? "--" : String.valueOf(lastPrimaryTagId);
         String errStr = Double.isFinite(lastRawErrorMag) ? String.format(Locale.US, "%.1f", lastRawErrorMag) : "--";
+        String stepStr = formatTriple(lastCorrectionDx, lastCorrectionDy, lastCorrectionDh);
         String yawSentStr = (lastYawSentDeg == null) ? "--" : String.format(Locale.US, "%.1f", lastYawSentDeg);
         String yawAgeStr = (lastYawFeedOk && lastYawFeedMs > 0L)
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastYawFeedMs))
@@ -542,8 +682,9 @@ public class Odometry {
                 ? String.format(Locale.US, "%d", Math.max(0L, System.currentTimeMillis() - lastLocalizationFilterMs))
                 : "--";
         String boundStr = (lastBoundsMax == null) ? "--" : String.format(Locale.US, "%.0f", lastBoundsMax);
+        boolean accepted = "OK".equals(lastRejectReason);
         String baseLine = String.format(Locale.US,
-                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d llm=%s lli=%s raw=%s acc=%s fused=%s err=%s rej=%s bnd=%s test=%s",
+                "VisionDbg h=%.1f yawOk=%s yawSent=%s yawAgeMs=%s fltOk=%s fltAgeMs=%s flt=%s locIDs=%s tidOk=%s primaryOb=%s validNonOb=%s onlyOb=%s ll=%s src=%s mt2Exp=%s mt2Act=%s tags=%d age=%s tid=%s n=%d visibleIDs=%s obeliskSeen=%s obeliskIDs=%s mode=%s step=%s llm=%s lli=%s raw=%s acc=%s fused=%s err=%s accepted=%s rejectReason=%s bnd=%s test=%s",
                 headingDeg,
                 lastYawFeedOk,
                 yawSentStr,
@@ -553,6 +694,9 @@ public class Odometry {
                 VisionConfig.LimelightFusion.ENABLE_LOCALIZATION_TAG_FILTER,
                 locIdsStr,
                 tidOkStr,
+                primaryObeliskStr,
+                validNonObeliskStr,
+                onlyObeliskStr,
                 VisionConfig.LimelightFusion.LL_NT_NAME,
                 lastPoseSrc,
                 lastMt2Expected,
@@ -561,12 +705,18 @@ public class Odometry {
                 ageStr,
                 tidStr,
                 lastVisibleTagCount,
+                visibleIdsStr,
+                lastObeliskSeen,
+                obeliskIdsStr,
+                lastFusionMode,
+                stepStr,
                 llXYmStr,
                 llXYinStr,
                 rawStr,
                 accStr,
                 fusedStr,
                 errStr,
+                accepted,
                 lastRejectReason,
                 boundStr,
                 testStr);
@@ -707,6 +857,11 @@ public class Odometry {
         return String.format(Locale.US, "%.1f,%.1f", x, y);
     }
 
+    private String formatTriple(Double x, Double y, Double h) {
+        if (x == null || y == null || h == null) return "--,--,--";
+        return String.format(Locale.US, "%.1f,%.1f,%.1f", x, y, h);
+    }
+
     private String formatIds(int[] ids) {
         if (ids == null || ids.length == 0) return "--";
         StringBuilder sb = new StringBuilder();
@@ -721,6 +876,21 @@ public class Odometry {
         if (tagId == null || allowed == null || allowed.length == 0) return false;
         for (int id : allowed) {
             if (tagId == id) return true;
+        }
+        return false;
+    }
+
+    private boolean hasValidNonObeliskVisible(int[] visibleIds) {
+        if (visibleIds == null || visibleIds.length == 0) return false;
+        int[] allowed = VisionConfig.LimelightFusion.LOCALIZATION_VALID_TAG_IDS;
+        if (allowed == null || allowed.length == 0) return false;
+        for (int id : visibleIds) {
+            if (VisionConfig.isObeliskTagId(id)) {
+                continue;
+            }
+            if (isTagAllowedForLocalization(id, allowed)) {
+                return true;
+            }
         }
         return false;
     }
@@ -799,6 +969,55 @@ public class Odometry {
         return null;
     }
 
+    private int[] readVisibleFiducialIds(LLResult result) {
+        List<Integer> ids = new java.util.ArrayList<>();
+        Object list = readList(result, "getFiducialResults");
+        if (list instanceof Iterable) {
+            for (Object entry : (Iterable<?>) list) {
+                Integer id = readSingleId(entry, "getFiducialId", "getTid", "getTargetId");
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        if (ids.isEmpty()) {
+            int[] raw = readIntArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+            if (raw != null) {
+                for (int id : raw) {
+                    ids.add(id);
+                }
+            } else {
+                double[] rawDouble = readDoubleArray(result, "getFiducialIds", "getTargetIds", "getTidList");
+                if (rawDouble != null) {
+                    for (double id : rawDouble) {
+                        ids.add((int) Math.round(id));
+                    }
+                }
+            }
+        }
+        if (ids.isEmpty()) return new int[0];
+        java.util.Set<Integer> unique = new java.util.HashSet<>(ids);
+        int[] out = new int[unique.size()];
+        int idx = 0;
+        for (Integer id : unique) {
+            out[idx++] = id;
+        }
+        Arrays.sort(out);
+        return out;
+    }
+
+    private int[] filterObeliskIds(int[] ids) {
+        if (ids == null || ids.length == 0) return new int[0];
+        int[] tmp = new int[ids.length];
+        int count = 0;
+        for (int id : ids) {
+            if (VisionConfig.isObeliskTagId(id)) {
+                tmp[count++] = id;
+            }
+        }
+        return Arrays.copyOf(tmp, count);
+    }
+
     private int[] readIntArray(Object owner, String... methods) {
         for (String method : methods) {
             try {
@@ -850,12 +1069,28 @@ public class Odometry {
         );
     }
 
+    private void updateStability(double vx, double vy, int tagCount) {
+        boolean tagOk = tagCount >= VisionConfig.LimelightFusion.STABLE_MIN_TAGS;
+        boolean deltaOk = true;
+        if (lastStableVisionX != null && lastStableVisionY != null) {
+            double delta = hypot(vx - lastStableVisionX, vy - lastStableVisionY);
+            deltaOk = delta <= VisionConfig.LimelightFusion.STABLE_POSE_DELTA_IN;
+        }
+        if (tagOk && deltaOk) {
+            stableVisionFrames++;
+        } else {
+            stableVisionFrames = 0;
+        }
+        lastStableVisionX = vx;
+        lastStableVisionY = vy;
+    }
+
     /**
      * Normalize IMU heading into the shared odometry frame where 0° faces the
      * target wall (+Y) and positive angles turn counter-clockwise toward +X.
      */
     private double normalizeHeading(double rawHeadingDeg) {
-        double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG;
+        double shifted = rawHeadingDeg + OdometryConfig.IMU_HEADING_OFFSET_DEG + imuHeadingOffsetDeg;
         double fieldFrame = shifted; // align IMU basis (0° = +X) to odometry basis (0° = +Y)
         return normHeading(fieldFrame);
     }

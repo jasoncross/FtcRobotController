@@ -78,6 +78,8 @@ import java.util.function.Supplier;
  * CHANGES (2025-12-29): Asserted alliance-specific Limelight priority IDs for
  *                       aim targeting so tx/ty lock stays on the goal tag
  *                       while localization remains independent.
+ * CHANGES (2025-12-30): Centralized obelisk tag ID checks through VisionConfig
+ *                       so motif visibility stays consistent across helpers.
  */
 public class LimelightTargetProvider implements VisionTargetProvider {
     private static final int OBELISK_CONFIRM_FRAMES = 2;
@@ -150,7 +152,7 @@ public class LimelightTargetProvider implements VisionTargetProvider {
         TargetSnapshot snap = snapshot();
         List<Integer> obelisks = new ArrayList<>();
         for (FiducialObservation obs : snap.observations) {
-            if (obs.id >= 21 && obs.id <= 23) {
+            if (VisionConfig.isObeliskTagId(obs.id)) {
                 obelisks.add(obs.id);
             }
         }

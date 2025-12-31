@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.config;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
 
+import java.util.Arrays;
+
 /*
  * FILE: VisionConfig.java
  * LOCATION: TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/
@@ -42,6 +44,17 @@ import org.firstinspires.ftc.teamcode.vision.VisionAprilTag;
  *                        added consolidated field-bound limits.
  * CHANGES (2025-12-29): Added Limelight NetworkTables table name for MT2 yaw
  *                        feed and localization filter writes.
+ * CHANGES (2025-12-30): Centralized obelisk tag IDs and added a debug toggle
+ *                        to reject MT2 fusion frames whenever obelisk tags
+ *                        appear in the visible fiducial set.
+ * CHANGES (2025-12-30): Added IMU-aligned odometry seeding and adaptive fusion
+ *                        tunables so long-distance reacquire corrections remain
+ *                        stable while converging quickly.
+ * CHANGES (2025-12-31): Refined obelisk handling so localization only rejects
+ *                        obelisk-only/primary-only frames, plus added a mixed
+ *                        primary guard for obelisk-first solves.
+ * CHANGES (2025-12-31): Added a mixed-primary guard that can require multiple
+ *                        tags when the Limelight primary ID is obelisk.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -55,6 +68,11 @@ public final class VisionConfig {
 
     public static final int GOAL_TAG_BLUE = VisionAprilTag.TAG_BLUE_GOAL;    // Blue alliance scoring tag ID
     public static final int GOAL_TAG_RED = VisionAprilTag.TAG_RED_GOAL;      // Red alliance scoring tag ID
+    public static final int[] OBELISK_TAG_IDS = {
+            VisionAprilTag.TAG_OBELISK_GPP,
+            VisionAprilTag.TAG_OBELISK_PGP,
+            VisionAprilTag.TAG_OBELISK_PPG
+    }; // Obelisk motif tag IDs (21/22/23)
 
     public static final double GOAL_RED_X_IN = OdometryConfig.TAG_RED_GOAL_X;       // Red goal tag X on field (inches)
     public static final double GOAL_RED_Y_IN = OdometryConfig.TAG_RED_GOAL_Y;       // Red goal tag Y on field (inches)
@@ -85,24 +103,31 @@ public final class VisionConfig {
         public static final boolean ENABLE_LOCALIZATION_TAG_FILTER = true; // Enable Limelight fiducial whitelist for localization
         public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
         public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
-        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = {
-                VisionAprilTag.TAG_OBELISK_GPP,
-                VisionAprilTag.TAG_OBELISK_PGP,
-                VisionAprilTag.TAG_OBELISK_PPG
-        }; // Tag IDs explicitly excluded from localization
+        public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = OBELISK_TAG_IDS; // Tag IDs explicitly excluded from localization
+        public static final boolean REQUIRE_2_TAGS_IF_PRIMARY_OBELISK_AND_MIXED = true; // Require >=2 tags when obelisk is primary but goal tag is visible
+        public static final boolean DEBUG_REJECT_ON_OBELISK = false; // Debug override: reject MT2 fusion when any obelisk tag is visible
+        public static final boolean INIT_ALLOW_VISION_SEED = false; // Allow vision to override explicit Auto start pose during INIT
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER
         public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Deprecated: use LOCALIZATION_VALID_TAG_IDS
         public static final double LL_FUSION_FIELD_BOUNDS_IN = 90.0; // Deprecated: superseded by FIELD_HALF_IN - BOUNDS_MARGIN_IN (inches)
 
         public static final int MIN_VALID_FRAMES = 2; // Require consecutive valid frames before accepting pose
-        public static final long MAX_AGE_MS = 120; // Reject vision results older than this age (ms)
+        public static final long MAX_VISION_AGE_MS = 120; // Reject vision results older than this age (ms)
+        public static final long MAX_AGE_MS = MAX_VISION_AGE_MS; // Deprecated: use MAX_VISION_AGE_MS
         public static final long YAW_MAX_AGE_MS = 250; // Max age for yaw feed when considering MT2 active (ms)
 
         public static final double MAX_POS_JUMP_IN_NORMAL = 18.0; // Reject vision if disagreement exceeds this (inches) while tracking
         public static final long REACQUIRE_AFTER_MS = 600; // Enter reacquire mode if no accepted vision for this long (ms)
         public static final double MAX_POS_JUMP_IN_REACQUIRE = 72.0; // Looser reject threshold after tag loss (inches)
 
-        public static final double MAX_CORRECTION_STEP_IN = 180.0; // Clamp per-update correction magnitude (inches)
+        public static final int REACQUIRE_STABLE_FRAMES = 4; // Consecutive stable frames required for confident corrections
+        public static final int STABLE_MIN_TAGS = 1; // Minimum tag count for stability qualification
+        public static final double STABLE_POSE_DELTA_IN = 6.0; // Max pose delta between frames to count as stable (inches)
+        public static final double MAX_POS_STEP_IN_CAUTIOUS = 2.0; // Max translation correction per update in cautious mode (in)
+        public static final double MAX_POS_STEP_IN_CONFIDENT = 6.0; // Max translation correction per update in confident mode (in)
+        public static final double MAX_HEADING_STEP_DEG_CAUTIOUS = 2.0; // Max heading correction per update in cautious mode (deg)
+        public static final double MAX_HEADING_STEP_DEG_CONFIDENT = 6.0; // Max heading correction per update in confident mode (deg)
+        public static final double MAX_CORRECTION_STEP_IN = 180.0; // Deprecated: use MAX_POS_STEP_IN_* instead
         public static final double FUSION_ALPHA_NORMAL = 0.35; // Blend factor for clamped corrections during normal tracking
         public static final double FUSION_ALPHA_REACQUIRE = 0.25; // Blend factor for clamped corrections immediately after reacquire
 
@@ -130,6 +155,17 @@ public final class VisionConfig {
 
     public static double goalYMeters(Alliance alliance) {
         return inchesToMeters(alliance == Alliance.RED ? GOAL_RED_Y_IN : GOAL_BLUE_Y_IN);
+    }
+
+    public static boolean isObeliskTagId(int tagId) {
+        for (int id : OBELISK_TAG_IDS) {
+            if (id == tagId) return true;
+        }
+        return false;
+    }
+
+    public static int[] getObeliskTagIds() {
+        return Arrays.copyOf(OBELISK_TAG_IDS, OBELISK_TAG_IDS.length);
     }
 
     private static double inchesToMeters(double inches) {

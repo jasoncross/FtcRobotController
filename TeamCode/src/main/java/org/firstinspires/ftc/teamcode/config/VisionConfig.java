@@ -50,6 +50,9 @@ import java.util.Arrays;
  * CHANGES (2025-12-30): Added IMU-aligned odometry seeding and adaptive fusion
  *                        tunables so long-distance reacquire corrections remain
  *                        stable while converging quickly.
+ * CHANGES (2025-12-31): Refined obelisk handling so localization only rejects
+ *                        obelisk-only/primary frames, plus added a strict-primary
+ *                        toggle for localization gating.
  */
 public final class VisionConfig {
     private VisionConfig() {}
@@ -99,7 +102,8 @@ public final class VisionConfig {
         public static final int[] LOCALIZATION_VALID_TAG_IDS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Allowed tag IDs for localization
         public static final boolean LOCALIZATION_FILTER_APPLY_EVERY_FRAME = true; // Re-send localization filter each loop
         public static final int[] LOCALIZATION_EXCLUDED_TAG_IDS = OBELISK_TAG_IDS; // Tag IDs explicitly excluded from localization
-        public static final boolean DEBUG_REJECT_ON_OBELISK = true; // Reject MT2 fusion frames when any obelisk tag is visible
+        public static final boolean LOCALIZATION_STRICT_PRIMARY_ONLY = true; // Reject localization when primary tag is obelisk
+        public static final boolean DEBUG_REJECT_ON_OBELISK = false; // Debug override: reject MT2 fusion when any obelisk tag is visible
         public static final boolean INIT_ALLOW_VISION_SEED = false; // Allow vision to override explicit Auto start pose during INIT
         public static final boolean ENABLE_LL_LOCALIZATION_TAG_FILTER = true; // Deprecated: use ENABLE_LOCALIZATION_TAG_FILTER
         public static final int[] LL_LOCALIZATION_ALLOWED_TAGS = {GOAL_TAG_BLUE, GOAL_TAG_RED}; // Deprecated: use LOCALIZATION_VALID_TAG_IDS

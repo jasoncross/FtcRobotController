@@ -157,6 +157,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
   reports both values in telemetry.
 - Aim/launcher prep loops exit as soon as their readiness goals are satisfied, using timeouts only as fallbacks so sequences
   proceed immediately once a step is complete.
+- The dashboard-driven `TEST: Drive Distance Tuner` OpMode (`auto/TEST_DriveDistanceTuner.java`) uses BaseAuto + AutoSequence
+  to run single move/rotate steps with configurable distance, heading, twist, and speed caps for calibration checks.
 
 ---
 

@@ -183,6 +183,22 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 
 **Note:** AutoSequence `move(...)` calls now interpret the heading argument as **relative to the robot’s current facing** (0° = drive straight ahead, 180° = drive straight backward) before converting it to a field heading internally. No tunables changed for this behavior; adjust sequence arguments directly when building routes.
 
+## Autonomous testing & diagnostics
+
+| Parameter | Set in | Impacts | What it controls | Tune here vs. elsewhere | Sample adjustments |
+| --- | --- | --- | --- | --- | --- |
+| `TEST_DriveDistanceTuner.TEST_NAME` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Telemetry label shown while running the drive-distance tuner OpMode. | Change here (or via FTC Dashboard) to tag each tuning session. | Set to `"Strafe Cal"` when focusing on strafing distance. |
+| `TEST_DriveDistanceTuner.REPS` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Number of repetitions run before the OpMode completes. | Keep low to reduce heat; increase for endurance checks. | `1–3` for quick checks; `5` when verifying consistency. |
+| `TEST_DriveDistanceTuner.SETTLE_MS` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Pause after each move/rotate so the robot settles before the next rep. | Adjust to match drivetrain inertia on the practice field. | `350 ms` default; raise to `600 ms` if drifting. |
+| `TEST_DriveDistanceTuner.SPEED_CAP` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Speed limit for each AutoSequence move or rotate step. | Clamped by `SharedRobotTuning.DRIVE_MAX_POWER`/`TURN_TWIST_CAP`. | Start at `1.0`; lower to `0.6` for safer short moves. |
+| `TEST_DriveDistanceTuner.DISTANCE_IN` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Translation distance used by move-based test modes. | Edit here or via Dashboard; AutoSequence uses the exact value each rep. | Try `24`, `48`, and `72` to gauge scaling. |
+| `TEST_DriveDistanceTuner.HEADING_DEG` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Relative heading offset for the CUSTOM test mode. | Only used when `TEST_MODE = CUSTOM`. | `30°` to validate angled moves. |
+| `TEST_DriveDistanceTuner.TWIST_DEG` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Twist target offset for MOVE_WITH_TWIST or CUSTOM. | Keep small at first to avoid large heading swings. | `15°` for gentle twist tuning. |
+| `TEST_DriveDistanceTuner.ROTATE_DEG` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Rotation delta used by ROTATE_IN_PLACE mode. | Used only when the rotate test is selected. | `45°` for quick turn checks. |
+| `TEST_DriveDistanceTuner.RESET_POSE_EACH_REP` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Re-seeds odometry before each rep using the START_* pose. | Disable if you want to observe cumulative odometry drift. | Set `false` to watch drift across reps. |
+| `TEST_DriveDistanceTuner.START_X / START_Y / START_HEADING` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Odometry seed pose used at INIT and (optionally) each rep. | Keep aligned to the real start pose for accurate telemetry. | Use `0, 0, 0` for centered tests. |
+| `TEST_DriveDistanceTuner.TEST_MODE` | `auto/TEST_DriveDistanceTuner.java` | Auto (Test) | Selects which AutoSequence action runs each repetition. | Matches the enum list in the OpMode; change via Dashboard. | `FORWARD` for straight checks, `CUSTOM` for angled + twist. |
+
 ## Intake power & driver defaults
 
 | Parameter | Set in | Impacts | What it controls | Tune here vs. elsewhere | Sample adjustments |

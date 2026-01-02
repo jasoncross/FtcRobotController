@@ -90,6 +90,7 @@ TeamCode/
     │   ├── Auto_Red_Human_LongShot.java      ← Red human-side launch-line volley → drive upfield
     │   ├── Auto_Red_Target.java              ← Red depot auto (Tag 24 volley, hold position)
     │   ├── TestAuto_TwistRepro.java          ← Regression harness to validate move(..., twist) translation
+    │   ├── TEST_DriveDistanceTuner.java      ← Dashboard-driven move/rotate tuner for AutoSequence distance tests
     │   └── AutoSequenceGuide.md              ← Reference + examples for the AutoSequence builder
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
@@ -399,6 +400,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-02** – Added the TEST: Drive Distance Tuner auto OpMode for dashboard-driven move/rotate calibration, documented the new test harness in the AutoSequence guide and tunable directory, and refreshed the project layout and Codex context notes.
 - **2025-12-31** – Allowed mixed goal+obelisk MT2 frames to fuse under cautious clamps (including obelisk-primary mixes) while still rejecting obelisk-only solves, added a two-tag guard for obelisk-primary mixes, skipped FeedStop safe-open on START to prevent a gate twitch, enforced single-source Auto odometry updates, saved the final fused pose for TeleOp handoff, cleaned up TeleOp INIT pose formatting, and gated feed motor start on the ±RPM readiness window with the FeedStop return timer starting when the motor actually moves.
 - **2025-12-30** – Aligned Auto/TeleOp odometry seeding with IMU heading offsets (defined as seedHeading − imuYawAtSeed) so start poses and end-of-auto headings persist, made init vision seeding opt-in, ensured Auto dashboard updates use a single cached odometry update per loop, and added adaptive fusion clamps with cautious/confirm modes to stabilize long-range tag reacquire (plus matching VisionDbg telemetry and tunables).
 - **2025-12-29** – Reworked Limelight MT2 yaw feeding to use `LimelightHelpers.setRobotOrientation(...)` each loop with telemetry confirmation (reflection-safe for SDK compatibility), enforced goal‑tag‑only localization via `LimelightHelpers.setFiducialIDFilters(...)` (20/24), added field-bounds gates, restored Drivebase encoder distance math to physical counts, and added an odometry-only distance scale plus `OdoDbg` telemetry to keep Auto moves accurate while pose calibration remains adjustable.

@@ -88,6 +88,30 @@ field-aware helpers to know about are:
 
 ---
 
+## TEST: Drive Distance Tuner
+
+The `TEST: Drive Distance Tuner` OpMode (`auto/TEST_DriveDistanceTuner.java`) is a dashboard-driven
+AutoSequence harness that runs exactly one movement per repetition. It exposes distance, heading,
+twist, and speed caps so you can tune encoder translation and twist behavior without editing code.
+
+### Test modes
+- **FORWARD** – `move(distance, heading 0°, twist 0°)`
+- **BACKWARD** – `move(distance, heading 180°, twist 0°)`
+- **STRAFE_LEFT** – `move(distance, heading −90°, twist 0°)`
+- **STRAFE_RIGHT** – `move(distance, heading 90°, twist 0°)`
+- **DIAGONAL_45** – `move(distance, heading 45°, twist 0°)`
+- **DIAGONAL_NEG_45** – `move(distance, heading −45°, twist 0°)`
+- **ROTATE_IN_PLACE** – `rotate(ROTATE_DEG)`
+- **MOVE_WITH_TWIST** – `move(distance, heading 0°, twist = TWIST_DEG)`
+- **CUSTOM** – `move(distance, heading = HEADING_DEG, twist = TWIST_DEG)`
+
+### Recommended usage
+- **REPS:** Start with `1–3` reps to keep tuning quick and prevent overheating.
+- **Distances:** Try **24 / 48 / 72 in** while verifying odometry drift.
+- **Speed cap:** Begin at `SPEED_CAP = 1.0` and reduce only if traction slips.
+
+---
+
 ## Common Patterns
 
 ### 1. Standard Volley from Launch Line

@@ -33,7 +33,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for AutoSpeed to satisfy the shared RPM window + settle timer
  *         so every shot leaves at target velocity.
- *   - fire(shots = 5, requireLauncherAtSpeed = true, betweenShotsMs = 1000)
+ *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Matches the five-artifact volley timing used on BLUE for parity across
  *         alliances.
  *   - move(... 36 in, heading 0°, twist 0°, speed 0.85)
@@ -68,7 +68,6 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (+12, -72, 0) in the field-center frame (human wall = −72" Y).
-    // CHANGES (2026-01-03): Updated AutoSequence fire calls to include RPM gating flags.
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
     public Auto_Red_Human_LongShot() { setStartingPose(12.0, -63.0, 0.0); }

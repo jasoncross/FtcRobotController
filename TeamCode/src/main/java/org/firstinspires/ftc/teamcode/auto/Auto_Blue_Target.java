@@ -32,7 +32,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *         adjust timeout alongside sweep envelope changes.
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for LauncherAutoSpeedController to reach the shared RPM window with settle gating.
- *   - fire(shots = 5, requireLauncherAtSpeed = true, betweenShotsMs = 1000)
+ *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Commands the latest five-artifact preload with 1 s cadence between
  *         shots; adjust here if hardware needs more recovery time.
  *
@@ -62,7 +62,6 @@ public class Auto_Blue_Target extends BaseAuto {
     // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
-    // CHANGES (2026-01-03): Updated AutoSequence fire calls to include RPM gating flags.
     // BaseAuto needs the declared alliance to load the correct AprilTag IDs.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     // Telemetry annotation so setup crew knows correct orientation (edit to
@@ -73,16 +72,19 @@ public class Auto_Blue_Target extends BaseAuto {
     protected void runSequence() throws InterruptedException {
         sequence()
                 .rememberHeading("Record start heading")
-                .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.85)
+                //.spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
+                .move("Drive to standoff", 40.0, 0.0, 0.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
-                .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 3, true, true, 300)
-                .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive to balls", 26.0, -90.0, 45.0, 0.85)
-                .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
-                .move("Drive to triangle", 44.0, 15.0, 135.0, 0.85)
-                .fire("Fire volley", 3, true, true, 100)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fireContinuous("firing",1500,false, true)
+                //.fire("Fire volley", 3, true, true, 00)
+                .returnToStoredHeading("Return to start heading", .25)
+                .move("Drive to balls", 26.0, -90.0, 45.0, 1)
+                .move("Drive backward", 26.0, 180.0, 0.0, 1)
+                .move("Drive to triangle", 48.0, 15.0, 135.0, 1)
+                //.fire("Fire volley", 3, true, true, 100)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fireContinuous("firing",1500,true, true)
                 //.waitFor("Hold position", 500)
                 .run();
     }

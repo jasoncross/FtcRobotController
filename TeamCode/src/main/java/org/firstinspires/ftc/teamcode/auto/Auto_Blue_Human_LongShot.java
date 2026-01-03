@@ -35,7 +35,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - readyToLaunch(timeout 3200 ms)
  *       • Holds until AutoSpeed reaches the shared RPM window and settle timer,
  *         guaranteeing consistency before the long volley.
- *   - fire(shots = 5, requireLauncherAtSpeed = true, betweenShotsMs = 1000)
+ *   - fire(shots = 5, betweenShotsMs = 1000)
  *       • Fires the same five-artifact volley used in the long-run auto, holding
  *         1 s between shots for recovery.
  *   - move(... 36 in, heading 0°, twist 0°, speed 0.85)
@@ -73,7 +73,6 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (-12, -72, 0) in the field-center frame (human wall = −72" Y).
-    // CHANGES (2026-01-03): Updated AutoSequence fire calls to include RPM gating flags.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     public Auto_Blue_Human_LongShot() { setStartingPose(-12.0, -63.0, 0.0); }
@@ -89,14 +88,18 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
                 .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 0.55)
+                .move("Drive forward 3 inches to clear wall", 3.0, 0.0, 0.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.15, 90, 30, 10000)
-                .readyToLaunch("Ready launcher for volley", 3900)
-                .fire("Fire volley", 3, true, true, 300)
-                .returnToStoredHeading("Return to start heading", 0.75)
-                .move("Drive to balls", 32.0, 45.0, -90.0, 0.85)
-                .move("Drive backward", 46.0, 180.0, 0.0, 0.85)
-                .move("Drive to triangle", 54.0, -22.0, 120.0, 0.85)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fire("Fire volley", 3, false, true, 0)
+                .returnToStoredHeading("Return to start heading", .85)
+                .move("Drive to balls", 32.0, 45.0, -90.0, 1)
+                .move("Drive backward", 32.0, 180.0, 0.0, 1)
+                .move("Drive to triangle", 58.0, -26.0, 115.0, 1.0)
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, -30, 30, 1000)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fireContinuous("firing",1500,false, true)
+                .move("Drive out",6,0,0,1)
 
                 .run();
     }

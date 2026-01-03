@@ -73,8 +73,8 @@ field-aware helpers to know about are:
 | `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, timeoutMs)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied (or the timeout elapses). | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. Provide `timeoutMs` per call (autos currently pass **10 000 ms** = **10 s**) to abort the scan if no tag lock is found. |
 | `visionMode(label, mode)` | Swaps the AprilTag vision profile mid-sequence. | Calls `VisionAprilTag.applyProfile(...)`, reapplies `VisionTuning.RANGE_SCALE`, and logs the active resolution so you can flip between `P480` and `P720` before aim steps. When `VisionConfig.VISION_SOURCE` is `LIMELIGHT`, this step is ignored because Limelight does not expose these webcam profiles. |
 | `readyToLaunch(label, timeoutMs)` | Spins the launcher via AutoSpeed and waits for the RPM window + settle timer. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher stays inside the tolerance band for `SharedRobotTuning.RPM_READY_SETTLE_MS` or the timeout hits. |
-| `fire(label, shots, requireLock, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireLock` is false, skips the AprilTag lock check but still enforces RPM readiness. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
-| `fireContinuous(label, timeMs, requireLock)` | Holds the FeedStop open and streams feed power until `timeMs` elapse. | Keeps AutoSpeed enabled so launcher RPM stays latched; when `requireLock` is true the step is skipped if the prior aim step never achieved lock, and the builder now remembers a successful `readyToLaunch(...)` lock so continuous fire will proceed instead of being dropped. |
+| `fire(label, shots, requireTargetLock, requireLauncherAtSpeed, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireTargetLock` is false, skips the AprilTag lock check. If `requireLauncherAtSpeed` is true, waits for the RPM window before each shot. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
+| `fireContinuous(label, timeMs, requireTargetLock, requireLauncherAtSpeed)` | Holds the FeedStop open and streams feed power until `timeMs` elapse. | Keeps AutoSpeed enabled so launcher RPM stays latched; when `requireTargetLock` is true the step is skipped if the prior aim step never achieved lock, and the builder now remembers a successful `readyToLaunch(...)` lock so continuous fire will proceed instead of being dropped. `requireLauncherAtSpeed` gates only the initial launch before the stream begins. |
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
 | `eject(label)` | Runs the TeleOp eject routine mid-auto. | Temporarily overrides AutoSpeed, spins to `TeleOpEjectTuning.RPM`, feeds once with intake assist, then restores the previous RPM/AutoSpeed state. |
 | `intake(label, enabled)` | Toggles the floor intake on or off. | Adds telemetry showing the requested state before calling `intake.set(enabled)`. Useful for pickup experiments without writing custom steps. |
@@ -122,7 +122,7 @@ sequence()
     .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Acquire Tag", ScanDirection.CCW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
-    .fire("Volley", 3, true, 3000)
+    .fire("Volley", 3, true, true, 3000)
     .waitFor("Stabilize", 500)
     .run();
 ```
@@ -146,7 +146,7 @@ sequence()
     .spinToAutoRpmDefault("Pre-spin launcher")
     .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
     .readyToLaunch("Ready launcher", 3200)
-    .fire("Volley", 3, true, 3000)
+    .fire("Volley", 3, true, true, 3000)
     .returnToStoredHeading("Face upfield", 0.40)
     .move("Drive to classifier", 24.0, 0.0, 0.0, 0.55)
     .run();
@@ -166,7 +166,7 @@ reset without sagging RPM.
 
 ```java
 sequence()
-    .fire("Volley", 3, true, 3000)
+    .fire("Volley", 3, true, true, 3000)
     .waitFor("Check for jam", 500)
     .eject("Clear feeder")
     .waitFor("Let debris exit", 400)
@@ -185,7 +185,7 @@ sequence()
     .custom("Enable intake", () -> intake.set(true))
     .move("Drive to pickup", 18.0, 0.0, 0.0, 0.30)
     .waitFor("Let artifacts settle", 750)
-    .fire("Test feed", 1, false, 2500)
+    .fire("Test feed", 1, false, true, 2500)
     .custom("Disable intake", () -> intake.set(false))
     .run();
 ```
@@ -268,7 +268,7 @@ new constant overshoots.
 | --- | --- | --- |
 | Robot drives too fast or slow. | `speedCap` exceeds or undershoots the shared drive cap. | Adjust the `speedCap` argument **and/or** update `SharedRobotTuning.DRIVE_MAX_POWER`. |
 | Aim step times out. | Goal AprilTag not visible or heading far off. | Increase the timeout, adjust starting pose, or verify the tag ID in the pit. |
-| Shots skip unexpectedly. | `requireLock = true` but tag lock drops momentarily. | Improve lighting, lower `SharedRobotTuning.LOCK_TOLERANCE_DEG`, or allow more settle time before firing. |
+| Shots skip unexpectedly. | `requireTargetLock = true` but tag lock drops momentarily. | Improve lighting, lower `SharedRobotTuning.LOCK_TOLERANCE_DEG`, or allow more settle time before firing. |
 | Sequence stops mid-way. | OpMode interrupted (StopAll or STOP pressed). | Check Driver Station log and confirm StopAll isn’t latched. |
 
 ---
@@ -315,4 +315,4 @@ handoffs and mentor reviews.
 
 ---
 
-*Last updated: 2025‑12‑30*
+*Last updated: 2026‑01‑03*

@@ -33,7 +33,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for AutoSpeed to reach the shared RPM window + settle time defined in
  *         SharedRobotTuning.
- *   - fire(shots = 5, betweenShotsMs = 1000)
+ *   - fire(shots = 5, requireLauncherAtSpeed = true, betweenShotsMs = 1000)
  *       • Executes the refreshed five-artifact preload volley with 1 s cadence
  *         between shots.
  *
@@ -63,6 +63,7 @@ public class Auto_Red_Target extends BaseAuto {
     // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
+    // CHANGES (2026-01-03): Updated AutoSequence fire calls to include RPM gating flags.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew (edit to refresh the Start Pose
@@ -79,12 +80,12 @@ public class Auto_Red_Target extends BaseAuto {
                 // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 3, true, 300)
+                .fire("Fire volley", 3, true, true, 300)
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive to balls", 26.0, 90.0, -45.0, 0.85)
                 .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
                 .move("Drive to triangle", 44.0, -15.0, -135.0, 0.85)
-                .fire("Fire volley", 3, true, 100)
+                .fire("Fire volley", 3, true, true, 100)
                 //.waitFor("Hold position", 500)
                 .run();
     }

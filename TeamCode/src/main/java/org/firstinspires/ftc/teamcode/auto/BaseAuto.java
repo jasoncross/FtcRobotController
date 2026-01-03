@@ -138,6 +138,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        autos maintain the same jam protection while aiming or waiting.
     // CHANGES (2025-11-22): Added a tunable master toggle for long-shot biasing to restore symmetric
     //                        lock windows without changing alliance-specific logic.
+    // CHANGES (2026-01-03): Added requireLauncherAtSpeed parameters for AutoSequence firing
+    //                        steps so autos can choose RPM gating per action.
     // CHANGES (2025-11-18): Biased the tag lock window toward alliance-correct angles when
     //                        the robot is beyond the long-shot distance cutover.
     // CHANGES (2025-11-26): Persist the final fused odometry pose with explicit status-aware
@@ -300,6 +302,7 @@ public abstract class BaseAuto extends LinearOpMode {
         try { return SharedRobotTuning.RPM_READY_SETTLE_MS; }
         catch (Throwable t) { return DEF_RPM_SETTLE_MS; }
     }
+
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -707,14 +710,19 @@ public abstract class BaseAuto extends LinearOpMode {
      * both RPM readiness and the caller-supplied between-shot delay.
      */
     protected final void fireN(int count) throws InterruptedException {
-        fireN(count, true, DEFAULT_BETWEEN_MS);
+        fireN(count, true, true, DEFAULT_BETWEEN_MS);
     }
 
     protected final void fireN(int count, boolean requireLock) throws InterruptedException {
-        fireN(count, requireLock, DEFAULT_BETWEEN_MS);
+        fireN(count, requireLock, true, DEFAULT_BETWEEN_MS);
     }
 
-    protected final void fireN(int count, boolean requireLock, long betweenShotsMs) throws InterruptedException {
+    protected final void fireN(int count, boolean requireLock, boolean requireLauncherAtSpeed) throws InterruptedException {
+        fireN(count, requireLock, requireLauncherAtSpeed, DEFAULT_BETWEEN_MS);
+    }
+
+    protected final void fireN(int count, boolean requireLock, boolean requireLauncherAtSpeed, long betweenShotsMs)
+            throws InterruptedException {
         autoCtrl.setAutoEnabled(true);
         for (int i = 0; i < count && opModeIsActive(); i++) {
             final String shotPhase = String.format("Volley %d/%d", i + 1, count);
@@ -738,16 +746,18 @@ public abstract class BaseAuto extends LinearOpMode {
             }
             launcher.setTargetRpm(holdTarget);
 
-            // REQUIRE at-speed
-            while (opModeIsActive()) {
-                updateIntakeFlowForAuto();
-                FieldPose loopPose = updateOdometryPose();
-                updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, loopPose);
-                telemetry.addData("Target RPM", launcher.targetRpm);
-                telemetry.addData("Current RPM", launcher.getCurrentRpm());
-                telemetry.update();
-                if (Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol()) break;
-                idle();
+            // REQUIRE at-speed (if enabled)
+            if (requireLauncherAtSpeed) {
+                while (opModeIsActive()) {
+                    updateIntakeFlowForAuto();
+                    FieldPose loopPose = updateOdometryPose();
+                    updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, loopPose);
+                    telemetry.addData("Target RPM", launcher.targetRpm);
+                    telemetry.addData("Current RPM", launcher.getCurrentRpm());
+                    telemetry.update();
+                    if (Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol()) break;
+                    idle();
+                }
             }
 
             // Feed once with intake assist
@@ -786,7 +796,8 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     /** Run a continuous feed stream for the requested duration, optionally requiring a tag lock first. */
-    protected final void fireContinuous(long durationMs, boolean requireLock, String label) throws InterruptedException {
+    protected final void fireContinuous(long durationMs, boolean requireLock, boolean requireLauncherAtSpeed, String label)
+            throws InterruptedException {
         long runMs = Math.max(0L, durationMs);
         if (runMs <= 0L) {
             return;
@@ -814,32 +825,34 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher.setTargetRpm(holdTarget);
 
         feed.setRelease();
-        long settleMs = rpmSettleMs();
-        long settleStart = -1L;
-        while (opModeIsActive()) {
-            updateIntakeFlowForAuto();
-            FieldPose loopPose = updateOdometryPose();
-            long now = System.currentTimeMillis();
-            double currentRpm = launcher.getCurrentRpm();
-            double error = Math.abs(currentRpm - launcher.targetRpm);
-            boolean withinBand = error <= rpmTol();
-            if (withinBand) {
-                if (settleStart < 0) {
-                    settleStart = now;
+        if (requireLauncherAtSpeed) {
+            long settleMs = rpmSettleMs();
+            long settleStart = -1L;
+            while (opModeIsActive()) {
+                updateIntakeFlowForAuto();
+                FieldPose loopPose = updateOdometryPose();
+                long now = System.currentTimeMillis();
+                double currentRpm = launcher.getCurrentRpm();
+                double error = Math.abs(currentRpm - launcher.targetRpm);
+                boolean withinBand = error <= rpmTol();
+                if (withinBand) {
+                    if (settleStart < 0) {
+                        settleStart = now;
+                    }
+                    if ((now - settleStart) >= settleMs) {
+                        break;
+                    }
+                } else {
+                    settleStart = -1L;
                 }
-                if ((now - settleStart) >= settleMs) {
-                    break;
-                }
-            } else {
-                settleStart = -1L;
+                updateStatusWithPose(label + " – wait for RPM", lockedForRun || !requireLock, loopPose);
+                telemetry.addData("Target RPM", launcher.targetRpm);
+                telemetry.addData("Current RPM", currentRpm);
+                telemetry.addData("Tolerance", rpmTol());
+                telemetry.addData("Within band", withinBand);
+                telemetry.update();
+                idle();
             }
-            updateStatusWithPose(label + " – wait for RPM", lockedForRun || !requireLock, loopPose);
-            telemetry.addData("Target RPM", launcher.targetRpm);
-            telemetry.addData("Current RPM", currentRpm);
-            telemetry.addData("Tolerance", rpmTol());
-            telemetry.addData("Within band", withinBand);
-            telemetry.update();
-            idle();
         }
         if (!opModeIsActive()) {
             return;
@@ -1637,7 +1650,7 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence fire(String phase, int shots, boolean requireLock, long betweenShotsMs) {
+        public AutoSequence fire(String phase, int shots, boolean requireLock, boolean requireLauncherAtSpeed, long betweenShotsMs) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Fire");
                 if (requireLock && !lastLock) {
@@ -1649,15 +1662,16 @@ public abstract class BaseAuto extends LinearOpMode {
                 updateStatusWithPose(label, !requireLock || lastLock, updateOdometryPose());
                 telemetry.addData("Shots", shots);
                 telemetry.addData("Lock required", requireLock);
+                telemetry.addData("RPM required", requireLauncherAtSpeed);
                 telemetry.addData("Between shots (ms)", betweenShotsMs);
                 telemetry.update();
-                fireN(shots, requireLock, betweenShotsMs);
+                fireN(shots, requireLock, requireLauncherAtSpeed, betweenShotsMs);
                 lastAimReady = false;
                 lastLock = requireLock && lastLock;
             });
         }
 
-        public AutoSequence fireContinuous(String phase, long durationMs, boolean requireLock) {
+        public AutoSequence fireContinuous(String phase, long durationMs, boolean requireLock, boolean requireLauncherAtSpeed) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Continuous fire");
                 boolean lockSatisfied = lastLock || lastReadyHadLock;
@@ -1670,8 +1684,9 @@ public abstract class BaseAuto extends LinearOpMode {
                 updateStatusWithPose(label, !requireLock || lockSatisfied, updateOdometryPose());
                 telemetry.addData("Duration (ms)", durationMs);
                 telemetry.addData("Lock required", requireLock);
+                telemetry.addData("RPM required", requireLauncherAtSpeed);
                 telemetry.update();
-                BaseAuto.this.fireContinuous(durationMs, requireLock, label);
+                BaseAuto.this.fireContinuous(durationMs, requireLock, requireLauncherAtSpeed, label);
                 lastAimReady = false;
                 lastLock = requireLock && lockSatisfied;
             });

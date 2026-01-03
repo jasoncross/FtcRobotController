@@ -19,9 +19,9 @@
  *       • Overrides LauncherAutoSpeedController.smoothingAlpha; match the value
  *         here to what TunableDirectory recommends so TeleOp lab tests mirror
  *         match play.
- *   - DEFAULT_NO_TAG_RPM (ADDED 2025-10-31)
+ *   - DEFAULT_NO_TAG_RPM (ADDED 2025-10-31, REMOVED 2026-01-03)
  *       • RPM commanded whenever AutoSpeed is active but no AprilTag is locked yet.
- *         Keeps the flywheel spooled until distance data arrives.
+ *         Now derived from the farthest calibration point instead of a manual value.
  *
  * METHODS
  *   - apply(LauncherAutoSpeedController ctrl)
@@ -44,6 +44,7 @@ public final class AutoRpmConfig {
 
     // --- Tunables shared by TeleOp & Auto ---
     // CHANGES (2025-11-15): Replaced fixed near/far anchors with a full calibration table (default 6 points, 35–100 in).
+    // CHANGES (2026-01-03): Default no-tag RPM now derives from the farthest calibration point.
     public static double[] CALIBRATION_DISTANCES_IN = {
             48.0,
             55.0,
@@ -65,13 +66,28 @@ public final class AutoRpmConfig {
             4250.0
     }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
-    public static double DEFAULT_NO_TAG_RPM = 2600.0; // RPM to hold while AutoSpeed runs without a tag lock
 
     /** Apply standard params to a controller. Safe to call repeatedly. */
     public static void apply(LauncherAutoSpeedController ctrl) {
         if (ctrl == null) return;
-        ctrl.setDefaultRpm(DEFAULT_NO_TAG_RPM);
+        ctrl.setDefaultRpm(resolveNoTagRpm());
         ctrl.setCalibrationCurve(CALIBRATION_DISTANCES_IN, CALIBRATION_RPMS);
         ctrl.setSmoothingAlpha(SMOOTH_ALPHA);
+    }
+
+    /** RPM to hold while AutoSpeed runs without a tag lock (uses farthest calibration point). */
+    public static double resolveNoTagRpm() {
+        if (CALIBRATION_DISTANCES_IN == null || CALIBRATION_RPMS == null) return 0.0;
+        if (CALIBRATION_DISTANCES_IN.length == 0 || CALIBRATION_RPMS.length == 0) return 0.0;
+        int maxIndex = 0;
+        double maxDistance = CALIBRATION_DISTANCES_IN[0];
+        int count = Math.min(CALIBRATION_DISTANCES_IN.length, CALIBRATION_RPMS.length);
+        for (int i = 1; i < count; i++) {
+            if (CALIBRATION_DISTANCES_IN[i] > maxDistance) {
+                maxDistance = CALIBRATION_DISTANCES_IN[i];
+                maxIndex = i;
+            }
+        }
+        return CALIBRATION_RPMS[maxIndex];
     }
 }

@@ -103,7 +103,7 @@ TeamCode/
     │   ├── IntakeTuning.java                 ← Intake motor power
     │   ├── LauncherTuning.java               ← Flywheel clamps, PIDF, at-speed window
     │   ├── LimelightPipelineAutoSelectConfig.java ← Limelight INIT pipeline auto-selection profiles + timing
-    │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation
+    │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation, RPM feed gating
     │   ├── OdometryConfig.java               ← Field geometry + odometry fusion tunables
     │   ├── TeleOpDriverDefaults.java         ← Driver preferences & manual ranges
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
@@ -188,7 +188,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
   - AutoRPM now reads a config-driven calibration table from `config/AutoRpmConfig.java`
     (default points: **35 in→2600 RPM**, **37 in→2500 RPM**, **60 in→2550 RPM**, **67 in→2750 RPM**, **82 in→3050 RPM**,
     **100 in→3800 RPM**). The controller linearly interpolates between entries and clamps outside the range.
-  - **Default hold** while no tag is visible = **4450 RPM** (`AutoRpmConfig.DEFAULT_NO_TAG_RPM`)
+  - **Default hold** while no tag is visible uses the **farthest calibration RPM** in `AutoRpmConfig` (keeps the launcher spooled until the first tag fix).
   - Holds the **last vision-derived RPM** once at least one tag fix has occurred.
 - **Driver toggles:** Gamepad Y buttons queue AutoSpeed enable/disable requests so the TeleOp loop finishes scanning
   controls before seeding RPM or emitting rumble pulses—drive/aim inputs stay live while the launcher mode flips.
@@ -213,7 +213,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
 - While `feed.isFeedCycleActive()` the intake automatically drops to the low `FEED_ACTIVE_HOLD_POWER` so launcher volleys do not stack more current draw; once the feed finishes, the state machine resumes normal power automatically.
 - FeedStop servo (`config/FeedStopConfig.java`) now homes in two guarded phases: it first steps open in the release direction to `SAFE_PRESET_OPEN_DEG` (capped by `MAX_HOME_TRAVEL_DEG`) without ever commanding below 0°, then seats against the BLOCK stop, dwells for `HOME_DWELL_MS`, and backs off by `HOME_BACKOFF_DEG` before parking. Homing is queued until START so INIT remains motionless, then runs immediately once the match begins. Every degree request is clamped inside `SOFT_CCW_LIMIT_DEG` (0°) and `SOFT_CW_LIMIT_DEG` (170°), so no runtime command can crash the linkage. After homing it rests at `HOLD_ANGLE_DEG` (~30°) to block the path, swings to `RELEASE_ANGLE_DEG` (~110°) when feeding, and defaults to the servo’s full 300° span (no `scaleRange`). Teams that enable `USE_AUTO_SCALE` let the subsystem compute the narrowest safe window (with `SAFETY_MARGIN_DEG` headroom) and telemetry now surfaces the mode, limits, scale range (or “scale=none”), direction sign, and any clamp/abort warnings. StopAll/stop() always return the gate to the homed 0° position before disabling.
-- FeedStop can open immediately on a fire request, but the feed motor now waits until the launcher remains inside `SharedRobotTuning.RPM_TOLERANCE` for `SharedRobotTuning.RPM_READY_SETTLE_MS` (fire presses/holds queue until ready), and the FeedStop return timer starts only when the feed motor begins moving so the gate does not close early.
+- FeedStop can open immediately on a fire request, but in TeleOp the feed motor waits until the launcher remains inside `SharedRobotTuning.RPM_TOLERANCE` for `SharedRobotTuning.RPM_READY_SETTLE_MS` whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot, including continuous holds) or `INITIAL` (first shot/stream start only); `OFF` bypasses the RPM gate entirely. The FeedStop return timer starts only when the feed motor begins moving so the gate does not close early.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
   The spool → feed → hold sequence is asynchronous, so drivers can keep steering (or cancel with StopAll) while the timer winds down.
 
@@ -317,7 +317,7 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 6. **Return to the starting heading** using the shared IMU helper.
 7. **Drive forward 24"** upfield toward the classifier.
 
-> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. Feeding never occurs unless both lock and at-speed checks succeed, `readyLauncherUntilReady()` now shares the TeleOp AutoSpeed curve while seeding from `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` and waiting out `SharedRobotTuning.RPM_READY_SETTLE_MS`, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
+> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. In TeleOp, feed gating honors `SharedRobotTuning.HOLD_FIRE_FOR_RPM` (ALL = every shot/hold, INITIAL = first shot only, OFF = no RPM gate); in Autonomous, each AutoSequence fire step now chooses RPM gating via its `requireLauncherAtSpeed` flag. `readyLauncherUntilReady()` shares the TeleOp AutoSpeed curve while seeding from `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` and waiting out `SharedRobotTuning.RPM_READY_SETTLE_MS`, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
 
 ---
 ## Obelisk AprilTag Signal (DECODE 2025–26)
@@ -401,7 +401,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2026-01-03** – Added TeleOp debug telemetry gating with SELECT/dashboard sync, rate-limited below-separator telemetry updates, expanded the always-on below-line hints (tag visibility + aim state), documented the new tunables plus layout notes, and fixed the dashboard telemetry list reuse in TeleOp.
+- **2026-01-03** – Added TeleOp debug telemetry gating with SELECT/dashboard sync, rate-limited below-separator telemetry updates, expanded the always-on below-line hints (tag visibility + aim state), documented the new tunables plus layout notes, fixed the dashboard telemetry list reuse in TeleOp, refined HOLD_FIRE_FOR_RPM so TeleOp continuous feeds pause on RPM drops, added per-call AutoSequence RPM gating flags, and derived the no-tag AutoSpeed RPM from the farthest calibration point.
 - **2026-01-02** – Added the TEST: Drive Distance Tuner auto OpMode for dashboard-driven move/rotate calibration, documented the new test harness in the AutoSequence guide and tunable directory, and refreshed the project layout and Codex context notes.
 - **2025-12-31** – Allowed mixed goal+obelisk MT2 frames to fuse under cautious clamps (including obelisk-primary mixes) while still rejecting obelisk-only solves, added a two-tag guard for obelisk-primary mixes, skipped FeedStop safe-open on START to prevent a gate twitch, enforced single-source Auto odometry updates, saved the final fused pose for TeleOp handoff, cleaned up TeleOp INIT pose formatting, and gated feed motor start on the ±RPM readiness window with the FeedStop return timer starting when the motor actually moves.
 - **2025-12-30** – Aligned Auto/TeleOp odometry seeding with IMU heading offsets (defined as seedHeading − imuYawAtSeed) so start poses and end-of-auto headings persist, made init vision seeding opt-in, ensured Auto dashboard updates use a single cached odometry update per loop, and added adaptive fusion clamps with cautious/confirm modes to stabilize long-range tag reacquire (plus matching VisionDbg telemetry and tunables).

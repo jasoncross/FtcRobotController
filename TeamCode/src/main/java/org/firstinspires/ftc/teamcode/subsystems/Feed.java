@@ -80,6 +80,8 @@ public class Feed {
     //                       moving so the gate stays open until the shot actually fires.
     // CHANGES (2025-12-31): Clarified feed gating uses a ±RPM readiness window so overspeed is
     //                       treated the same as underspeed.
+    // CHANGES (2026-01-03): Added continuous-feed power gating hook so TeleOp can pause the
+    //                       feed motor while holding the FeedStop open.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -112,6 +114,7 @@ public class Feed {
     private long releaseUntilMs = 0L;
     private long feedAllowedAfterMs = 0L;
     private boolean continuousFeedActive = false;
+    private boolean continuousFeedPowerEnabled = true;
     private boolean feedReadyGate = true;
 
     private boolean useAutoScale = false;
@@ -191,6 +194,7 @@ public class Feed {
         releaseUntilMs = 0L;
         feedAllowedAfterMs = 0L;
         continuousFeedActive = false;
+        continuousFeedPowerEnabled = true;
         feedReadyGate = true;
         scaleTelemetryEmitted = false;
         windowLimitReached = false;
@@ -311,7 +315,7 @@ public class Feed {
             }
             releaseUntilMs = 0L;
             feedAllowedAfterMs = now;
-            motor.setPower(firePower);
+            motor.setPower(continuousFeedPowerEnabled ? firePower : 0.0);
             return;
         }
 
@@ -517,6 +521,7 @@ public class Feed {
     public void startContinuousFeed() {
         if (continuousFeedActive) return;
         continuousFeedActive = true;
+        continuousFeedPowerEnabled = true;
         lastFire = System.currentTimeMillis();
         feedAllowedAfterMs = lastFire;
         releaseUntilMs = 0L;
@@ -535,6 +540,7 @@ public class Feed {
     public void stopContinuousFeed() {
         if (!continuousFeedActive) return;
         continuousFeedActive = false;
+        continuousFeedPowerEnabled = true;
         applyIdleHoldPower();
         setHold();
         cycleState = FeedCycleState.IDLE;
@@ -545,10 +551,16 @@ public class Feed {
         return continuousFeedActive;
     }
 
+    /** Gate continuous-feed motor power without closing the FeedStop. */
+    public void setContinuousFeedPowerEnabled(boolean enabled) {
+        continuousFeedPowerEnabled = enabled;
+    }
+
     /** Immediately stops the feed motor. */
     public void stop() {
         applySafetyConfig();
         continuousFeedActive = false;
+        continuousFeedPowerEnabled = true;
         applyIdleHoldPower();
         setHome();
         cycleState = FeedCycleState.IDLE;
@@ -559,6 +571,7 @@ public class Feed {
         idleHoldActive = false;
         applySafetyConfig();
         continuousFeedActive = false;
+        continuousFeedPowerEnabled = true;
         motor.setPower(0.0);
         setHome();
         cycleState = FeedCycleState.IDLE;

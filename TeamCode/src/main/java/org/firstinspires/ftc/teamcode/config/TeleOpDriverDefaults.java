@@ -30,6 +30,8 @@
  *       • Dashboard + gamepad-controlled toggle for below-line debug telemetry.
  *   - TELEOP_TELEMETRY_BELOW_HZ
  *       • Rate limit for TeleOp telemetry below the blank separator.
+ *   - DEBUG_FIRING_STATS
+ *       • Enables debug-only launcher RPM drop/recovery telemetry for fired shots.
  *   - INTAKE_ASSIST_MS
  *       • TeleOp copy of FeedTuning.INTAKE_ASSIST_MS; adjust here when diverging
  *         from the shared value.
@@ -50,6 +52,7 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2025-11-23): Added AutoRPM tweak scale for on-the-fly AutoSpeed adjustments via D-pad left/right.
     // CHANGES (2025-11-25): Added triple-tap intake reverse gesture window for RB and aligned changelog dates.
     // CHANGES (2026-01-03): Added TeleOp telemetry debug toggle + below-line update rate tunables.
+    // CHANGES (2026-01-03): Added a debug firing stats toggle for launcher drop/recovery telemetry.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -82,4 +85,5 @@ public final class TeleOpDriverDefaults {
     // Telemetry controls
     public static boolean TELEOP_TELEMETRY_DEBUG_ENABLED = false; // TeleOp debug telemetry below the separator (dashboard + gamepad controlled)
     public static double  TELEOP_TELEMETRY_BELOW_HZ      = 10.0;  // Update rate (Hz) for below-separator telemetry blocks
+    public static boolean DEBUG_FIRING_STATS             = true;  // Debug-only firing stats (RPM drop/recovery timing) when telemetry debug is enabled
 }

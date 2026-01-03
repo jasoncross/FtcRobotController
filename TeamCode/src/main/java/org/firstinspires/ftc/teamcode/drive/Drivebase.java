@@ -115,6 +115,8 @@ public class Drivebase {
     //                        keep distance termination accurate during turns.
     // CHANGES (2025-12-29): Restored encoder distance conversion to physical ticks so Auto distances
     //                        are no longer affected by odometry calibration.
+    // CHANGES (2026-01-03): Added stall-exit detection for Auto encoder moves to bail out when blocked,
+    //                        with tunable velocity/position thresholds and a minimum stall window.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -220,6 +222,10 @@ public class Drivebase {
     public void move(double distanceInches, double degrees, double speed) {
         if (!isActive()) return;  // TeleOp: don't block
         final double minSpeed = AUTO_MOVE_MIN_SPEED;
+        final boolean stallExitEnabled = DriveTuning.AUTO_ENABLE_STALL_EXIT;
+        final double stallVelocityEps = DriveTuning.AUTO_STALL_VELOCITY_EPSILON;
+        final double stallPositionEps = DriveTuning.AUTO_STALL_POSITION_EPSILON;
+        final double stallTimeSec = DriveTuning.AUTO_STALL_TIME_MS / 1000.0;
         double maxSpeed = clamp(speed, 0.1, 1.0);
         maxSpeed = Math.max(minSpeed, maxSpeed);
 
@@ -256,6 +262,12 @@ public class Drivebase {
         int blStart = bl.getCurrentPosition();
         int brStart = br.getCurrentPosition();
 
+        double lastMeanDelta = 0.0;
+        double lastRemainingInches = targetTicks / TICKS_PER_IN;
+        double lastSampleTime = now();
+        double stallStartSec = -1.0;
+        boolean stalled = false;
+
         while (isActive()) {
             double flDelta = abs(fl.getCurrentPosition() - flStart);
             double frDelta = abs(fr.getCurrentPosition() - frStart);
@@ -286,10 +298,41 @@ public class Drivebase {
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
 
+            if (stallExitEnabled && commandedSpeed > 1e-3) {
+                double remainingInches = Math.max(0.0, (targetTicks - meanDelta) / TICKS_PER_IN);
+                double currentTime = now();
+                double dt = currentTime - lastSampleTime;
+                if (dt > 0) {
+                    double deltaInches = (meanDelta - lastMeanDelta) / TICKS_PER_IN;
+                    double velocity = abs(deltaInches / Math.max(1e-3, dt));
+                    double remainingDelta = lastRemainingInches - remainingInches;
+                    boolean notClosing = remainingDelta <= stallPositionEps;
+                    boolean tooSlow = velocity <= stallVelocityEps;
+                    boolean eligible = remainingInches > stallPositionEps;
+                    if (eligible && (notClosing || tooSlow)) {
+                        if (stallStartSec < 0.0) {
+                            stallStartSec = currentTime;
+                        } else if ((currentTime - stallStartSec) >= stallTimeSec) {
+                            stalled = true;
+                            break;
+                        }
+                    } else {
+                        stallStartSec = -1.0;
+                    }
+                }
+                lastMeanDelta = meanDelta;
+                lastRemainingInches = remainingInches;
+                lastSampleTime = currentTime;
+            }
+
             idle();
         }
 
         stopAll();
+
+        if (stalled) {
+            telemetry.addLine("AUTO STALL: move aborted");
+        }
     }
 
     /**
@@ -309,6 +352,10 @@ public class Drivebase {
         if (!isActive()) return; // TeleOp: don't block
 
         final double minTranslationSpeed = AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED;
+        final boolean stallExitEnabled = DriveTuning.AUTO_ENABLE_STALL_EXIT;
+        final double stallVelocityEps = DriveTuning.AUTO_STALL_VELOCITY_EPSILON;
+        final double stallPositionEps = DriveTuning.AUTO_STALL_POSITION_EPSILON;
+        final double stallTimeSec = DriveTuning.AUTO_STALL_TIME_MS / 1000.0;
         translationSpeed = clamp(translationSpeed, 0.1, 1.0);
         translationSpeed = Math.max(minTranslationSpeed, translationSpeed);
         twistSpeed = clamp(twistSpeed, 0.1, 1.0);
@@ -328,6 +375,11 @@ public class Drivebase {
 
         ElapsedTime dt = new ElapsedTime();
         double lastErr = shortestDiff(targetHeadingDeg, heading());
+        ElapsedTime stallClock = new ElapsedTime();
+        double lastRemainingInches = targetDistanceAbs;
+        double lastSampleTime = stallClock.seconds();
+        double stallStartSec = -1.0;
+        boolean stalled = false;
 
         while (isActive()) {
             double curHeading = heading();
@@ -368,7 +420,8 @@ public class Drivebase {
 
             double driveStepInches = driveStepTicks / TICKS_PER_IN;
             double strafeStepInches = strafeStepTicks / TICKS_PER_IN;
-            traveledInches += abs(hypot(driveStepInches, strafeStepInches));
+            double stepDistanceInches = abs(hypot(driveStepInches, strafeStepInches));
+            traveledInches += stepDistanceInches;
 
             double progress = clamp(traveledInches / targetDistanceAbs, 0.0, 1.0);
             double remaining = 1.0 - progress;
@@ -394,10 +447,39 @@ public class Drivebase {
                 break;
             }
 
+            if (stallExitEnabled && transSpeed > 1e-3) {
+                double remainingInches = Math.max(0.0, targetDistanceAbs - traveledInches);
+                double currentTime = stallClock.seconds();
+                double dtSec = currentTime - lastSampleTime;
+                if (dtSec > 0) {
+                    double velocity = stepDistanceInches / Math.max(1e-3, dtSec);
+                    double remainingDelta = lastRemainingInches - remainingInches;
+                    boolean notClosing = remainingDelta <= stallPositionEps;
+                    boolean tooSlow = velocity <= stallVelocityEps;
+                    boolean eligible = remainingInches > stallPositionEps;
+                    if (eligible && (notClosing || tooSlow)) {
+                        if (stallStartSec < 0.0) {
+                            stallStartSec = currentTime;
+                        } else if ((currentTime - stallStartSec) >= stallTimeSec) {
+                            stalled = true;
+                            break;
+                        }
+                    } else {
+                        stallStartSec = -1.0;
+                    }
+                }
+                lastRemainingInches = remainingInches;
+                lastSampleTime = currentTime;
+            }
+
             idle();
         }
 
         stopAll();
+
+        if (stalled) {
+            telemetry.addLine("AUTO STALL: move with twist aborted");
+        }
 
         // Finalize heading with the standard turn helper in case residual error remains.
         double residual = shortestDiff(targetHeadingDeg, heading());

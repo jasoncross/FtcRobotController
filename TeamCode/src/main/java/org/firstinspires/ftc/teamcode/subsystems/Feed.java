@@ -82,6 +82,8 @@ public class Feed {
     //                       treated the same as underspeed.
     // CHANGES (2026-01-03): Added continuous-feed power gating hook so TeleOp can pause the
     //                       feed motor while holding the FeedStop open.
+    // CHANGES (2026-01-03): Added a feed-cycle start flag so TeleOp can timestamp shot events
+    //                       for debug firing stats without blocking feed behavior.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -116,6 +118,7 @@ public class Feed {
     private boolean continuousFeedActive = false;
     private boolean continuousFeedPowerEnabled = true;
     private boolean feedReadyGate = true;
+    private boolean feedMotorStarted = false;
 
     private boolean useAutoScale = false;
     private boolean autoScaleApplied = false;
@@ -529,6 +532,7 @@ public class Feed {
         applySafetyConfig();
         setRelease();
         motor.setPower(firePower);
+        feedMotorStarted = true;
     }
 
     /** Allow external gating so the feed motor waits until ready before firing. */
@@ -564,6 +568,7 @@ public class Feed {
         applyIdleHoldPower();
         setHome();
         cycleState = FeedCycleState.IDLE;
+        feedMotorStarted = false;
     }
 
     /** Force BRAKE zero-power behavior with no idle counter-rotation. */
@@ -575,12 +580,20 @@ public class Feed {
         motor.setPower(0.0);
         setHome();
         cycleState = FeedCycleState.IDLE;
+        feedMotorStarted = false;
     }
 
     /** Helper exposed for safety fallbacks and testing. */
     public void setPower(double p) {
         applySafetyConfig();
         motor.setPower(p);
+    }
+
+    /** Returns true once when the feed motor begins a shot cycle. */
+    public boolean consumeFeedMotorStarted() {
+        boolean started = feedMotorStarted;
+        feedMotorStarted = false;
+        return started;
     }
 
     private void sleep(int ms) {
@@ -619,6 +632,7 @@ public class Feed {
                     motor.setPower(firePower);
                     cycleState = FeedCycleState.FEEDING;
                     cycleStateStartMs = now;
+                    feedMotorStarted = true;
                 }
                 break;
             case FEEDING:

@@ -22,7 +22,7 @@
  *         testing matches match-day settings.
  *   - defaultRpm (ADDED 2025-10-31)
  *       • RPM commanded when AutoSpeed is enabled but no AprilTag distance is
- *         available yet. AutoRpmConfig sets this via DEFAULT_NO_TAG_RPM.
+ *         available yet. AutoRpmConfig derives this from the farthest calibration point.
  *
  * METHODS
  *   - setCalibrationCurve(...)
@@ -54,6 +54,7 @@ public class LauncherAutoSpeedController {
     // CHANGES (2025-10-31): Updated default anchors (65.4 in → 4550 RPM, 114 in → 5000 RPM), default hold RPM,
     //                       and now remember the last vision-calculated RPM so the default only seeds pre-lock behavior.
     // CHANGES (2025-11-15): Replaced near/far anchors with a generic calibration table + clamping interpolation.
+    // CHANGES (2026-01-03): Default no-tag RPM now derives from the farthest calibration point via AutoRpmConfig.
     private double[] calibrationDistancesIn = {65.4, 114.0};   // Ordered distance list (in)
     private double[] calibrationSpeedsRpm   = {4550.0, 5000.0}; // RPM paired with each distance entry
 

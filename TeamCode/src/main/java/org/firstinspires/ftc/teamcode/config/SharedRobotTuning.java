@@ -19,6 +19,10 @@
  *         BaseAuto/TeleOp declare it "ready".
  *       • Keep modest so volleys remain responsive while filtering transient
  *         noise after large RPM adjustments.
+ *   - HOLD_FIRE_FOR_RPM (ADDED 2026-01-03)
+ *       • TeleOp-only control for whether feed engagement waits for RPM readiness.
+ *       • ALL waits for every shot (including continuous holds), INITIAL waits only
+ *         on the first shot/stream start, OFF disables the RPM gate.
  *   - LOCK_TOLERANCE_DEG
  *       • Bearing tolerance used when declaring an AprilTag lock.
  *       • Ensure Drivebase.TURN_TOLERANCE_DEG and TagAimController gains support
@@ -53,6 +57,7 @@ public final class SharedRobotTuning {
     //                        higher bearing error without stalling volleys.
     // CHANGES (2025-11-24): Removed rotate-to-target timeout tuning; AutoSequence now passes
     //                        explicit per-step limits.
+    // CHANGES (2026-01-03): Added HOLD_FIRE_FOR_RPM mode to control TeleOp RPM-ready feed gating.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -63,6 +68,12 @@ public final class SharedRobotTuning {
     // --- Launcher speed gate ---
     public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
     public static long   RPM_READY_SETTLE_MS        = 150L;   // Time launcher must remain inside tolerance before declaring ready
+    public enum HoldFireForRpmMode {
+        ALL,
+        INITIAL,
+        OFF
+    }
+    public static HoldFireForRpmMode HOLD_FIRE_FOR_RPM = HoldFireForRpmMode.ALL; // TeleOp feed RPM gate: ALL=every shot, INITIAL=first only, OFF=disabled
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG

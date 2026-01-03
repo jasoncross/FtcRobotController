@@ -117,6 +117,9 @@
  *                       tx selection, locked tx memory, and the raw global tx
  *                       sample so field crews can verify aim locks stay tied
  *                       to the alliance goal instead of obelisk detections.
+ * CHANGES (2026-01-03): Updated HOLD_FIRE_FOR_RPM behavior so continuous fire
+ *                       can pause the feed motor on RPM drops while keeping
+ *                       the FeedStop released.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -2005,6 +2008,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Returns true once the launcher has stayed within the ±RPM window long enough to feed. */
     private boolean isLauncherReadyForFeed(long nowMs) {
+        if (holdFireForRpmMode() == SharedRobotTuning.HoldFireForRpmMode.OFF) {
+            launcherReadyStartMs = 0L;
+            return true;
+        }
         if (launcher == null) {
             launcherReadyStartMs = 0L;
             return false;
@@ -2024,6 +2031,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         launcherReadyStartMs = 0L;
         return false;
+    }
+
+    private SharedRobotTuning.HoldFireForRpmMode holdFireForRpmMode() {
+        try { return SharedRobotTuning.HOLD_FIRE_FOR_RPM; }
+        catch (Throwable t) { return SharedRobotTuning.HoldFireForRpmMode.ALL; }
     }
 
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
@@ -2189,6 +2201,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             return;
         }
 
+        SharedRobotTuning.HoldFireForRpmMode rpmGateMode = holdFireForRpmMode();
         long now = System.currentTimeMillis();
         long holdDuration = continuousFireHeld ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs) : 0L;
         long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
@@ -2196,7 +2209,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         if (holdReady && !ejectActive) {
             if (!continuousFireActive) {
-                if (!isLauncherReadyForFeed(now)) {
+                boolean readyForStart = isLauncherReadyForFeed(now);
+                if (!readyForStart) {
                     continuousFeedQueued = true;
                     feed.setRelease();
                     requestAutoAimNudge();
@@ -2217,6 +2231,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
             if (continuousFireActive) {
                 feed.stopContinuousFeed();
+                feed.setContinuousFeedPowerEnabled(true);
                 continuousFireActive = false;
                 restoreAutoAimNudgeIfActive();
             }
@@ -2229,6 +2244,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
             feed.startContinuousFeed();
             requestAutoAimNudge();
             startIntakeAssist(wasOn, 0L);
+        }
+
+        if (continuousFireActive) {
+            boolean allowFeedPower = (rpmGateMode != SharedRobotTuning.HoldFireForRpmMode.ALL)
+                    || isLauncherReadyForFeed(now);
+            feed.setContinuousFeedPowerEnabled(allowFeedPower);
+        } else {
+            feed.setContinuousFeedPowerEnabled(true);
         }
     }
 

@@ -35,7 +35,7 @@ import org.firstinspires.ftc.teamcode.config.VisionTuning;
  *   - readyToLaunch(timeout 3200 ms)
  *       • Waits for AutoSpeed to hit the shared RPM window + settle timer before
  *         allowing the volley to start.
- *   - fire(shots = 5, betweenShotsMs = 1000)
+ *   - fire(shots = 5, requireLauncherAtSpeed = true, betweenShotsMs = 1000)
  *       • Commands a rapid five-artifact volley once RPM readiness is confirmed.
  *   - move(... -36 in, heading 0°, twist 0°, speed 0.85)
  *       • Retreats 36" toward the launch line to clear space for alliance
@@ -72,6 +72,7 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (-12, -72, 0) in the field-center frame (human wall = −72" Y).
+    // CHANGES (2026-01-03): Updated AutoSequence fire calls to include RPM gating flags.
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     public Auto_Blue_Human() { setStartingPose(-12.0, -63.0, 0.0); }
@@ -90,7 +91,7 @@ public class Auto_Blue_Human extends BaseAuto {
                 .move("Drive forward to target firing zone", 80.0, 0.0, 0.0, 0.85)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, 90, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 4, true, 300)
+                .fire("Fire volley", 4, true, true, 300)
                 .returnToStoredHeading("Return to start heading", 0.45)
                 .move("Drive to balls", 58.0, 170.0, -90.0, 0.85)
                 .move("Drive backward", 44.0, 180.0, 0.0, 0.85)

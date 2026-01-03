@@ -1309,8 +1309,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
         }
 
-        List<String> dashboardLines = new ArrayList<>();
-
         // ---- FIRST LINE telemetry: show obelisk optimal order memory ----
         String obeliskDisplay = ObeliskSignal.getDisplay();
         mirrorData(dashboardLines, "Obelisk", "%s", obeliskDisplay);

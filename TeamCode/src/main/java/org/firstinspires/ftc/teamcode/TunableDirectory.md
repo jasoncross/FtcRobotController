@@ -2,6 +2,7 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
+**2026-01-03 update:** Added TeleOp telemetry debug gating + below-separator telemetry rate tunables.
 **2025-12-31 update:** No new tunables were introduced; documentation refreshed to reflect Auto dashboard pose caching, pose-handoff fixes, and feed-motor RPM-ready gating with delayed FeedStop return timing.
 **2025-12-30 update:** Added Limelight fusion seeding and adaptive correction tunables to keep long-distance tag reacquire stable while converging quickly, including the opt-in init vision seed toggle.
 
@@ -215,6 +216,8 @@ This directory clusters every adjustable value in `TeamCode` by what the driver 
 | `TeleOpDriverDefaults.AUTO_SPEED_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether AutoSpeed is enabled at init. | TeleOp only; Auto uses AutoSpeed automatically when requested. | Defaults to `true`; flip to `false` if drivers want to spool manually after START. |
 | `TeleOpDriverDefaults.AUTO_AIM_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Whether AutoAim starts enabled. | TeleOp only. | `true` when drivers rely on aim assist immediately. |
 | `TeleOpDriverDefaults.AUTO_STOP_TIMER_ENABLED` / `AUTO_STOP_TIMER_TIME_SEC` | `config/TeleOpDriverDefaults.java` | TeleOp | Optional end-of-match safety timer. | No impact on Auto; tune per event policy. | Enable with `115 s` to stop before endgame. |
+| `TeleOpDriverDefaults.TELEOP_TELEMETRY_DEBUG_ENABLED` | `config/TeleOpDriverDefaults.java` | TeleOp | Enables debug-only telemetry below the TeleOp separator (dashboard + SELECT toggle). | Live flag; both Dashboard and Gamepad SELECT update the same backing field. | Keep `false` for matches; set `true` when debugging sensors. |
+| `TeleOpDriverDefaults.TELEOP_TELEMETRY_BELOW_HZ` | `config/TeleOpDriverDefaults.java` | TeleOp | Update rate for below-separator TeleOp telemetry (Hz). | Applies to both the always-on subset and debug-only lines; top-line telemetry is unchanged. | `5–10 Hz` to reduce loop overhead; raise for faster telemetry refresh. |
 | `TeleOpDriverDefaults.SLOWEST_SPEED` | `config/TeleOpDriverDefaults.java` | TeleOp | Minimum drive speed with brake trigger held. | TeleOp-only brake scaling. | `0.15` for tight endgame alignment; `0.35` if too sluggish. |
 | `TeleOpDriverDefaults.AUTO_AIM_LOSS_GRACE_MS` | `config/TeleOpDriverDefaults.java` | TeleOp | How long AutoAim remains latched after losing a tag. | TeleOp only. | `2500 ms` for faster manual fallback. |
 | `TeleOpDriverDefaults.RPM_TEST_STEP` | `config/TeleOpDriverDefaults.java` | TeleOp | D-pad RPM step size in test mode. | TeleOp-only diagnostic; unrelated to Auto. | Change to `±25 RPM` for finer sweeps. |

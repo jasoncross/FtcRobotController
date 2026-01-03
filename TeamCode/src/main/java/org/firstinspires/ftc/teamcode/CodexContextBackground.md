@@ -136,6 +136,9 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Legacy P480 preview screens remain temporarily for testing but are no longer used for targeting.
 - Temporary AutoAim shot assists triggered by feed holds now unwind cleanly after the stream ends, restoring the driver’s AutoAim
   toggle instead of leaving AutoAim latched on when continuous fire is released.
+- TeleOp telemetry now splits essentials above the blank separator (always visible) from rate-limited below-line diagnostics.
+  The below-line always-on set now includes tag visibility and aim-state hints, while the debug block stays gated by a live
+  dashboard+SELECT toggle so drivers can keep loop overhead low while still enabling deep diagnostics on demand.
 
 ---
 

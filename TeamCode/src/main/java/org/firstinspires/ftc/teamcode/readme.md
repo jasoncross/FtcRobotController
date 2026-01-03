@@ -49,6 +49,7 @@ TeamCode/src/main/java/org/firstinspires/ftc/teamcode/input/ControllerBindings.j
 | **D-pad Left/Right** | **− / + 50 RPM** while TEST MODE is enabled; when **AutoSpeed = OFF** **and Manual Lock = ON**, nudges manual RPM by `LauncherTuning.MANUAL_RPM_STEP` (default 50); when **AutoSpeed = ON**, applies ±`TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE` (2%) to the AutoRPM output per press |
 | **D-pad Down** | **Disable TEST MODE** and **STOP** launcher |
 | **Start** | **StopAll toggle** — latches an all-systems stop; press again to resume |
+| **Select / Back** | **Toggle TeleOp Debug Telemetry** (gates below-separator diagnostics) |
 
 ### Gamepad 2 – Co-Driver
 | Control | Function |
@@ -120,7 +121,7 @@ TeamCode/
     │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating
     │   └── Intake.java                   ← Intake motor helper + assist timings
     ├── teleop/
-    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists)
+    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, debug telemetry gating)
     │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
     │   ├── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
     │   └── TeleOp_Test_CameraStream.java     ← Diagnostics TeleOp for streaming + AprilTag checks
@@ -400,6 +401,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-03** – Added TeleOp debug telemetry gating with SELECT/dashboard sync, rate-limited below-separator telemetry updates, expanded the always-on below-line hints (tag visibility + aim state), and documented the new tunables plus layout notes.
 - **2026-01-02** – Added the TEST: Drive Distance Tuner auto OpMode for dashboard-driven move/rotate calibration, documented the new test harness in the AutoSequence guide and tunable directory, and refreshed the project layout and Codex context notes.
 - **2025-12-31** – Allowed mixed goal+obelisk MT2 frames to fuse under cautious clamps (including obelisk-primary mixes) while still rejecting obelisk-only solves, added a two-tag guard for obelisk-primary mixes, skipped FeedStop safe-open on START to prevent a gate twitch, enforced single-source Auto odometry updates, saved the final fused pose for TeleOp handoff, cleaned up TeleOp INIT pose formatting, and gated feed motor start on the ±RPM readiness window with the FeedStop return timer starting when the motor actually moves.
 - **2025-12-30** – Aligned Auto/TeleOp odometry seeding with IMU heading offsets (defined as seedHeading − imuYawAtSeed) so start poses and end-of-auto headings persist, made init vision seeding opt-in, ensured Auto dashboard updates use a single cached odometry update per loop, and added adaptive fusion clamps with cautious/confirm modes to stabilize long-range tag reacquire (plus matching VisionDbg telemetry and tunables).

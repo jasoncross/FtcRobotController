@@ -30,6 +30,8 @@
  *                        robot without editing Drivebase.java.
  * CHANGES (2025-12-29): Restored encoder ticks-per-rev to physical counts so
  *                        drive distances remain accurate for Auto moves.
+ * CHANGES (2026-01-03): Added auto stall-exit detection tunables for encoder
+ *                        moves so blocked drive steps can end early.
  */
 package org.firstinspires.ftc.teamcode.config;
 
@@ -55,4 +57,10 @@ public final class DriveTuning {
     // Auto translation taper floors (prevent stalling near completion)
     public static double AUTO_MOVE_MIN_SPEED                 = 0.15; // Min speed for encoder-delta move() ramp
     public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.15; // Min translation speed for moveWithTwist() ramp
+
+    // Auto stall exit detection (Autonomous only)
+    public static boolean AUTO_ENABLE_STALL_EXIT          = true;  // Allow auto encoder moves to exit early on stall
+    public static double AUTO_STALL_VELOCITY_EPSILON       = 0.5;   // Inches/sec below which the drive is considered stalled
+    public static double AUTO_STALL_POSITION_EPSILON       = 0.25;  // Inches of remaining error considered "not decreasing"
+    public static double AUTO_STALL_TIME_MS                = 400.0; // Minimum time stalled before aborting the move
 }

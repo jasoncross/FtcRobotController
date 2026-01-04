@@ -26,6 +26,8 @@
  *       • Debug telemetry gating toggle and update rate for below-separator lines.
  *   - DEBUG_FIRING_STATS
  *       • Enables debug-only launcher RPM drop/recovery stats when firing.
+ *   - DEBUG_FIRING_STATS_TRIGGER / DEBUG_FIRING_STATS_VAR_TIME
+ *       • Drop threshold and variance window for debug firing stats.
  *   - aimRumble* + togglePulse*
  *       • Haptic envelopes for aim window + toggle feedback (Driver feedback table).
  *   - ejectRpm / ejectTimeMs
@@ -128,6 +130,9 @@
  *                       so new shots start with fresh drop timing windows.
  * CHANGES (2026-01-03): Added between-shot launcher variance telemetry (avg/max
  *                       RPM and percent split) at the top of debug telemetry.
+ * CHANGES (2026-01-04): Added drop-trigger and variance-window tunables for
+ *                       firing stats, using the trigger threshold to time RPM
+ *                       drop/recovery from feed start.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -260,9 +265,11 @@ import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;   // Driver rum
 import org.firstinspires.ftc.teamcode.config.TagAimTuning;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;         // AprilTag range calibration
 
-import java.util.Locale;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -1053,7 +1060,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double rpmAverage = getRpmAverage();
         updateFiringStats(now, rpmTarget, rpmLeft, rpmRight, rpmAverage, feedMotorStarted);
         boolean feedActive = (feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
-        updateLauncherVariance(rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
+        updateLauncherVariance(now, rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
 
         int bestTagId = (visionTargetProvider != null) ? visionTargetProvider.getBestVisibleTagId() : -1;
         LimelightTargetProvider llProvider = (visionTargetProvider instanceof LimelightTargetProvider)
@@ -1998,13 +2005,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
             return;
         }
+        double dropTrigger = TeleOpDriverDefaults.DEBUG_FIRING_STATS_TRIGGER;
         if (feedMotorStarted) {
-            firingStats.start(now, rpmTarget, rpmLeft, rpmRight, rpmAverage);
+            firingStats.start(now, rpmTarget, rpmLeft, rpmRight, rpmAverage, dropTrigger);
         }
-        firingStats.update(now, rpmLeft, rpmRight, rpmAverage, SharedRobotTuning.RPM_TOLERANCE);
+        firingStats.update(now, rpmLeft, rpmRight, rpmAverage);
     }
 
-    private void updateLauncherVariance(double rpmTarget,
+    private void updateLauncherVariance(long now,
+                                        double rpmTarget,
                                         double rpmLeft,
                                         double rpmRight,
                                         boolean feedActive,
@@ -2012,7 +2021,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
             return;
         }
-        launcherVarianceStats.update(rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
+        launcherVarianceStats.update(
+                now,
+                TeleOpDriverDefaults.DEBUG_FIRING_STATS_VAR_TIME,
+                rpmTarget,
+                rpmLeft,
+                rpmRight,
+                feedActive,
+                ejectActive);
     }
 
     private void resetFiringStatsOnFirePress() {
@@ -2056,12 +2072,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         private boolean hasSample = false;
         private long fireStartMs = 0L;
         private double targetRpm = 0.0;
+        private double dropThreshold = 0.0;
         private double minLeft = 0.0;
         private double minRight = 0.0;
         private double minAvg = 0.0;
-        private long minLeftAtMs = 0L;
-        private long minRightAtMs = 0L;
-        private long minAvgAtMs = 0L;
+        private boolean dropLeftSeen = false;
+        private boolean dropRightSeen = false;
+        private boolean dropAvgSeen = false;
+        private long dropLeftMs = -1L;
+        private long dropRightMs = -1L;
+        private long dropAvgMs = -1L;
         private long recoveryLeftMs = -1L;
         private long recoveryRightMs = -1L;
         private long recoveryAvgMs = -1L;
@@ -2071,60 +2091,80 @@ public abstract class TeleOpAllianceBase extends OpMode {
             hasSample = false;
             fireStartMs = 0L;
             targetRpm = 0.0;
+            dropThreshold = 0.0;
             minLeft = 0.0;
             minRight = 0.0;
             minAvg = 0.0;
-            minLeftAtMs = 0L;
-            minRightAtMs = 0L;
-            minAvgAtMs = 0L;
+            dropLeftSeen = false;
+            dropRightSeen = false;
+            dropAvgSeen = false;
+            dropLeftMs = -1L;
+            dropRightMs = -1L;
+            dropAvgMs = -1L;
             recoveryLeftMs = -1L;
             recoveryRightMs = -1L;
             recoveryAvgMs = -1L;
         }
 
-        void start(long now, double target, double left, double right, double avg) {
+        void start(long now, double target, double left, double right, double avg, double dropTrigger) {
             if (!Double.isFinite(target) || target <= 0.0) return;
             hasSample = true;
             active = true;
             fireStartMs = now;
             targetRpm = target;
-            minLeft = left;
-            minRight = right;
-            minAvg = avg;
-            minLeftAtMs = now;
-            minRightAtMs = now;
-            minAvgAtMs = now;
+            double boundedTrigger = Math.max(0.0, dropTrigger);
+            boundedTrigger = Math.min(boundedTrigger, targetRpm);
+            dropThreshold = targetRpm - boundedTrigger;
+            dropLeftSeen = Double.isFinite(left) && left <= dropThreshold;
+            dropRightSeen = Double.isFinite(right) && right <= dropThreshold;
+            dropAvgSeen = Double.isFinite(avg) && avg <= dropThreshold;
+            dropLeftMs = dropLeftSeen ? 0L : -1L;
+            dropRightMs = dropRightSeen ? 0L : -1L;
+            dropAvgMs = dropAvgSeen ? 0L : -1L;
+            minLeft = dropLeftSeen ? left : Double.NaN;
+            minRight = dropRightSeen ? right : Double.NaN;
+            minAvg = dropAvgSeen ? avg : Double.NaN;
             recoveryLeftMs = -1L;
             recoveryRightMs = -1L;
             recoveryAvgMs = -1L;
         }
 
-        void update(long now, double left, double right, double avg, double tolerance) {
+        void update(long now, double left, double right, double avg) {
             if (!hasSample || !active || targetRpm <= 0.0) return;
 
-            if (Double.isFinite(left) && left < minLeft) {
+            if (!dropLeftSeen && Double.isFinite(left) && left <= dropThreshold) {
+                dropLeftSeen = true;
+                dropLeftMs = Math.max(0L, now - fireStartMs);
                 minLeft = left;
-                minLeftAtMs = now;
             }
-            if (Double.isFinite(right) && right < minRight) {
+            if (!dropRightSeen && Double.isFinite(right) && right <= dropThreshold) {
+                dropRightSeen = true;
+                dropRightMs = Math.max(0L, now - fireStartMs);
                 minRight = right;
-                minRightAtMs = now;
             }
-            if (Double.isFinite(avg) && avg < minAvg) {
+            if (!dropAvgSeen && Double.isFinite(avg) && avg <= dropThreshold) {
+                dropAvgSeen = true;
+                dropAvgMs = Math.max(0L, now - fireStartMs);
                 minAvg = avg;
-                minAvgAtMs = now;
             }
 
-            double tol = Math.max(0.0, tolerance);
-            double recoveryThreshold = targetRpm - tol;
+            if (dropLeftSeen && Double.isFinite(left) && (!Double.isFinite(minLeft) || left < minLeft)) {
+                minLeft = left;
+            }
+            if (dropRightSeen && Double.isFinite(right) && (!Double.isFinite(minRight) || right < minRight)) {
+                minRight = right;
+            }
+            if (dropAvgSeen && Double.isFinite(avg) && (!Double.isFinite(minAvg) || avg < minAvg)) {
+                minAvg = avg;
+            }
 
-            if (recoveryLeftMs < 0L && Double.isFinite(left) && left >= recoveryThreshold) {
+            if (dropLeftSeen && recoveryLeftMs < 0L && Double.isFinite(left) && left >= targetRpm) {
                 recoveryLeftMs = Math.max(0L, now - fireStartMs);
             }
-            if (recoveryRightMs < 0L && Double.isFinite(right) && right >= recoveryThreshold) {
+            if (dropRightSeen && recoveryRightMs < 0L && Double.isFinite(right) && right >= targetRpm) {
                 recoveryRightMs = Math.max(0L, now - fireStartMs);
             }
-            if (recoveryAvgMs < 0L && Double.isFinite(avg) && avg >= recoveryThreshold) {
+            if (dropAvgSeen && recoveryAvgMs < 0L && Double.isFinite(avg) && avg >= targetRpm) {
                 recoveryAvgMs = Math.max(0L, now - fireStartMs);
             }
 
@@ -2138,39 +2178,39 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         double dropLeft() {
-            return hasSample ? Math.max(0.0, targetRpm - minLeft) : Double.NaN;
+            return (hasSample && dropLeftSeen) ? Math.max(0.0, targetRpm - minLeft) : Double.NaN;
         }
 
         double dropRight() {
-            return hasSample ? Math.max(0.0, targetRpm - minRight) : Double.NaN;
+            return (hasSample && dropRightSeen) ? Math.max(0.0, targetRpm - minRight) : Double.NaN;
         }
 
         double dropAvg() {
-            return hasSample ? Math.max(0.0, targetRpm - minAvg) : Double.NaN;
+            return (hasSample && dropAvgSeen) ? Math.max(0.0, targetRpm - minAvg) : Double.NaN;
         }
 
         double dropLeftPct() {
-            return (hasSample && targetRpm > 0.0) ? (dropLeft() / targetRpm) * 100.0 : Double.NaN;
+            return (hasSample && dropLeftSeen && targetRpm > 0.0) ? (dropLeft() / targetRpm) * 100.0 : Double.NaN;
         }
 
         double dropRightPct() {
-            return (hasSample && targetRpm > 0.0) ? (dropRight() / targetRpm) * 100.0 : Double.NaN;
+            return (hasSample && dropRightSeen && targetRpm > 0.0) ? (dropRight() / targetRpm) * 100.0 : Double.NaN;
         }
 
         double dropAvgPct() {
-            return (hasSample && targetRpm > 0.0) ? (dropAvg() / targetRpm) * 100.0 : Double.NaN;
+            return (hasSample && dropAvgSeen && targetRpm > 0.0) ? (dropAvg() / targetRpm) * 100.0 : Double.NaN;
         }
 
         long dropLeftMs() {
-            return hasSample ? Math.max(0L, minLeftAtMs - fireStartMs) : -1L;
+            return (hasSample && dropLeftSeen) ? dropLeftMs : -1L;
         }
 
         long dropRightMs() {
-            return hasSample ? Math.max(0L, minRightAtMs - fireStartMs) : -1L;
+            return (hasSample && dropRightSeen) ? dropRightMs : -1L;
         }
 
         long dropAvgMs() {
-            return hasSample ? Math.max(0L, minAvgAtMs - fireStartMs) : -1L;
+            return (hasSample && dropAvgSeen) ? dropAvgMs : -1L;
         }
 
         long recoveryLeftMs() {
@@ -2187,21 +2227,35 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     private static final class LauncherVarianceStats {
+        private static final class Sample {
+            final long atMs;
+            final double diffRpm;
+            final double diffPct;
+
+            Sample(long atMs, double diffRpm, double diffPct) {
+                this.atMs = atMs;
+                this.diffRpm = diffRpm;
+                this.diffPct = diffPct;
+            }
+        }
+
+        private final Deque<Sample> samples = new ArrayDeque<>();
         private double sumDiffRpm = 0.0;
         private double sumDiffPct = 0.0;
-        private int samples = 0;
         private double maxDiffRpm = 0.0;
         private double maxDiffPct = 0.0;
 
         void reset() {
+            samples.clear();
             sumDiffRpm = 0.0;
             sumDiffPct = 0.0;
-            samples = 0;
             maxDiffRpm = 0.0;
             maxDiffPct = 0.0;
         }
 
-        void update(double targetRpm,
+        void update(long now,
+                    long windowMs,
+                    double targetRpm,
                     double leftRpm,
                     double rightRpm,
                     boolean feedActive,
@@ -2209,36 +2263,59 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (feedActive || ejectActive) return;
             if (!Double.isFinite(targetRpm) || targetRpm <= 0.0) return;
             if (!Double.isFinite(leftRpm) || !Double.isFinite(rightRpm)) return;
+            if (windowMs <= 0L) {
+                reset();
+                return;
+            }
 
             double diffRpm = Math.abs(leftRpm - rightRpm);
             double diffPct = (diffRpm / targetRpm) * 100.0;
             if (!Double.isFinite(diffPct)) return;
 
-            sumDiffRpm += diffRpm;
-            sumDiffPct += diffPct;
-            samples++;
-            if (diffRpm > maxDiffRpm) {
-                maxDiffRpm = diffRpm;
-            }
-            if (diffPct > maxDiffPct) {
-                maxDiffPct = diffPct;
-            }
+            samples.addLast(new Sample(now, diffRpm, diffPct));
+            prune(now, windowMs);
+            recompute();
         }
 
         double avgDiffRpm() {
-            return (samples > 0) ? (sumDiffRpm / samples) : Double.NaN;
+            return (!samples.isEmpty()) ? (sumDiffRpm / samples.size()) : Double.NaN;
         }
 
         double avgDiffPct() {
-            return (samples > 0) ? (sumDiffPct / samples) : Double.NaN;
+            return (!samples.isEmpty()) ? (sumDiffPct / samples.size()) : Double.NaN;
         }
 
         double maxDiffRpm() {
-            return (samples > 0) ? maxDiffRpm : Double.NaN;
+            return (!samples.isEmpty()) ? maxDiffRpm : Double.NaN;
         }
 
         double maxDiffPct() {
-            return (samples > 0) ? maxDiffPct : Double.NaN;
+            return (!samples.isEmpty()) ? maxDiffPct : Double.NaN;
+        }
+
+        private void prune(long now, long windowMs) {
+            while (!samples.isEmpty()) {
+                Sample sample = samples.peekFirst();
+                if (now - sample.atMs <= windowMs) break;
+                samples.removeFirst();
+            }
+        }
+
+        private void recompute() {
+            sumDiffRpm = 0.0;
+            sumDiffPct = 0.0;
+            maxDiffRpm = 0.0;
+            maxDiffPct = 0.0;
+            for (Sample sample : samples) {
+                sumDiffRpm += sample.diffRpm;
+                sumDiffPct += sample.diffPct;
+                if (sample.diffRpm > maxDiffRpm) {
+                    maxDiffRpm = sample.diffRpm;
+                }
+                if (sample.diffPct > maxDiffPct) {
+                    maxDiffPct = sample.diffPct;
+                }
+            }
         }
     }
 

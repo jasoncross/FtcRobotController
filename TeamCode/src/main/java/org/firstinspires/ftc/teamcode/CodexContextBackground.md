@@ -143,8 +143,10 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
   The below-line always-on set now includes tag visibility and aim-state hints, while the debug block stays gated by a live
   dashboard+SELECT toggle so drivers can keep loop overhead low while still enabling deep diagnostics on demand.
 - When the debug telemetry toggle and `TeleOpDriverDefaults.DEBUG_FIRING_STATS` are enabled, TeleOp reports launcher RPM drop,
-  drop percentage, drop timing, recovery timing (AVG/L/R), and between-shot left/right variance (avg/max in RPM and %) to
-  help tune flywheel recovery, with the detection window resetting on each fire-button press.
+  drop percentage, drop timing (time from feed start until RPM falls below target minus `DEBUG_FIRING_STATS_TRIGGER`), recovery
+  timing (time from feed start until RPM returns to full target), and between-shot left/right variance (avg/max in RPM and %
+  over the `DEBUG_FIRING_STATS_VAR_TIME` window) to help tune flywheel recovery, with the detection window resetting on each
+  fire-button press.
 
 ---
 

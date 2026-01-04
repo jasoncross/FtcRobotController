@@ -32,6 +32,10 @@
  *       • Rate limit for TeleOp telemetry below the blank separator.
  *   - DEBUG_FIRING_STATS
  *       • Enables debug-only launcher RPM drop/recovery telemetry for fired shots.
+ *   - DEBUG_FIRING_STATS_TRIGGER
+ *       • RPM below target required to mark a shot as "dropped" for timing.
+ *   - DEBUG_FIRING_STATS_VAR_TIME
+ *       • Time window (ms) used to compute left/right RPM variance at rest.
  *   - INTAKE_ASSIST_MS
  *       • TeleOp copy of FeedTuning.INTAKE_ASSIST_MS; adjust here when diverging
  *         from the shared value.
@@ -53,6 +57,7 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2025-11-25): Added triple-tap intake reverse gesture window for RB and aligned changelog dates.
     // CHANGES (2026-01-03): Added TeleOp telemetry debug toggle + below-line update rate tunables.
     // CHANGES (2026-01-03): Added a debug firing stats toggle for launcher drop/recovery telemetry.
+    // CHANGES (2026-01-04): Added firing stats drop trigger and variance window tunables.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -86,4 +91,6 @@ public final class TeleOpDriverDefaults {
     public static boolean TELEOP_TELEMETRY_DEBUG_ENABLED = false; // TeleOp debug telemetry below the separator (dashboard + gamepad controlled)
     public static double  TELEOP_TELEMETRY_BELOW_HZ      = 10.0;  // Update rate (Hz) for below-separator telemetry blocks
     public static boolean DEBUG_FIRING_STATS             = true;  // Debug-only firing stats (RPM drop/recovery timing) when telemetry debug is enabled
+    public static double  DEBUG_FIRING_STATS_TRIGGER     = 100.0; // RPM drop below target required to log a firing drop event
+    public static int     DEBUG_FIRING_STATS_VAR_TIME    = 1000;  // Window (ms) for computing launcher RPM variance while idle
 }

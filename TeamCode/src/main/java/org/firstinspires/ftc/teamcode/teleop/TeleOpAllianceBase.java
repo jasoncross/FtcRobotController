@@ -24,6 +24,8 @@
  *       • Telemetry smoothing constant for range/heading displays.
  *   - TELEOP_TELEMETRY_DEBUG_ENABLED / TELEOP_TELEMETRY_BELOW_HZ
  *       • Debug telemetry gating toggle and update rate for below-separator lines.
+ *   - DEBUG_FIRING_STATS
+ *       • Enables debug-only launcher RPM drop/recovery stats when firing.
  *   - aimRumble* + togglePulse*
  *       • Haptic envelopes for aim window + toggle feedback (Driver feedback table).
  *   - ejectRpm / ejectTimeMs
@@ -120,6 +122,12 @@
  * CHANGES (2026-01-03): Updated HOLD_FIRE_FOR_RPM behavior so continuous fire
  *                       can pause the feed motor on RPM drops while keeping
  *                       the FeedStop released.
+ * CHANGES (2026-01-03): Added debug firing stats telemetry to capture launcher
+ *                       RPM drop/recovery timing when shots fire.
+ * CHANGES (2026-01-03): Reset firing stat detection on each fire-button press
+ *                       so new shots start with fresh drop timing windows.
+ * CHANGES (2026-01-03): Added between-shot launcher variance telemetry (avg/max
+ *                       RPM and percent split) at the top of debug telemetry.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -336,6 +344,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private long lastBelowTelemetryMs = 0L;  // Timestamp for below-line telemetry updates
     private final List<String> cachedBelowAlwaysLines = new ArrayList<>();
     private final List<String> cachedBelowDebugLines = new ArrayList<>();
+    private final FiringStats firingStats = new FiringStats();
+    private final LauncherVarianceStats launcherVarianceStats = new LauncherVarianceStats();
 
     // ---------------- Odometry ----------------
     private Odometry odometry;
@@ -579,6 +589,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         lastBelowTelemetryMs = 0L;
         cachedBelowAlwaysLines.clear();
         cachedBelowDebugLines.clear();
+        firingStats.reset();
+        launcherVarianceStats.reset();
 
         // ---- Controller Bindings Setup ----
         controls = new ControllerBindings();
@@ -813,9 +825,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void loop() {
         long now = System.currentTimeMillis();
+        boolean feedMotorStarted = false;
         if (feed != null) {
             feed.setFeedReady(isLauncherReadyForFeed(now));
             feed.update();
+            feedMotorStarted = feed.consumeFeedMotorStarted();
         }
         updateIntakeFlow();
         updatePendingToggleRumbles(now);
@@ -1037,6 +1051,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double rpmLeft = getRpmLeft();
         double rpmRight = getRpmRight();
         double rpmAverage = getRpmAverage();
+        updateFiringStats(now, rpmTarget, rpmLeft, rpmRight, rpmAverage, feedMotorStarted);
+        boolean feedActive = (feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
+        updateLauncherVariance(rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
 
         int bestTagId = (visionTargetProvider != null) ? visionTargetProvider.getBestVisibleTagId() : -1;
         LimelightTargetProvider llProvider = (visionTargetProvider instanceof LimelightTargetProvider)
@@ -1133,6 +1150,40 @@ public abstract class TeleOpAllianceBase extends OpMode {
             cachedBelowAlwaysLines.add(formatLine("Range (in)", rangeValue));
 
             if (debugTelemetryEnabled) {
+                if (TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+                    String avgDiffRpm = formatFiringStatValue(launcherVarianceStats.avgDiffRpm(), "%.0f");
+                    String maxDiffRpm = formatFiringStatValue(launcherVarianceStats.maxDiffRpm(), "%.0f");
+                    String avgDiffPct = formatFiringStatValue(launcherVarianceStats.avgDiffPct(), "%.1f%%");
+                    String maxDiffPct = formatFiringStatValue(launcherVarianceStats.maxDiffPct(), "%.1f%%");
+
+                    cachedBelowDebugLines.add(formatLine("RPM VAR (AVG/MAX)",
+                            formatVariancePair(avgDiffRpm, maxDiffRpm)));
+                    cachedBelowDebugLines.add(formatLine("RPM VAR % (AVG/MAX)",
+                            formatVariancePair(avgDiffPct, maxDiffPct)));
+
+                    String dropRpm = formatFiringStatTriple(
+                            formatFiringStatValue(firingStats.dropAvg(), "%.0f"),
+                            formatFiringStatValue(firingStats.dropLeft(), "%.0f"),
+                            formatFiringStatValue(firingStats.dropRight(), "%.0f"));
+                    String dropPct = formatFiringStatTriple(
+                            formatFiringStatValue(firingStats.dropAvgPct(), "%.1f%%"),
+                            formatFiringStatValue(firingStats.dropLeftPct(), "%.1f%%"),
+                            formatFiringStatValue(firingStats.dropRightPct(), "%.1f%%"));
+                    String dropTime = formatFiringStatTriple(
+                            formatFiringStatMs(firingStats.dropAvgMs()),
+                            formatFiringStatMs(firingStats.dropLeftMs()),
+                            formatFiringStatMs(firingStats.dropRightMs()));
+                    String recoveryTime = formatFiringStatTriple(
+                            formatFiringStatMs(firingStats.recoveryAvgMs()),
+                            formatFiringStatMs(firingStats.recoveryLeftMs()),
+                            formatFiringStatMs(firingStats.recoveryRightMs()));
+
+                    cachedBelowDebugLines.add(formatLine("RPM DROP (AVG/L/R)", dropRpm));
+                    cachedBelowDebugLines.add(formatLine("RPM DROP % (AVG/L/R)", dropPct));
+                    cachedBelowDebugLines.add(formatLine("DROP TIME (AVG/L/R)", dropTime));
+                    cachedBelowDebugLines.add(formatLine("RECOVERY TIME (ms) (AVG/L/R)", recoveryTime));
+                }
+
                 List<Integer> visibleIds = new ArrayList<>();
                 LimelightTargetProvider.AimTelemetry aimTelemetry = null;
                 if (llProvider != null) {
@@ -1703,6 +1754,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         lastBelowTelemetryMs = 0L;
         if (!debugTelemetryEnabled) {
             cachedBelowDebugLines.clear();
+            firingStats.reset();
+            launcherVarianceStats.reset();
         }
         if (debugTelemetryEnabled) {
             pulseDouble(gamepad1);
@@ -1718,6 +1771,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
             lastBelowTelemetryMs = 0L;
             if (!debugTelemetryEnabled) {
                 cachedBelowDebugLines.clear();
+                firingStats.reset();
+                launcherVarianceStats.reset();
             }
         }
     }
@@ -1911,6 +1966,58 @@ public abstract class TeleOpAllianceBase extends OpMode {
         doublePulseAtMsG2 = 0L;
     }
 
+    private void updateFiringStats(long now,
+                                   double rpmTarget,
+                                   double rpmLeft,
+                                   double rpmRight,
+                                   double rpmAverage,
+                                   boolean feedMotorStarted) {
+        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+            return;
+        }
+        if (feedMotorStarted) {
+            firingStats.start(now, rpmTarget, rpmLeft, rpmRight, rpmAverage);
+        }
+        firingStats.update(now, rpmLeft, rpmRight, rpmAverage, SharedRobotTuning.RPM_TOLERANCE);
+    }
+
+    private void updateLauncherVariance(double rpmTarget,
+                                        double rpmLeft,
+                                        double rpmRight,
+                                        boolean feedActive,
+                                        boolean ejectActive) {
+        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+            return;
+        }
+        launcherVarianceStats.update(rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
+    }
+
+    private void resetFiringStatsOnFirePress() {
+        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+            return;
+        }
+        firingStats.reset();
+        launcherVarianceStats.reset();
+    }
+
+    private String formatFiringStatValue(double value, String fmt) {
+        if (!Double.isFinite(value)) return "---";
+        return String.format(Locale.US, fmt, value);
+    }
+
+    private String formatFiringStatMs(long value) {
+        if (value < 0L) return "---";
+        return String.valueOf(value);
+    }
+
+    private String formatFiringStatTriple(String avg, String left, String right) {
+        return String.format(Locale.US, "%s / %s / %s", avg, left, right);
+    }
+
+    private String formatVariancePair(String avg, String max) {
+        return String.format(Locale.US, "%s / %s", avg, max);
+    }
+
     private static final class LockWindow {
         final double minDeg;
         final double maxDeg;
@@ -1918,6 +2025,197 @@ public abstract class TeleOpAllianceBase extends OpMode {
         LockWindow(double minDeg, double maxDeg) {
             this.minDeg = minDeg;
             this.maxDeg = maxDeg;
+        }
+    }
+
+    private static final class FiringStats {
+        private boolean active = false;
+        private boolean hasSample = false;
+        private long fireStartMs = 0L;
+        private double targetRpm = 0.0;
+        private double minLeft = 0.0;
+        private double minRight = 0.0;
+        private double minAvg = 0.0;
+        private long minLeftAtMs = 0L;
+        private long minRightAtMs = 0L;
+        private long minAvgAtMs = 0L;
+        private long recoveryLeftMs = -1L;
+        private long recoveryRightMs = -1L;
+        private long recoveryAvgMs = -1L;
+
+        void reset() {
+            active = false;
+            hasSample = false;
+            fireStartMs = 0L;
+            targetRpm = 0.0;
+            minLeft = 0.0;
+            minRight = 0.0;
+            minAvg = 0.0;
+            minLeftAtMs = 0L;
+            minRightAtMs = 0L;
+            minAvgAtMs = 0L;
+            recoveryLeftMs = -1L;
+            recoveryRightMs = -1L;
+            recoveryAvgMs = -1L;
+        }
+
+        void start(long now, double target, double left, double right, double avg) {
+            if (!Double.isFinite(target) || target <= 0.0) return;
+            hasSample = true;
+            active = true;
+            fireStartMs = now;
+            targetRpm = target;
+            minLeft = left;
+            minRight = right;
+            minAvg = avg;
+            minLeftAtMs = now;
+            minRightAtMs = now;
+            minAvgAtMs = now;
+            recoveryLeftMs = -1L;
+            recoveryRightMs = -1L;
+            recoveryAvgMs = -1L;
+        }
+
+        void update(long now, double left, double right, double avg, double tolerance) {
+            if (!hasSample || !active || targetRpm <= 0.0) return;
+
+            if (Double.isFinite(left) && left < minLeft) {
+                minLeft = left;
+                minLeftAtMs = now;
+            }
+            if (Double.isFinite(right) && right < minRight) {
+                minRight = right;
+                minRightAtMs = now;
+            }
+            if (Double.isFinite(avg) && avg < minAvg) {
+                minAvg = avg;
+                minAvgAtMs = now;
+            }
+
+            double tol = Math.max(0.0, tolerance);
+            double recoveryThreshold = targetRpm - tol;
+
+            if (recoveryLeftMs < 0L && Double.isFinite(left) && left >= recoveryThreshold) {
+                recoveryLeftMs = Math.max(0L, now - fireStartMs);
+            }
+            if (recoveryRightMs < 0L && Double.isFinite(right) && right >= recoveryThreshold) {
+                recoveryRightMs = Math.max(0L, now - fireStartMs);
+            }
+            if (recoveryAvgMs < 0L && Double.isFinite(avg) && avg >= recoveryThreshold) {
+                recoveryAvgMs = Math.max(0L, now - fireStartMs);
+            }
+
+            if (recoveryLeftMs >= 0L && recoveryRightMs >= 0L && recoveryAvgMs >= 0L) {
+                active = false;
+            }
+        }
+
+        boolean hasSample() {
+            return hasSample;
+        }
+
+        double dropLeft() {
+            return hasSample ? Math.max(0.0, targetRpm - minLeft) : Double.NaN;
+        }
+
+        double dropRight() {
+            return hasSample ? Math.max(0.0, targetRpm - minRight) : Double.NaN;
+        }
+
+        double dropAvg() {
+            return hasSample ? Math.max(0.0, targetRpm - minAvg) : Double.NaN;
+        }
+
+        double dropLeftPct() {
+            return (hasSample && targetRpm > 0.0) ? (dropLeft() / targetRpm) * 100.0 : Double.NaN;
+        }
+
+        double dropRightPct() {
+            return (hasSample && targetRpm > 0.0) ? (dropRight() / targetRpm) * 100.0 : Double.NaN;
+        }
+
+        double dropAvgPct() {
+            return (hasSample && targetRpm > 0.0) ? (dropAvg() / targetRpm) * 100.0 : Double.NaN;
+        }
+
+        long dropLeftMs() {
+            return hasSample ? Math.max(0L, minLeftAtMs - fireStartMs) : -1L;
+        }
+
+        long dropRightMs() {
+            return hasSample ? Math.max(0L, minRightAtMs - fireStartMs) : -1L;
+        }
+
+        long dropAvgMs() {
+            return hasSample ? Math.max(0L, minAvgAtMs - fireStartMs) : -1L;
+        }
+
+        long recoveryLeftMs() {
+            return recoveryLeftMs;
+        }
+
+        long recoveryRightMs() {
+            return recoveryRightMs;
+        }
+
+        long recoveryAvgMs() {
+            return recoveryAvgMs;
+        }
+    }
+
+    private static final class LauncherVarianceStats {
+        private double sumDiffRpm = 0.0;
+        private double sumDiffPct = 0.0;
+        private int samples = 0;
+        private double maxDiffRpm = 0.0;
+        private double maxDiffPct = 0.0;
+
+        void reset() {
+            sumDiffRpm = 0.0;
+            sumDiffPct = 0.0;
+            samples = 0;
+            maxDiffRpm = 0.0;
+            maxDiffPct = 0.0;
+        }
+
+        void update(double targetRpm,
+                    double leftRpm,
+                    double rightRpm,
+                    boolean feedActive,
+                    boolean ejectActive) {
+            if (feedActive || ejectActive) return;
+            if (!Double.isFinite(targetRpm) || targetRpm <= 0.0) return;
+            if (!Double.isFinite(leftRpm) || !Double.isFinite(rightRpm)) return;
+
+            double diffRpm = Math.abs(leftRpm - rightRpm);
+            double diffPct = (diffRpm / targetRpm) * 100.0;
+            if (!Double.isFinite(diffPct)) return;
+
+            sumDiffRpm += diffRpm;
+            sumDiffPct += diffPct;
+            samples++;
+            if (diffRpm > maxDiffRpm) {
+                maxDiffRpm = diffRpm;
+            }
+            if (diffPct > maxDiffPct) {
+                maxDiffPct = diffPct;
+            }
+        }
+
+        double avgDiffRpm() {
+            return (samples > 0) ? (sumDiffRpm / samples) : Double.NaN;
+        }
+
+        double avgDiffPct() {
+            return (samples > 0) ? (sumDiffPct / samples) : Double.NaN;
+        }
+
+        double maxDiffRpm() {
+            return (samples > 0) ? maxDiffRpm : Double.NaN;
+        }
+
+        double maxDiffPct() {
+            return (samples > 0) ? maxDiffPct : Double.NaN;
         }
     }
 
@@ -2040,6 +2338,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     /** Feed once, ensuring Intake briefly assists if it was OFF. */
     private void feedOnceWithIntakeAssist() {
+        resetFiringStatsOnFirePress();
         long holdDuration = continuousFireHeld
                 ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs)
                 : 0L;

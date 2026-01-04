@@ -1302,6 +1302,29 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     cachedBelowDebugLines.add(formatLine("AutoRPM Smoothing α",
                             String.format(Locale.US, "%.2f", autoCtrl.getSmoothingAlpha())));
                 }
+                if (TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+                    String dropRpm = formatFiringStatTriple(
+                            formatFiringStatValue(firingStats.dropAvg(), "%.0f"),
+                            formatFiringStatValue(firingStats.dropLeft(), "%.0f"),
+                            formatFiringStatValue(firingStats.dropRight(), "%.0f"));
+                    String dropPct = formatFiringStatTriple(
+                            formatFiringStatValue(firingStats.dropAvgPct(), "%.1f%%"),
+                            formatFiringStatValue(firingStats.dropLeftPct(), "%.1f%%"),
+                            formatFiringStatValue(firingStats.dropRightPct(), "%.1f%%"));
+                    String dropTime = formatFiringStatTriple(
+                            formatFiringStatMs(firingStats.dropAvgMs()),
+                            formatFiringStatMs(firingStats.dropLeftMs()),
+                            formatFiringStatMs(firingStats.dropRightMs()));
+                    String recoveryTime = formatFiringStatTriple(
+                            formatFiringStatMs(firingStats.recoveryAvgMs()),
+                            formatFiringStatMs(firingStats.recoveryLeftMs()),
+                            formatFiringStatMs(firingStats.recoveryRightMs()));
+
+                    cachedBelowDebugLines.add(formatLine("RPM DROP (AVG/L/R)", dropRpm));
+                    cachedBelowDebugLines.add(formatLine("RPM DROP % (AVG/L/R)", dropPct));
+                    cachedBelowDebugLines.add(formatLine("DROP TIME (AVG/L/R)", dropTime));
+                    cachedBelowDebugLines.add(formatLine("RECOVERY TIME (ms) (AVG/L/R)", recoveryTime));
+                }
                 cachedBelowDebugLines.add(visionStatusLine);
                 cachedBelowDebugLines.add(visionPerfLine);
                 if (visionLightingLine != null) {

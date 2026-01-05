@@ -83,6 +83,17 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
   whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot/hold) or `INITIAL` (first shot/stream start only);
   `OFF` disables the RPM-ready gate entirely. Autonomous firing now uses per-call `requireLauncherAtSpeed` flags instead. The
   FeedStop return timer starts when the feed motor actually begins so the gate does not close early.
+- A unified firing controller (`control/FiringController.java`) now owns the firing transaction state machine for both TeleOp and
+  Auto: it handles FeedStop lead timing, feed power transitions, RPM-drop shot detection, intake suppression, and recovery loops
+  without blocking the main loop. Shots advance from FEEDING → SHOT_DETECTED when either launcher RPM drops by the configured
+  threshold or the fallback timeout elapses, then the feed motor drops to a low post-shot power to prevent shove while flywheels
+  recover.
+
+**Firing semantics:** TeleOp uses a tap-to-fire single shot, a hold for continuous firing, and a tap-then-hold gesture to arm
+spray-mode streaming (relaxed RPM gating) while the second press is held. Auto maps spray-like firing to calls that require
+neither target lock nor launcher-at-speed gating, keeping the same state machine and recovery rules. AUTOAIM_WINDOW runs only
+when the pre-fire auto-aim window tunable is nonzero, honors the existing lock tolerance logic, skips mid-stream held shots, and
+always exits on timeout so neither TeleOp nor Auto can stall indefinitely.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.

@@ -39,6 +39,10 @@
  *   - INTAKE_ASSIST_MS
  *       • TeleOp copy of FeedTuning.INTAKE_ASSIST_MS; adjust here when diverging
  *         from the shared value.
+ *   - FIRING_AUTO_AIM_TIME_THRESHOLD_MS
+ *       • Max time spent auto-aiming immediately before a fire request.
+ *   - FIRING_SPRAY_DOUBLE_TAP_WINDOW_MS
+ *       • Max gap between a tap and a hold to arm spray-mode streaming.
  *   - INITIAL_AUTO_DEFAULT_SPEED
  *       • Local override of SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED for
  *         TeleOp-only experiments.
@@ -58,6 +62,7 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2026-01-03): Added TeleOp telemetry debug toggle + below-line update rate tunables.
     // CHANGES (2026-01-03): Added a debug firing stats toggle for launcher drop/recovery telemetry.
     // CHANGES (2026-01-04): Added firing stats drop trigger and variance window tunables.
+    // CHANGES (2026-01-04): Added firing auto-aim window + spray double-tap gesture tunables.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -80,6 +85,8 @@ public final class TeleOpDriverDefaults {
 
     // Intake assist + auto-speed seed (TeleOp overrides of shared values)
     public static int    INTAKE_ASSIST_MS           = FeedTuning.INTAKE_ASSIST_MS;           // TeleOp copy of post-feed intake assist duration (ms)
+    public static int    FIRING_AUTO_AIM_TIME_THRESHOLD_MS = 200; // Max time (ms) to auto-aim just before firing (0 disables)
+    public static int    FIRING_SPRAY_DOUBLE_TAP_WINDOW_MS  = 350; // Tap-to-hold window (ms) that arms spray streaming
     public static double INITIAL_AUTO_DEFAULT_SPEED = SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; // TeleOp seed RPM before first tag lock
     public static int    INTAKE_REVERSE_TAP_WINDOW_MS = 750; // Max window (ms) for detecting three fast RB taps to trigger reverse
 

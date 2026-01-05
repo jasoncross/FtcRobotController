@@ -50,7 +50,7 @@
  *         telemetry updates, and rumble feedback.
  *   - stop()
  *       • Ensure all subsystems and vision resources shut down cleanly.
- *   - Helper sections (feedOnceWithIntakeAssist, handleRumble, applyDrive, etc.)
+ *   - Helper sections (firing controller, handleRumble, applyDrive, etc.)
  *       • Group related logic for student readability.
  *
  * NOTES
@@ -248,6 +248,7 @@ import org.firstinspires.ftc.teamcode.util.RumbleNotifier;
 
 // === AUTO LAUNCHER SPEED (RPM) ===
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
+import org.firstinspires.ftc.teamcode.control.FiringController;
 
 // === CENTRALIZED TUNING (NEW) ===
 // Where these used to live:
@@ -336,7 +337,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
     private boolean longShotMode     = false;                     // Sticky long/normal shot window selection
     private long launcherReadyStartMs = 0L;                       // Time launcher first entered the RPM window
-    private boolean continuousFeedQueued = false;                 // True when a hold is waiting on RPM readiness
 
     // AutoRPM tweak (per-press percentage scaling while AutoSpeed is enabled)
     private double autoRpmTweakScale  = TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE;
@@ -466,12 +466,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private long intakeReverseWindowStartMs = 0L;
     private boolean intakeReverseStartState = false;
 
-    private boolean continuousFireHeld = false;   // True while LB is held for continuous feed
-    private boolean continuousFireActive = false; // Latched once continuous feed has been enabled
-    private long continuousFireHoldStartMs = 0L;  // Timestamp when the LB hold began for continuous feed
-    private boolean pendingAutoAimNudge = false;  // Requests a temporary auto-aim before firing
-    private boolean autoAimNudgeActive = false;   // AutoAim temporarily enabled for a shot
-    private boolean autoAimNudgeRestoreState = false; // Previous AutoAim state to restore after the nudge
+    private FiringController firingController;
+    private boolean fireButtonDownLast = false;
+    private long fireTapReleaseMs = 0L;
+    private boolean sprayHoldActive = false;
+    private int firingAutoAimWindowMs = TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS;
+    private int firingSprayWindowMs = TeleOpDriverDefaults.FIRING_SPRAY_DOUBLE_TAP_WINDOW_MS;
+    private boolean autoAimOnFireActive = false;
+    private boolean autoAimOnFireRestoreState = false;
 
     private enum EjectPhase { IDLE, SPOOL, FEED, HOLD }
     private EjectPhase ejectPhase = EjectPhase.IDLE;
@@ -512,6 +514,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         feed.safeInit();
         intake.safeInit();
         feed.initFeedStop(hardwareMap, telemetry);
+        firingController = new FiringController(feed, intake);
 
         if (visionTaskExecutor != null) {
             visionTaskExecutor.shutdownNow();
@@ -608,8 +611,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // -------- Gamepad 1 (Driver) --------
         // Feed / Intake
-        controls.bindPress(Pad.G1, Btn.LB, () -> feedOnceWithIntakeAssist());
-        controls.bindHold(Pad.G1, Btn.LB, this::markContinuousFireHeld);
+        // Fire input is handled directly in the loop to support tap-then-hold spray detection.
         controls.bindPress(Pad.G1, Btn.RB, this::handleIntakeButtonPress);
 
         // Reverse Drive toggle
@@ -697,8 +699,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         });
 
         // -------- Gamepad 2 (Co-driver) --------
-        controls.bindPress(Pad.G2, Btn.LB, () -> feedOnceWithIntakeAssist());
-        controls.bindHold(Pad.G2, Btn.LB, this::markContinuousFireHeld);
+        // Fire input is handled directly in the loop to support tap-then-hold spray detection.
         controls.bindPress(Pad.G2, Btn.RB, this::handleIntakeButtonPress);
         controls.bindPress(Pad.G2, Btn.Y,  () -> {
             boolean enable = !autoSpeedEnabled;
@@ -814,13 +815,14 @@ public abstract class TeleOpAllianceBase extends OpMode {
         visionProfileSwapMode = null;
         visionProfileError = null;
 
-        continuousFireHeld = false;
-        continuousFireActive = false;
-        continuousFeedQueued = false;
-        continuousFireHoldStartMs = 0L;
-        pendingAutoAimNudge = false;
-        autoAimNudgeActive = false;
-        autoAimNudgeRestoreState = autoAimEnabled;
+        fireButtonDownLast = false;
+        fireTapReleaseMs = 0L;
+        sprayHoldActive = false;
+        autoAimOnFireActive = false;
+        autoAimOnFireRestoreState = autoAimEnabled;
+        if (firingController != null) {
+            firingController.reset();
+        }
         resetAutoRpmTweak();
         launcherReadyStartMs = 0L;
 
@@ -832,11 +834,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void loop() {
         long now = System.currentTimeMillis();
-        boolean feedMotorStarted = false;
         if (feed != null) {
-            feed.setFeedReady(isLauncherReadyForFeed(now));
             feed.update();
-            feedMotorStarted = feed.consumeFeedMotorStarted();
         }
         updateIntakeFlow();
         updatePendingToggleRumbles(now);
@@ -893,7 +892,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         // -------- Normal controls (only run when NOT STOPPED) --------
-        continuousFireHeld = false; // will be set true by hold bindings during this update
 
         boolean twistSignTestButton = gamepad1.ps;
         if (twistSignTestButton && !lastTwistSignTestButton) {
@@ -901,17 +899,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         lastTwistSignTestButton = twistSignTestButton;
         controls.update(gamepad1, gamepad2);
-        if (!continuousFireHeld) {
-            continuousFireHoldStartMs = 0L;
-        }
         drainAutoSpeedQueue();
 
         now = System.currentTimeMillis();
         updateEjectSequence(now);
         updateIntakeAssist(now);
         boolean ejectActive = isEjectRoutineActive();
-
-        handleContinuousFire(ejectActive);
 
         // Honor manual lock in manual mode
         if (!autoSpeedEnabled && manualRpmLocked && !rpmTestEnabled && !ejectActive) {
@@ -949,9 +942,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             smRangeMeters = (smRangeMeters == null) ? rangeMetersRaw : (smoothA * rangeMetersRaw + (1 - smoothA) * smRangeMeters);
         }
 
-        updateAutoAimNudge(goalVisibleForAim);
-        boolean shotAssistActive = autoAimNudgeActive;
-
         Double distanceForLockIn = goalVisibleForAim && !Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)
                 ? rangeMetersRaw * M_TO_IN : null;
         if (!AutoAimTuning.LONG_SHOT_ENABLED) {
@@ -961,6 +951,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
         LockWindow lockWindow = computeLockWindow(longShotMode, TagAimTuning.DEADBAND_DEG);
         aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
+
+        boolean aimReadyForFire = isAimReadyForFire(goalVisibleSmoothed, lockWindow);
+        updateFiringController(now, ejectActive, aimReadyForFire);
+        updateAutoAimOnFire(goalVisibleForAim);
+        boolean shotAssistActive = autoAimOnFireActive;
 
         // AutoAim + grace handling
         if (autoAimEnabled) {
@@ -1058,8 +1053,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double rpmLeft = getRpmLeft();
         double rpmRight = getRpmRight();
         double rpmAverage = getRpmAverage();
+        boolean feedMotorStarted = firingController != null && firingController.consumeFeedMotorStarted();
         updateFiringStats(now, rpmTarget, rpmLeft, rpmRight, rpmAverage, feedMotorStarted);
-        boolean feedActive = (feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
+        boolean feedActive = (firingController != null && firingController.isFeedActive())
+                || ((feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive()));
         updateLauncherVariance(now, rpmTarget, rpmLeft, rpmRight, feedActive, ejectActive);
 
         int bestTagId = (visionTargetProvider != null) ? visionTargetProvider.getBestVisibleTagId() : -1;
@@ -1155,8 +1152,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     ? String.format(Locale.US, "%.1f", rangeIn)
                     : "N/A";
             cachedBelowAlwaysLines.add(formatLine("Range (in)", rangeValue));
+            if (!debugTelemetryEnabled && firingController != null && firingController.isSprayActive()) {
+                cachedBelowAlwaysLines.add("SPRAY MODE: ON");
+                cachedBelowAlwaysLines.add(formatLine("Firing", firingController.getTelemetrySummary()));
+            }
 
             if (debugTelemetryEnabled) {
+                if (firingController != null) {
+                    cachedBelowDebugLines.add(formatLine("Firing State", firingController.getState().name()));
+                    cachedBelowDebugLines.add(formatLine("Firing Mode", firingController.getMode().name()));
+                }
                 if (TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
                     String avgDiffRpm = formatFiringStatValue(launcherVarianceStats.avgDiffRpm(), "%.0f");
                     String maxDiffRpm = formatFiringStatValue(launcherVarianceStats.maxDiffRpm(), "%.0f");
@@ -2361,46 +2366,87 @@ public abstract class TeleOpAllianceBase extends OpMode {
         return rM_sc * M_TO_IN;
     }
 
-    /** Records a continuous-fire hold and stamps the start time if this is the first tick. */
-    private void markContinuousFireHeld() {
-        continuousFireHeld = true;
-        if (continuousFireHoldStartMs == 0L) {
-            continuousFireHoldStartMs = System.currentTimeMillis();
+    private boolean isAimReadyForFire(boolean goalVisibleSmoothed, LockWindow lockWindow) {
+        if (!goalVisibleSmoothed || visionTargetProvider == null) {
+            return false;
         }
+        Double heading = visionTargetProvider.getSmoothedHeadingErrorDeg();
+        if (heading == null || Double.isNaN(heading)) {
+            return false;
+        }
+        return heading >= lockWindow.minDeg && heading <= lockWindow.maxDeg;
     }
 
-    /** Flags a request to briefly enable AutoAim before launching a shot. */
-    private void requestAutoAimNudge() {
-        pendingAutoAimNudge = true;
-    }
-
-    /** Restores the driver-selected AutoAim state after a shot assist. */
-    private void restoreAutoAimNudgeIfActive() {
-        if (!autoAimNudgeActive) {
+    private void updateFiringController(long nowMs, boolean ejectActive, boolean aimReadyForFire) {
+        if (firingController == null || feed == null || intake == null) {
             return;
         }
-        autoAimEnabled = autoAimNudgeRestoreState;
-        autoAimNudgeActive = false;
-        pendingAutoAimNudge = false;
-        aimLossStartMs = -1L;
-    }
 
-    /** Enables a temporary AutoAim assist when a tag is visible, then restores the prior setting after firing. */
-    private void updateAutoAimNudge(boolean hasGoalTarget) {
-        boolean firingActive = feed != null && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
+        firingAutoAimWindowMs = TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS;
+        firingSprayWindowMs = TeleOpDriverDefaults.FIRING_SPRAY_DOUBLE_TAP_WINDOW_MS;
 
-        if (pendingAutoAimNudge && hasGoalTarget) {
-            autoAimNudgeRestoreState = autoAimEnabled;
-            autoAimEnabled = true;
-            autoAimNudgeActive = true;
-            pendingAutoAimNudge = false;
-            aimLossStartMs = -1L;
-        } else if (pendingAutoAimNudge && !firingActive) {
-            pendingAutoAimNudge = false;
+        boolean fireButtonDown = gamepad1.left_bumper || gamepad2.left_bumper;
+        boolean pressed = fireButtonDown && !fireButtonDownLast;
+        boolean released = !fireButtonDown && fireButtonDownLast;
+
+        if (released) {
+            fireTapReleaseMs = nowMs;
+            sprayHoldActive = false;
         }
 
-        if (autoAimNudgeActive && !firingActive) {
-            restoreAutoAimNudgeIfActive();
+        if (pressed && !ejectActive) {
+            resetFiringStatsOnFirePress();
+            boolean withinSprayWindow = fireTapReleaseMs > 0L
+                    && (nowMs - fireTapReleaseMs) <= Math.max(0L, firingSprayWindowMs);
+            sprayHoldActive = withinSprayWindow;
+            firingController.requestFire(
+                    nowMs,
+                    fireButtonDown,
+                    sprayHoldActive,
+                    intakeResumeState,
+                    holdFireForRpmMode(),
+                    true,
+                    firingAutoAimWindowMs);
+        }
+
+        fireButtonDownLast = fireButtonDown;
+
+        if (ejectActive) {
+            firingController.setContinuousRequested(false);
+            firingController.setSprayLike(false);
+            return;
+        }
+
+        firingController.setContinuousRequested(fireButtonDown);
+        firingController.setSprayLike(sprayHoldActive && fireButtonDown);
+
+        boolean launcherReady = isLauncherReadyForFeed(nowMs);
+        double targetRpm = (launcher != null) ? launcher.targetRpm : 0.0;
+        double leftRpm = (launcher != null) ? launcher.getLeftRpm() : 0.0;
+        double rightRpm = (launcher != null) ? launcher.getRightRpm() : 0.0;
+
+        firingController.update(nowMs, aimReadyForFire, launcherReady, targetRpm, leftRpm, rightRpm, intakeResumeState);
+    }
+
+    private void updateAutoAimOnFire(boolean hasGoalTarget) {
+        if (firingController == null) {
+            return;
+        }
+
+        if (firingController.isAutoAimWindowActive() && hasGoalTarget) {
+            if (!autoAimOnFireActive) {
+                autoAimOnFireRestoreState = autoAimEnabled;
+                autoAimEnabled = true;
+                autoAimOnFireActive = true;
+                aimLossStartMs = -1L;
+            }
+            return;
+        }
+
+        if (autoAimOnFireActive && firingController.isIdle()) {
+            autoAimEnabled = autoAimOnFireRestoreState;
+            autoAimOnFireActive = false;
+            aimLossStartMs = -1L;
         }
     }
 
@@ -2436,23 +2482,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         catch (Throwable t) { return SharedRobotTuning.HoldFireForRpmMode.ALL; }
     }
 
-    /** Feed once, ensuring Intake briefly assists if it was OFF. */
-    private void feedOnceWithIntakeAssist() {
-        resetFiringStatsOnFirePress();
-        long holdDuration = continuousFireHeld
-                ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs)
-                : 0L;
-        long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
-        boolean holdBlocksSingle = continuousFireHeld && holdThreshold > 0L && holdDuration >= holdThreshold;
-
-        if (ejectPhase != EjectPhase.IDLE || continuousFireActive || holdBlocksSingle) return;
-        requestAutoAimNudge();
-        boolean wasOn = intake.isOn();
-        if (feed.beginFeedCycle()) {
-            startIntakeAssist(wasOn, 0L);
-        }
-    }
-
     private void handleIntakeButtonPress() {
         if (intake == null) {
             return;
@@ -2461,6 +2490,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (intake.isReversing()) {
             intake.resumeFromReverse();
             resetIntakeReverseGesture();
+            intakeResumeState = intake.isOn();
             return;
         }
 
@@ -2475,15 +2505,20 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (intakeReverseTapCount >= 3 && (now - intakeReverseWindowStartMs) <= intakeReverseTapWindowMs) {
             intake.startReverse(intakeReverseStartState);
             resetIntakeReverseGesture();
+            intakeResumeState = intakeReverseStartState;
             return;
         }
 
         intake.toggle();
+        intakeResumeState = intake.isOn();
     }
 
     /** Eject one ball asynchronously: spool, feed, hold, then restore previous RPM. */
     private void ejectOnce() {
         if (ejectPhase != EjectPhase.IDLE) return;
+        if (firingController != null) {
+            firingController.reset();
+        }
         ejectPrevRpmCommand = launcher.targetRpm;
         double tempCmd = clamp(ejectRpm, 0, rpmTop);
         launcher.setTargetRpm(tempCmd);
@@ -2595,65 +2630,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intakeAssistExtraHoldMs = Math.max(0L, extraHoldMs);
     }
 
-    private void handleContinuousFire(boolean ejectActive) {
-        if (feed == null || intake == null) {
-            return;
-        }
-
-        SharedRobotTuning.HoldFireForRpmMode rpmGateMode = holdFireForRpmMode();
-        long now = System.currentTimeMillis();
-        long holdDuration = continuousFireHeld ? Math.max(0L, System.currentTimeMillis() - continuousFireHoldStartMs) : 0L;
-        long holdThreshold = (feed != null) ? feed.getReleaseHoldMs() : 0L;
-        boolean holdReady = continuousFireHeld && holdDuration >= holdThreshold;
-
-        if (holdReady && !ejectActive) {
-            if (!continuousFireActive) {
-                boolean readyForStart = isLauncherReadyForFeed(now);
-                if (!readyForStart) {
-                    continuousFeedQueued = true;
-                    feed.setRelease();
-                    requestAutoAimNudge();
-                    return;
-                }
-                continuousFireActive = true;
-                continuousFeedQueued = false;
-                boolean wasOn = intake.isOn();
-                feed.startContinuousFeed();
-                requestAutoAimNudge();
-                startIntakeAssist(wasOn, 0L);
-            }
-        } else {
-            if (continuousFeedQueued) {
-                continuousFeedQueued = false;
-                feed.setHold();
-                restoreAutoAimNudgeIfActive();
-            }
-            if (continuousFireActive) {
-                feed.stopContinuousFeed();
-                feed.setContinuousFeedPowerEnabled(true);
-                continuousFireActive = false;
-                restoreAutoAimNudgeIfActive();
-            }
-        }
-
-        if (continuousFeedQueued && holdReady && !ejectActive && isLauncherReadyForFeed(now)) {
-            continuousFeedQueued = false;
-            continuousFireActive = true;
-            boolean wasOn = intake.isOn();
-            feed.startContinuousFeed();
-            requestAutoAimNudge();
-            startIntakeAssist(wasOn, 0L);
-        }
-
-        if (continuousFireActive) {
-            boolean allowFeedPower = (rpmGateMode != SharedRobotTuning.HoldFireForRpmMode.ALL)
-                    || isLauncherReadyForFeed(now);
-            feed.setContinuousFeedPowerEnabled(allowFeedPower);
-        } else {
-            feed.setContinuousFeedPowerEnabled(true);
-        }
-    }
-
     private void resetIntakeAssistState() {
         intakeAssistRestorePending = false;
         intakeAssistWaitingForFeed = false;
@@ -2684,15 +2660,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
         cancelEjectSequence();
         resetIntakeAssistState();
         resetIntakeReverseGesture();
-        continuousFireHeld = false;
-        continuousFireActive = false;
-        continuousFeedQueued = false;
-        continuousFireHoldStartMs = 0L;
-        if (autoAimNudgeActive) {
-            autoAimEnabled = autoAimNudgeRestoreState;
+        fireButtonDownLast = false;
+        fireTapReleaseMs = 0L;
+        sprayHoldActive = false;
+        if (firingController != null) {
+            firingController.reset();
         }
-        autoAimNudgeActive = false;
-        pendingAutoAimNudge = false;
+        if (autoAimOnFireActive) {
+            autoAimEnabled = autoAimOnFireRestoreState;
+        }
+        autoAimOnFireActive = false;
         resetAutoRpmTweak();
 
         // DRIVE
@@ -2760,7 +2737,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         if (intake == null) {
             return;
         }
-        boolean feedActive = (feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive());
+        boolean feedActive = (firingController != null && firingController.isFeedActive())
+                || ((feed != null) && (feed.isFeedCycleActive() || feed.isContinuousFeedActive()));
         intake.update(feedActive);
     }
 }

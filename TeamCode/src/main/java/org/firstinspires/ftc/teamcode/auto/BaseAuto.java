@@ -11,10 +11,12 @@ import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
+import org.firstinspires.ftc.teamcode.config.TeleOpDriverDefaults;
 import org.firstinspires.ftc.teamcode.config.TeleOpEjectTuning;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.config.VisionTuning;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
+import org.firstinspires.ftc.teamcode.control.FiringController;
 import org.firstinspires.ftc.teamcode.drive.Drivebase;
 import org.firstinspires.ftc.teamcode.odometry.DecodeFieldDrawing;
 import org.firstinspires.ftc.teamcode.odometry.FieldPose;
@@ -240,6 +242,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected Launcher launcher;         // Flywheel subsystem for scoring
     protected Feed feed;                 // Artifact feed motor controller
     protected Intake intake;             // Intake roller subsystem
+    protected FiringController firingController;
 
     // Controllers supporting aiming and RPM automation.
     protected final TagAimController aim = new TagAimController();
@@ -268,6 +271,7 @@ public abstract class BaseAuto extends LinearOpMode {
     private String autoOpModeName;
     private Integer lastReportedPipelineIndex = null;
     private boolean lastReadyHadLock = false;
+    private long launcherReadyStartMs = 0L;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -301,6 +305,39 @@ public abstract class BaseAuto extends LinearOpMode {
     private long rpmSettleMs() {
         try { return SharedRobotTuning.RPM_READY_SETTLE_MS; }
         catch (Throwable t) { return DEF_RPM_SETTLE_MS; }
+    }
+
+    private boolean isAimReadyForFire() {
+        VisionTargetProvider provider = visionTargetProvider;
+        if (provider == null || !provider.isGoalVisibleSmoothed()) {
+            return false;
+        }
+        Double heading = provider.getSmoothedHeadingErrorDeg();
+        if (heading == null || Double.isNaN(heading)) {
+            return false;
+        }
+        return Math.abs(heading) <= lockTolDeg();
+    }
+
+    private boolean isLauncherReadyForFire(long nowMs) {
+        if (launcher == null) {
+            launcherReadyStartMs = 0L;
+            return false;
+        }
+        if (launcher.targetRpm <= 0.0) {
+            launcherReadyStartMs = 0L;
+            return false;
+        }
+        double tolerance = rpmTol();
+        double error = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
+        if (error <= tolerance) {
+            if (launcherReadyStartMs == 0L) {
+                launcherReadyStartMs = nowMs;
+            }
+            return (nowMs - launcherReadyStartMs) >= rpmSettleMs();
+        }
+        launcherReadyStartMs = 0L;
+        return false;
     }
 
 
@@ -355,6 +392,7 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher = new Launcher(hardwareMap);   // Flywheel pair
         feed     = new Feed(hardwareMap);       // Indexer wheel
         intake   = new Intake(hardwareMap);     // Floor intake
+        firingController = new FiringController(feed, intake);
 
         // Guarantee INIT remains motionless until START.
         drive.safeInit();
@@ -746,36 +784,43 @@ public abstract class BaseAuto extends LinearOpMode {
             }
             launcher.setTargetRpm(holdTarget);
 
-            // REQUIRE at-speed (if enabled)
-            if (requireLauncherAtSpeed) {
-                while (opModeIsActive()) {
-                    updateIntakeFlowForAuto();
-                    FieldPose loopPose = updateOdometryPose();
-                    updateStatusWithPose(shotPhase + " – wait for RPM", lockedForShot || !requireLock, loopPose);
-                    telemetry.addData("Target RPM", launcher.targetRpm);
-                    telemetry.addData("Current RPM", launcher.getCurrentRpm());
-                    telemetry.update();
-                    if (Math.abs(launcher.getCurrentRpm() - launcher.targetRpm) <= rpmTol()) break;
-                    idle();
-                }
+            boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
+            SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
+                    ? SharedRobotTuning.HoldFireForRpmMode.ALL
+                    : SharedRobotTuning.HoldFireForRpmMode.OFF;
+
+            if (firingController != null) {
+                firingController.requestFire(
+                        System.currentTimeMillis(),
+                        false,
+                        sprayLike,
+                        intake.isOn(),
+                        rpmGateMode,
+                        true,
+                        TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS);
             }
 
-            // Feed once with intake assist
-            boolean wasOn = intake.isOn();
-            if (!wasOn) intake.set(true);
-            updateStatusWithPose(shotPhase + " – feed", lockedForShot || !requireLock, updateOdometryPose());
-            telemetry.addData("Target RPM", launcher.targetRpm);
-            telemetry.addData("Current RPM", launcher.getCurrentRpm());
-            telemetry.update();
-            feed.feedOnceBlocking();
-            feed.update();
-            updateIntakeFlowForAuto();
-            if (!wasOn) {
-                int assist = FeedTuning.INTAKE_ASSIST_MS;
-                sleep(assist);
-                intake.set(false);
+            while (opModeIsActive() && firingController != null && !firingController.isIdle()) {
+                long now = System.currentTimeMillis();
+                firingController.setContinuousRequested(false);
+                firingController.setSprayLike(sprayLike);
+                firingController.update(now,
+                        isAimReadyForFire(),
+                        isLauncherReadyForFire(now),
+                        launcher.targetRpm,
+                        launcher.getLeftRpm(),
+                        launcher.getRightRpm(),
+                        intake.isOn());
+
                 feed.update();
                 updateIntakeFlowForAuto();
+
+                FieldPose loopPose = updateOdometryPose();
+                updateStatusWithPose(shotPhase, lockedForShot || !requireLock, loopPose);
+                telemetry.addData("Target RPM", launcher.targetRpm);
+                telemetry.addData("Current RPM", launcher.getCurrentRpm());
+                telemetry.update();
+                idle();
             }
 
             // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
@@ -824,49 +869,42 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         launcher.setTargetRpm(holdTarget);
 
-        feed.setRelease();
-        if (requireLauncherAtSpeed) {
-            long settleMs = rpmSettleMs();
-            long settleStart = -1L;
-            while (opModeIsActive()) {
-                updateIntakeFlowForAuto();
-                FieldPose loopPose = updateOdometryPose();
-                long now = System.currentTimeMillis();
-                double currentRpm = launcher.getCurrentRpm();
-                double error = Math.abs(currentRpm - launcher.targetRpm);
-                boolean withinBand = error <= rpmTol();
-                if (withinBand) {
-                    if (settleStart < 0) {
-                        settleStart = now;
-                    }
-                    if ((now - settleStart) >= settleMs) {
-                        break;
-                    }
-                } else {
-                    settleStart = -1L;
-                }
-                updateStatusWithPose(label + " – wait for RPM", lockedForRun || !requireLock, loopPose);
-                telemetry.addData("Target RPM", launcher.targetRpm);
-                telemetry.addData("Current RPM", currentRpm);
-                telemetry.addData("Tolerance", rpmTol());
-                telemetry.addData("Within band", withinBand);
-                telemetry.update();
-                idle();
-            }
-        }
-        if (!opModeIsActive()) {
-            return;
-        }
-
-        boolean intakeWasOn = intake.isOn();
-        if (!intakeWasOn) intake.set(true);
-        feed.startContinuousFeed();
+        boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
+        SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
+                ? SharedRobotTuning.HoldFireForRpmMode.ALL
+                : SharedRobotTuning.HoldFireForRpmMode.OFF;
 
         long start = System.currentTimeMillis();
-        while (opModeIsActive() && (System.currentTimeMillis() - start) < runMs) {
+        long endMs = start + runMs;
+        while (opModeIsActive()) {
+            long now = System.currentTimeMillis();
+            boolean continueRequested = now < endMs;
+
             double sustainTarget = autoCtrl.hold();
             if (sustainTarget > 0) {
                 launcher.setTargetRpm(sustainTarget);
+            }
+
+            if (firingController != null) {
+                if (continueRequested && firingController.isIdle()) {
+                    firingController.requestFire(
+                            now,
+                            true,
+                            sprayLike,
+                            intake.isOn(),
+                            rpmGateMode,
+                            true,
+                            TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS);
+                }
+                firingController.setContinuousRequested(continueRequested);
+                firingController.setSprayLike(sprayLike && continueRequested);
+                firingController.update(now,
+                        isAimReadyForFire(),
+                        isLauncherReadyForFire(now),
+                        launcher.targetRpm,
+                        launcher.getLeftRpm(),
+                        launcher.getRightRpm(),
+                        intake.isOn());
             }
 
             feed.update();
@@ -875,19 +913,13 @@ public abstract class BaseAuto extends LinearOpMode {
             updateStatusWithPose(label, lockedForRun || !requireLock, updateOdometryPose());
             telemetry.addData("Target RPM", launcher.targetRpm);
             telemetry.addData("Current RPM", launcher.getCurrentRpm());
-            telemetry.addData("Time remaining (ms)", Math.max(0L, runMs - (System.currentTimeMillis() - start)));
+            telemetry.addData("Time remaining (ms)", Math.max(0L, endMs - now));
             telemetry.update();
+
+            if (!continueRequested && (firingController == null || firingController.isIdle())) {
+                break;
+            }
             idle();
-        }
-
-        feed.stopContinuousFeed();
-        feed.update();
-        updateIntakeFlowForAuto();
-
-        if (!intakeWasOn) {
-            sleep(FeedTuning.INTAKE_ASSIST_MS);
-            intake.set(false);
-            feed.update();
         }
 
         drive.stopAll();
@@ -1048,6 +1080,9 @@ public abstract class BaseAuto extends LinearOpMode {
         try { feed.setIdleHoldActive(false); feed.applyBrakeHold(); } catch (Throwable ignored) {}
         try { intake.applyBrakeHold(); } catch (Throwable ignored) {}
         try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
+        if (firingController != null) {
+            firingController.reset();
+        }
     }
     private void applyLimelightPipeline(Limelight3A ll) {
         if (ll == null) return;
@@ -1786,7 +1821,8 @@ public abstract class BaseAuto extends LinearOpMode {
         if (intake == null) {
             return;
         }
-        boolean feedActive = (feed != null) && feed.isFeedCycleActive();
+        boolean feedActive = (firingController != null && firingController.isFeedActive())
+                || ((feed != null) && feed.isFeedCycleActive());
         intake.update(feedActive);
     }
 

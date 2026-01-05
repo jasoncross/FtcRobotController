@@ -65,6 +65,6 @@ public final class FeedStopConfig {
     public static double HOLD_ANGLE_DEG = 5.0;     // Hold (blocking) angle relative to the homed zero position (deg)
     public static double RELEASE_ANGLE_DEG = 75.0; // Release angle relative to the homed zero position (deg)
     public static double SAFETY_MARGIN_DEG = 5.0;   // Extra clearance added when sizing the PWM span (deg)
-    public static long RELEASE_HOLD_MS = 750;       // Duration to remain at RELEASE (ms)
+    public static long RELEASE_HOLD_MS = 250;       // Duration to remain at RELEASE (ms)
     public static long FIRE_LEAD_MS = 500;           // Delay before feed motor starts (ms)
 }

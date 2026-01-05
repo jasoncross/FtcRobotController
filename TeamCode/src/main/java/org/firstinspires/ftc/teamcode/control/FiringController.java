@@ -132,6 +132,13 @@ public class FiringController {
         return started;
     }
 
+    public void setIntakeDesiredState(boolean intakeDesiredOn) {
+        intakeRestoreState = intakeDesiredOn;
+        if (state == State.IDLE && !intakeSuppressed) {
+            restoreIntake();
+        }
+    }
+
     public long getFeedMotorStartedAtMs() {
         return feedMotorStartedAtMs;
     }
@@ -189,6 +196,7 @@ public class FiringController {
                 }
                 break;
             case FIRE_REQUESTED:
+                ensureIntakeOn();
                 if (shouldRunAutoAimWindow()) {
                     autoAimStartMs = nowMs;
                     transition(State.AUTOAIM_WINDOW, nowMs);
@@ -197,11 +205,13 @@ public class FiringController {
                 }
                 break;
             case AUTOAIM_WINDOW:
+                ensureIntakeOn();
                 if (aimReady || isAutoAimTimeout(nowMs)) {
                     transition(State.RPM_WINDOW, nowMs);
                 }
                 break;
             case RPM_WINDOW:
+                ensureIntakeOn();
                 if (sprayLike || !shouldHoldForRpm()) {
                     transition(State.FEEDSTOP_OPEN, nowMs);
                 } else if (launcherReady) {
@@ -209,6 +219,7 @@ public class FiringController {
                 }
                 break;
             case FEEDSTOP_OPEN:
+                ensureIntakeOn();
                 if (feed != null) {
                     feed.setRelease();
                 }
@@ -220,6 +231,7 @@ public class FiringController {
                 }
                 break;
             case FEEDING:
+                ensureIntakeOn();
                 if (feed != null) {
                     feed.setPower(FeedTuning.FIRE_POWER);
                 }
@@ -249,6 +261,7 @@ public class FiringController {
                 }
                 break;
             case FEEDSTOP_RETURNS:
+                suppressIntake();
                 if (nowMs >= feedStopReturnAtMs) {
                     if (feed != null) {
                         feed.setHold();
@@ -341,6 +354,16 @@ public class FiringController {
         double threshold = Math.max(0.0, FeedTuning.FIRING_DROP_RPM_THRESHOLD);
         return (targetRpm - leftRpm) >= threshold
                 || (targetRpm - rightRpm) >= threshold;
+    }
+
+    private void ensureIntakeOn() {
+        if (intake == null) {
+            return;
+        }
+        if (!intake.isOn()) {
+            intake.set(true);
+        }
+        intakeSuppressed = false;
     }
 
     private void suppressIntake() {

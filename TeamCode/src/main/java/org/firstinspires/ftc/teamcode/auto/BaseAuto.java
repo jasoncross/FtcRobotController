@@ -399,6 +399,9 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher.safeInit();
         feed.safeInit();
         intake.safeInit();
+        if (firingController != null) {
+            firingController.setIntakeDesiredState(intake.isOn());
+        }
         feed.initFeedStop(hardwareMap, telemetry);
         seedOdometryFromPose(startPose, "startPose", false);
 
@@ -790,6 +793,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     : SharedRobotTuning.HoldFireForRpmMode.OFF;
 
             if (firingController != null) {
+                firingController.setIntakeDesiredState(intake.isOn());
                 firingController.requestFire(
                         System.currentTimeMillis(),
                         false,
@@ -802,6 +806,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             while (opModeIsActive() && firingController != null && !firingController.isIdle()) {
                 long now = System.currentTimeMillis();
+                firingController.setIntakeDesiredState(intake.isOn());
                 firingController.setContinuousRequested(false);
                 firingController.setSprayLike(sprayLike);
                 firingController.update(now,
@@ -886,6 +891,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
 
             if (firingController != null) {
+                firingController.setIntakeDesiredState(intake.isOn());
                 if (continueRequested && firingController.isIdle()) {
                     firingController.requestFire(
                             now,

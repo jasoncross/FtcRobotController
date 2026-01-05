@@ -790,6 +790,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intake.set(DEFAULT_INTAKE_ENABLED);
         intakeResumeState = DEFAULT_INTAKE_ENABLED;
         resetIntakeReverseGesture();
+        if (firingController != null) {
+            firingController.setIntakeDesiredState(intakeResumeState);
+        }
 
         autoAimEnabled = DEFAULT_AUTOAIM_ENABLED;
         aimLossStartMs = -1;
@@ -821,6 +824,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         autoAimOnFireActive = false;
         autoAimOnFireRestoreState = autoAimEnabled;
         if (firingController != null) {
+            firingController.setIntakeDesiredState(intakeResumeState);
             firingController.reset();
         }
         resetAutoRpmTweak();
@@ -2384,6 +2388,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         firingAutoAimWindowMs = TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS;
         firingSprayWindowMs = TeleOpDriverDefaults.FIRING_SPRAY_DOUBLE_TAP_WINDOW_MS;
+        firingController.setIntakeDesiredState(intakeResumeState);
 
         boolean fireButtonDown = gamepad1.left_bumper || gamepad2.left_bumper;
         boolean pressed = fireButtonDown && !fireButtonDownLast;

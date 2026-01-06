@@ -22,13 +22,13 @@
  *       • Grace period before AutoAim disengages when tags drop.
  *   - SMOOTH_A
  *       • Telemetry smoothing constant for range/heading displays.
- *   - TELEOP_TELEMETRY_DEBUG_ENABLED / TELEOP_TELEMETRY_BELOW_HZ
+ *   - DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED / TELEOP_TELEMETRY_BELOW_HZ
  *       • Debug telemetry gating toggle and update rate for below-separator lines.
- *   - ENABLE_FIRING_STATE_DEBUG
+ *   - DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG
  *       • Forces firing-state telemetry (timing + readiness) below the separator.
- *   - DEBUG_FIRING_STATS
+ *   - DebugTelemetryConfig.DEBUG_FIRING_STATS
  *       • Enables debug-only launcher RPM drop/recovery stats when firing.
- *   - DEBUG_FIRING_STATS_TRIGGER / DEBUG_FIRING_STATS_VAR_TIME
+ *   - DebugTelemetryConfig.DEBUG_FIRING_STATS_TRIGGER / DEBUG_FIRING_STATS_VAR_TIME
  *       • Drop threshold and variance window for debug firing stats.
  *   - aimRumble* + togglePulse*
  *       • Haptic envelopes for aim window + toggle feedback (Driver feedback table).
@@ -137,6 +137,8 @@
  *                       drop/recovery from feed start.
  * CHANGES (2026-01-05): Added a firing state debug block plus readiness latch
  *                       fast-path telemetry for firing cadence diagnostics.
+ * CHANGES (2026-01-10): Moved TeleOp debug telemetry defaults and per-system
+ *                       debug flags into DebugTelemetryConfig.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -231,6 +233,7 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.config.VisionConfig.VisionSource;
+import org.firstinspires.ftc.teamcode.config.DebugTelemetryConfig;
 import org.firstinspires.ftc.teamcode.vision.LimelightPipelineAutoSelector;
 import org.firstinspires.ftc.teamcode.vision.LimelightTargetProvider;
 import org.firstinspires.ftc.teamcode.vision.TagAimController;
@@ -350,7 +353,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private double  manualLockedRpm = 0.0;   // Stored RPM when manualRpmLocked is true
 
     // ---------------- Telemetry Debug + Rate Limits ----------------
-    private boolean debugTelemetryEnabled = TeleOpDriverDefaults.TELEOP_TELEMETRY_DEBUG_ENABLED; // Live debug flag (dashboard + gamepad)
+    private boolean debugTelemetryEnabled = DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED; // Live debug flag (dashboard + gamepad)
     private long lastBelowTelemetryMs = 0L;  // Timestamp for below-line telemetry updates
     private final List<String> cachedBelowAlwaysLines = new ArrayList<>();
     private final List<String> cachedBelowDebugLines = new ArrayList<>();
@@ -598,7 +601,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         dashboard = FtcDashboard.getInstance();
 
         resetTogglePulseQueue();
-        debugTelemetryEnabled = TeleOpDriverDefaults.TELEOP_TELEMETRY_DEBUG_ENABLED;
+        debugTelemetryEnabled = DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED;
         lastBelowTelemetryMs = 0L;
         cachedBelowAlwaysLines.clear();
         cachedBelowDebugLines.clear();
@@ -1165,7 +1168,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 cachedBelowAlwaysLines.add(formatLine("Firing", firingController.getTelemetrySummary()));
             }
 
-            if (TeleOpDriverDefaults.ENABLE_FIRING_STATE_DEBUG && firingController != null) {
+            if (DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG && firingController != null) {
                 double latchedTarget = firingController.getLatchedShotTargetRpm();
                 double avgRpm = firingController.getAvgRpm();
                 double errorRpm = firingController.getErrorRpm();
@@ -1192,11 +1195,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
             }
 
             if (debugTelemetryEnabled) {
-                if (firingController != null) {
+                if (firingController != null && DebugTelemetryConfig.DEBUG_FIRING_TELEMETRY) {
                     cachedBelowDebugLines.add(formatLine("Firing State", firingController.getState().name()));
                     cachedBelowDebugLines.add(formatLine("Firing Mode", firingController.getMode().name()));
                 }
-                if (TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+                if (DebugTelemetryConfig.DEBUG_FIRING_STATS) {
                     String avgDiffRpm = formatFiringStatValue(launcherVarianceStats.avgDiffRpm(), "%.0f");
                     String maxDiffRpm = formatFiringStatValue(launcherVarianceStats.maxDiffRpm(), "%.0f");
                     String avgDiffPct = formatFiringStatValue(launcherVarianceStats.avgDiffPct(), "%.1f%%");
@@ -1230,104 +1233,106 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     cachedBelowDebugLines.add(formatLine("RECOVERY TIME (ms) (AVG/L/R)", recoveryTime));
                 }
 
-                List<Integer> visibleIds = new ArrayList<>();
-                LimelightTargetProvider.AimTelemetry aimTelemetry = null;
-                if (llProvider != null) {
-                    visibleIds = llProvider.getVisibleTagIds();
-                    aimTelemetry = llProvider.getAimTelemetry();
-                } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
-                    visibleIds.add(allianceGoalId);
-                }
-                String visibleIdsStr = joinIds(visibleIds);
+                if (DebugTelemetryConfig.DEBUG_AIM_TELEMETRY) {
+                    List<Integer> visibleIds = new ArrayList<>();
+                    LimelightTargetProvider.AimTelemetry aimTelemetry = null;
+                    if (llProvider != null) {
+                        visibleIds = llProvider.getVisibleTagIds();
+                        aimTelemetry = llProvider.getAimTelemetry();
+                    } else if (visionTargetProvider != null && visionTargetProvider.hasGoalTarget()) {
+                        visibleIds.add(allianceGoalId);
+                    }
+                    String visibleIdsStr = joinIds(visibleIds);
 
-                List<Integer> obeliskIds = new ArrayList<>();
-                for (int id : visibleIds) {
-                    if (id >= 21 && id <= 23) obeliskIds.add(id);
-                }
-                boolean obeliskSeen = !obeliskIds.isEmpty();
-                String obeliskIdsStr = joinIds(obeliskIds);
-                int latchedObeliskId = ObeliskSignal.getLastTagId();
-                String latchedObeliskIdStr = (latchedObeliskId < 0) ? "-" : String.valueOf(latchedObeliskId);
+                    List<Integer> obeliskIds = new ArrayList<>();
+                    for (int id : visibleIds) {
+                        if (id >= 21 && id <= 23) obeliskIds.add(id);
+                    }
+                    boolean obeliskSeen = !obeliskIds.isEmpty();
+                    String obeliskIdsStr = joinIds(obeliskIds);
+                    int latchedObeliskId = ObeliskSignal.getLastTagId();
+                    String latchedObeliskIdStr = (latchedObeliskId < 0) ? "-" : String.valueOf(latchedObeliskId);
 
-                cachedBelowDebugLines.add(formatLine("RT", String.format(Locale.US, "%.2f", gamepad1.right_trigger)));
-                if (autoAimEnabled) {
-                    cachedBelowDebugLines.add(formatLine("SpeedScale",
-                            String.format(Locale.US, "%.2f", appliedAimSpeedScale)));
-                }
-                cachedBelowDebugLines.add(formatLine("Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO"));
-                cachedBelowDebugLines.add(formatLine("Tag Visible (any)", anyTagVisible ? "YES" : "NO"));
-                cachedBelowDebugLines.add(formatLine("Aim Debug", String.format(Locale.US,
-                        "shotAssist=%s aimActive=%s hasGoalTarget=%s errDeg=%.1f aimRaw=%s aimInv=%s driverRot=%.3f finalRot=%.3f",
-                        shotAssistActive,
-                        aimActive,
-                        goalVisibleForAim,
-                        (Double.isFinite(headingDegRaw) ? headingDegRaw : Double.NaN),
-                        Double.isNaN(aimRotRaw) ? "-" : String.format(Locale.US, "%.3f", aimRotRaw),
-                        Double.isNaN(aimRotAfterInvert) ? "-" : String.format(Locale.US, "%.3f", aimRotAfterInvert),
-                        driverRot,
-                        finalRot)));
-                cachedBelowDebugLines.add(formatLine("LL: valid/goal/best", String.format(Locale.US,
-                        "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
-                        anyTagVisible,
-                        anyTagVisible,
-                        goalVisibleForAim,
-                        (bestTagId < 0) ? "-" : String.valueOf(bestTagId))));
-                cachedBelowDebugLines.add(formatLine("LL: allianceGoalId/ids", String.format(Locale.US,
-                        "%d / %s",
-                        allianceGoalId,
-                        visibleIdsStr)));
-                if (aimTelemetry != null) {
-                    String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
-                    String aimTxUsed = aimTelemetry.txUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txUsedDeg) : "-";
-                    String lockedTx = aimTelemetry.lockedTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.lockedTxDeg) : "-";
-                    String globalTx = aimTelemetry.txGlobalDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txGlobalDeg) : "-";
-                    String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
-                    cachedBelowDebugLines.add(formatLine("LL: aimLock", String.format(Locale.US,
-                            "goalVisible=%s locked=%s txUsed=%s lockedTx=%s globalTx=%s ageMs=%s ids=%s",
-                            aimTelemetry.goalVisible,
-                            lockedId,
-                            aimTxUsed,
-                            lockedTx,
-                            globalTx,
-                            lockAgeMs,
-                            joinIds(aimTelemetry.visibleIds))));
-                }
-                cachedBelowDebugLines.add(formatLine("OB: seen ids/latched", String.format(Locale.US,
-                        "seen=%s ids=%s latchedId=%s motif=%s ageMs=%d",
-                        obeliskSeen,
-                        obeliskIdsStr,
-                        latchedObeliskIdStr,
-                        ObeliskSignal.get(),
-                        ObeliskSignal.ageMs())));
-                cachedBelowDebugLines.add(formatLine("AutoAim Grace (ms)", String.valueOf(autoAimLossGraceMs)));
-                if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
-                    cachedBelowDebugLines.add(formatLine("AutoAim Grace Left",
-                            String.valueOf(Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)))));
+                    cachedBelowDebugLines.add(formatLine("RT", String.format(Locale.US, "%.2f", gamepad1.right_trigger)));
+                    if (autoAimEnabled) {
+                        cachedBelowDebugLines.add(formatLine("SpeedScale",
+                                String.format(Locale.US, "%.2f", appliedAimSpeedScale)));
+                    }
+                    cachedBelowDebugLines.add(formatLine("Tag Visible (goal)", goalVisibleForAim ? "YES" : "NO"));
+                    cachedBelowDebugLines.add(formatLine("Tag Visible (any)", anyTagVisible ? "YES" : "NO"));
+                    cachedBelowDebugLines.add(formatLine("Aim Debug", String.format(Locale.US,
+                            "shotAssist=%s aimActive=%s hasGoalTarget=%s errDeg=%.1f aimRaw=%s aimInv=%s driverRot=%.3f finalRot=%.3f",
+                            shotAssistActive,
+                            aimActive,
+                            goalVisibleForAim,
+                            (Double.isFinite(headingDegRaw) ? headingDegRaw : Double.NaN),
+                            Double.isNaN(aimRotRaw) ? "-" : String.format(Locale.US, "%.3f", aimRotRaw),
+                            Double.isNaN(aimRotAfterInvert) ? "-" : String.format(Locale.US, "%.3f", aimRotAfterInvert),
+                            driverRot,
+                            finalRot)));
+                    cachedBelowDebugLines.add(formatLine("LL: valid/goal/best", String.format(Locale.US,
+                            "valid=%s anyVisible=%s goalVisible=%s bestId=%s",
+                            anyTagVisible,
+                            anyTagVisible,
+                            goalVisibleForAim,
+                            (bestTagId < 0) ? "-" : String.valueOf(bestTagId))));
+                    cachedBelowDebugLines.add(formatLine("LL: allianceGoalId/ids", String.format(Locale.US,
+                            "%d / %s",
+                            allianceGoalId,
+                            visibleIdsStr)));
+                    if (aimTelemetry != null) {
+                        String lockedId = (aimTelemetry.lockedAimTagId < 0) ? "-" : String.valueOf(aimTelemetry.lockedAimTagId);
+                        String aimTxUsed = aimTelemetry.txUsedDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txUsedDeg) : "-";
+                        String lockedTx = aimTelemetry.lockedTxDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.lockedTxDeg) : "-";
+                        String globalTx = aimTelemetry.txGlobalDeg != null ? String.format(Locale.US, "%.1f", aimTelemetry.txGlobalDeg) : "-";
+                        String lockAgeMs = (aimTelemetry.lockAgeMs < 0) ? "-" : String.valueOf(aimTelemetry.lockAgeMs);
+                        cachedBelowDebugLines.add(formatLine("LL: aimLock", String.format(Locale.US,
+                                "goalVisible=%s locked=%s txUsed=%s lockedTx=%s globalTx=%s ageMs=%s ids=%s",
+                                aimTelemetry.goalVisible,
+                                lockedId,
+                                aimTxUsed,
+                                lockedTx,
+                                globalTx,
+                                lockAgeMs,
+                                joinIds(aimTelemetry.visibleIds))));
+                    }
+                    cachedBelowDebugLines.add(formatLine("OB: seen ids/latched", String.format(Locale.US,
+                            "seen=%s ids=%s latchedId=%s motif=%s ageMs=%d",
+                            obeliskSeen,
+                            obeliskIdsStr,
+                            latchedObeliskIdStr,
+                            ObeliskSignal.get(),
+                            ObeliskSignal.ageMs())));
+                    cachedBelowDebugLines.add(formatLine("AutoAim Grace (ms)", String.valueOf(autoAimLossGraceMs)));
+                    if (autoAimEnabled && aimLossStartMs >= 0 && !goalVisibleSmoothed) {
+                        cachedBelowDebugLines.add(formatLine("AutoAim Grace Left",
+                                String.valueOf(Math.max(0, autoAimLossGraceMs - (now - aimLossStartMs)))));
+                    }
+
+                    cachedBelowDebugLines.add(formatLine("Tag Heading (deg)",
+                            (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg)));
+                    Double rawIn = (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) ? rangeMetersRaw * M_TO_IN : null;
+                    Double rawTzM = (llDistance != null) ? llDistance.targetForwardMeters : null;
+                    Double rawTzIn = (rawTzM != null) ? rawTzM * M_TO_IN : null;
+                    Double fieldIn = (llDistance != null && llDistance.fieldDistanceMeters != null)
+                            ? llDistance.fieldDistanceMeters * M_TO_IN
+                            : null;
+                    updateVisionTelemetry(null, rawIn);
+                    if (limelightStatusLine != null) cachedBelowDebugLines.add(limelightStatusLine);
+                    if (limelightHealthLine != null) cachedBelowDebugLines.add(limelightHealthLine);
+                    cachedBelowDebugLines.add(formatLine("rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM)));
+                    cachedBelowDebugLines.add(formatLine("rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn)));
+                    cachedBelowDebugLines.add(formatLine("currentDistanceInches",
+                            (currentDistanceInches == null) ? "---" : String.format(Locale.US, "%.1f", currentDistanceInches)));
+                    cachedBelowDebugLines.add(formatLine("fieldDistanceIn",
+                            (fieldIn == null) ? "---" : String.format(Locale.US, "%.1f", fieldIn)));
+                    cachedBelowDebugLines.add(formatLine("Tag Distance (in)",
+                            (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn)));
+                    cachedBelowDebugLines.add(formatLine("Tag Dist (in, sm)",
+                            (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN)));
                 }
 
-                cachedBelowDebugLines.add(formatLine("Tag Heading (deg)",
-                        (smHeadingDeg == null) ? "---" : String.format(Locale.US, "%.1f", smHeadingDeg)));
-                Double rawIn = (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) ? rangeMetersRaw * M_TO_IN : null;
-                Double rawTzM = (llDistance != null) ? llDistance.targetForwardMeters : null;
-                Double rawTzIn = (rawTzM != null) ? rawTzM * M_TO_IN : null;
-                Double fieldIn = (llDistance != null && llDistance.fieldDistanceMeters != null)
-                        ? llDistance.fieldDistanceMeters * M_TO_IN
-                        : null;
-                updateVisionTelemetry(null, rawIn);
-                if (limelightStatusLine != null) cachedBelowDebugLines.add(limelightStatusLine);
-                if (limelightHealthLine != null) cachedBelowDebugLines.add(limelightHealthLine);
-                cachedBelowDebugLines.add(formatLine("rawTZ_m", (rawTzM == null) ? "---" : String.format(Locale.US, "%.3f", rawTzM)));
-                cachedBelowDebugLines.add(formatLine("rawTZ_in", (rawTzIn == null) ? "---" : String.format(Locale.US, "%.1f", rawTzIn)));
-                cachedBelowDebugLines.add(formatLine("currentDistanceInches",
-                        (currentDistanceInches == null) ? "---" : String.format(Locale.US, "%.1f", currentDistanceInches)));
-                cachedBelowDebugLines.add(formatLine("fieldDistanceIn",
-                        (fieldIn == null) ? "---" : String.format(Locale.US, "%.1f", fieldIn)));
-                cachedBelowDebugLines.add(formatLine("Tag Distance (in)",
-                        (rawIn == null) ? "---" : String.format(Locale.US, "%.1f", rawIn)));
-                cachedBelowDebugLines.add(formatLine("Tag Dist (in, sm)",
-                        (smRangeMeters == null) ? "---" : String.format(Locale.US, "%.1f", smRangeMeters * M_TO_IN)));
-
-                if (autoRpmActive && !rpmTestEnabled) {
+                if (autoRpmActive && !rpmTestEnabled && DebugTelemetryConfig.DEBUG_AUTORPM_TELEMETRY) {
                     cachedBelowDebugLines.add(formatLine("AutoRPM In (in)",
                             (autoDistIn == null) ? "---" : String.format(Locale.US, "%.1f", autoDistIn)));
                     cachedBelowDebugLines.add(formatLine("AutoRPM Out",
@@ -1348,7 +1353,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     cachedBelowDebugLines.add(formatLine("AutoRPM Smoothing α",
                             String.format(Locale.US, "%.2f", autoCtrl.getSmoothingAlpha())));
                 }
-                if (TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+                if (DebugTelemetryConfig.DEBUG_FIRING_STATS) {
                     String dropRpm = formatFiringStatTriple(
                             formatFiringStatValue(firingStats.dropAvg(), "%.0f"),
                             formatFiringStatValue(firingStats.dropLeft(), "%.0f"),
@@ -1371,26 +1376,28 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     cachedBelowDebugLines.add(formatLine("DROP TIME (AVG/L/R)", dropTime));
                     cachedBelowDebugLines.add(formatLine("RECOVERY TIME (ms) (AVG/L/R)", recoveryTime));
                 }
-                cachedBelowDebugLines.add(visionStatusLine);
-                cachedBelowDebugLines.add(visionPerfLine);
-                if (visionLightingLine != null) {
-                    cachedBelowDebugLines.add(visionLightingLine);
-                }
-                if (visionHealthLine != null) {
-                    cachedBelowDebugLines.add(visionHealthLine);
-                }
-                if (visionProfileError != null) {
-                    cachedBelowDebugLines.add("Vision profile error: " + visionProfileError);
-                    visionProfileError = null;
-                }
-                if (!visionWarningShown && vision != null) {
-                    String warn = vision.consumeControlWarning();
-                    if (warn != null) {
-                        cachedBelowDebugLines.add(warn);
-                        visionWarningShown = true;
+                if (DebugTelemetryConfig.DEBUG_VISION_TELEMETRY) {
+                    cachedBelowDebugLines.add(visionStatusLine);
+                    cachedBelowDebugLines.add(visionPerfLine);
+                    if (visionLightingLine != null) {
+                        cachedBelowDebugLines.add(visionLightingLine);
+                    }
+                    if (visionHealthLine != null) {
+                        cachedBelowDebugLines.add(visionHealthLine);
+                    }
+                    if (visionProfileError != null) {
+                        cachedBelowDebugLines.add("Vision profile error: " + visionProfileError);
+                        visionProfileError = null;
+                    }
+                    if (!visionWarningShown && vision != null) {
+                        String warn = vision.consumeControlWarning();
+                        if (warn != null) {
+                            cachedBelowDebugLines.add(warn);
+                            visionWarningShown = true;
+                        }
                     }
                 }
-                if (feed != null) {
+                if (feed != null && DebugTelemetryConfig.DEBUG_FEEDSTOP_TELEMETRY) {
                     if (feed.wasWindowLimitReached()) {
                         cachedBelowDebugLines.add("FeedStop: scale window hit bounds – angles trimmed.");
                     } else if (feed.wasAngleClamped()) {
@@ -1404,22 +1411,24 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     }
                     cachedBelowDebugLines.add(feed.getFeedStopSummaryLine());
                 }
-                if (limelightProfileLine != null) {
-                    cachedBelowDebugLines.add(limelightProfileLine);
-                }
-                if (limelightAutoSelector != null) {
-                    String memoryLine = limelightAutoSelector.getMemoryFallbackLine();
-                    if (memoryLine != null) {
-                        cachedBelowDebugLines.add(memoryLine);
+                if (DebugTelemetryConfig.DEBUG_LIMELIGHT_AUTOSELECT) {
+                    if (limelightProfileLine != null) {
+                        cachedBelowDebugLines.add(limelightProfileLine);
+                    }
+                    if (limelightAutoSelector != null) {
+                        String memoryLine = limelightAutoSelector.getMemoryFallbackLine();
+                        if (memoryLine != null) {
+                            cachedBelowDebugLines.add(memoryLine);
+                        }
+                    }
+                    if (limelightAutoSelector != null) {
+                        String runningLine = limelightAutoSelector.getRunningStatusLine();
+                        if (runningLine != null) {
+                            cachedBelowDebugLines.add(runningLine);
+                        }
                     }
                 }
-                if (limelightAutoSelector != null) {
-                    String runningLine = limelightAutoSelector.getRunningStatusLine();
-                    if (runningLine != null) {
-                        cachedBelowDebugLines.add(runningLine);
-                    }
-                }
-                if (odometry != null) {
+                if (odometry != null && DebugTelemetryConfig.DEBUG_ODOMETRY_TELEMETRY) {
                     String odometryDebug = odometry.getOdometryDebugLine();
                     if (odometryDebug != null) {
                         cachedBelowDebugLines.add(odometryDebug);
@@ -1819,7 +1828,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void toggleDebugTelemetry() {
         debugTelemetryEnabled = !debugTelemetryEnabled;
-        TeleOpDriverDefaults.TELEOP_TELEMETRY_DEBUG_ENABLED = debugTelemetryEnabled;
+        DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED = debugTelemetryEnabled;
         lastBelowTelemetryMs = 0L;
         if (!debugTelemetryEnabled) {
             cachedBelowDebugLines.clear();
@@ -1834,7 +1843,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     private void syncDebugTelemetryFromDashboard() {
-        boolean desired = TeleOpDriverDefaults.TELEOP_TELEMETRY_DEBUG_ENABLED;
+        boolean desired = DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED;
         if (desired != debugTelemetryEnabled) {
             debugTelemetryEnabled = desired;
             lastBelowTelemetryMs = 0L;
@@ -1847,7 +1856,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     private long getBelowTelemetryPeriodMs() {
-        double hz = TeleOpDriverDefaults.TELEOP_TELEMETRY_BELOW_HZ;
+        double hz = DebugTelemetryConfig.TELEOP_TELEMETRY_BELOW_HZ;
         if (!Double.isFinite(hz) || hz <= 0.0) {
             hz = 10.0;
         }
@@ -2041,10 +2050,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
                                    double rpmRight,
                                    double rpmAverage,
                                    boolean feedMotorStarted) {
-        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+        if (!debugTelemetryEnabled || !DebugTelemetryConfig.DEBUG_FIRING_STATS) {
             return;
         }
-        double dropTrigger = TeleOpDriverDefaults.DEBUG_FIRING_STATS_TRIGGER;
+        double dropTrigger = DebugTelemetryConfig.DEBUG_FIRING_STATS_TRIGGER;
         if (feedMotorStarted) {
             firingStats.start(now, rpmTarget, rpmLeft, rpmRight, rpmAverage, dropTrigger);
         }
@@ -2057,12 +2066,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
                                         double rpmRight,
                                         boolean feedActive,
                                         boolean ejectActive) {
-        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+        if (!debugTelemetryEnabled || !DebugTelemetryConfig.DEBUG_FIRING_STATS) {
             return;
         }
         launcherVarianceStats.update(
                 now,
-                TeleOpDriverDefaults.DEBUG_FIRING_STATS_VAR_TIME,
+                DebugTelemetryConfig.DEBUG_FIRING_STATS_VAR_TIME,
                 rpmTarget,
                 rpmLeft,
                 rpmRight,
@@ -2071,7 +2080,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     private void resetFiringStatsOnFirePress() {
-        if (!debugTelemetryEnabled || !TeleOpDriverDefaults.DEBUG_FIRING_STATS) {
+        if (!debugTelemetryEnabled || !DebugTelemetryConfig.DEBUG_FIRING_STATS) {
             return;
         }
         firingStats.reset();

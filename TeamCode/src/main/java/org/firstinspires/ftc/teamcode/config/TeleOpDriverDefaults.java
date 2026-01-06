@@ -26,18 +26,6 @@
  *       • Increment applied when D-pad left/right adjust manual RPM in test mode.
  *   - AUTO_STOP_TIMER_ENABLED / AUTO_STOP_TIMER_TIME_SEC
  *       • Optional end-of-match safety timer configuration.
- *   - TELEOP_TELEMETRY_DEBUG_ENABLED
- *       • Dashboard + gamepad-controlled toggle for below-line debug telemetry.
- *   - TELEOP_TELEMETRY_BELOW_HZ
- *       • Rate limit for TeleOp telemetry below the blank separator.
- *   - ENABLE_FIRING_STATE_DEBUG
- *       • Forces firing-state timing + readiness telemetry below the separator.
- *   - DEBUG_FIRING_STATS
- *       • Enables debug-only launcher RPM drop/recovery telemetry for fired shots.
- *   - DEBUG_FIRING_STATS_TRIGGER
- *       • RPM below target required to mark a shot as "dropped" for timing.
- *   - DEBUG_FIRING_STATS_VAR_TIME
- *       • Time window (ms) used to compute left/right RPM variance at rest.
  *   - INTAKE_ASSIST_MS
  *       • TeleOp copy of FeedTuning.INTAKE_ASSIST_MS; adjust here when diverging
  *         from the shared value.
@@ -61,11 +49,8 @@ public final class TeleOpDriverDefaults {
     // CHANGES (2025-10-31): Default AutoSpeed + Intake to ON per driver request.
     // CHANGES (2025-11-23): Added AutoRPM tweak scale for on-the-fly AutoSpeed adjustments via D-pad left/right.
     // CHANGES (2025-11-25): Added triple-tap intake reverse gesture window for RB and aligned changelog dates.
-    // CHANGES (2026-01-03): Added TeleOp telemetry debug toggle + below-line update rate tunables.
-    // CHANGES (2026-01-03): Added a debug firing stats toggle for launcher drop/recovery telemetry.
-    // CHANGES (2026-01-04): Added firing stats drop trigger and variance window tunables.
     // CHANGES (2026-01-04): Added firing auto-aim window + spray double-tap gesture tunables.
-    // CHANGES (2026-01-05): Added a dedicated firing state debug telemetry toggle.
+    // CHANGES (2026-01-10): Moved debug telemetry defaults and firing debug flags to DebugTelemetryConfig.
     // Startup toggles
     public static boolean AUTO_SPEED_ENABLED = true;  // TeleOp init default for AutoSpeed toggle
     public static boolean AUTO_AIM_ENABLED   = false; // TeleOp init default for AutoAim toggle
@@ -97,11 +82,4 @@ public final class TeleOpDriverDefaults {
     public static boolean AUTO_STOP_TIMER_ENABLED = false; // Whether the optional end-of-match timer is active
     public static int     AUTO_STOP_TIMER_TIME_SEC = 119;   // Seconds before AutoStop engages when enabled
 
-    // Telemetry controls
-    public static boolean TELEOP_TELEMETRY_DEBUG_ENABLED = false; // TeleOp debug telemetry below the separator (dashboard + gamepad controlled)
-    public static double  TELEOP_TELEMETRY_BELOW_HZ      = 10.0;  // Update rate (Hz) for below-separator telemetry blocks
-    public static boolean ENABLE_FIRING_STATE_DEBUG      = true;  // When true, show firing-state debug telemetry below the separator
-    public static boolean DEBUG_FIRING_STATS             = true;  // Debug-only firing stats (RPM drop/recovery timing) when telemetry debug is enabled
-    public static double  DEBUG_FIRING_STATS_TRIGGER     = 100.0; // RPM drop below target required to log a firing drop event
-    public static int     DEBUG_FIRING_STATS_VAR_TIME    = 1000;  // Window (ms) for computing launcher RPM variance while idle
 }

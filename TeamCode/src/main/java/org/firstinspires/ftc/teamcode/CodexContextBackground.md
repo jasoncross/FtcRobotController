@@ -100,7 +100,7 @@ targets are fluctuating, and spray-like shots skip the RPM window entirely while
 A continuous readiness latch (looser band + settle) enables a fast-path when the launcher is already stable before a shot, and
 recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. TeleOp can optionally force a compact
 firing-state debug block below the telemetry separator (state/mode, last-shot timing line, and readiness/recovery metrics) via
-`TeleOpDriverDefaults.ENABLE_FIRING_STATE_DEBUG`.
+`DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG`.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.
@@ -159,8 +159,10 @@ firing-state debug block below the telemetry separator (state/mode, last-shot ti
   toggle instead of leaving AutoAim latched on when continuous fire is released.
 - TeleOp telemetry now splits essentials above the blank separator (always visible) from rate-limited below-line diagnostics.
   The below-line always-on set now includes tag visibility and aim-state hints, while the debug block stays gated by a live
-  dashboard+SELECT toggle so drivers can keep loop overhead low while still enabling deep diagnostics on demand.
-- When the debug telemetry toggle and `TeleOpDriverDefaults.DEBUG_FIRING_STATS` are enabled, TeleOp reports launcher RPM drop,
+  dashboard+SELECT toggle so drivers can keep loop overhead low while still enabling deep diagnostics on demand. The default
+  debug state and per-system debug blocks now live in `config/DebugTelemetryConfig.java` for quick tuning without touching
+  TeleOp code.
+- When the debug telemetry toggle and `DebugTelemetryConfig.DEBUG_FIRING_STATS` are enabled, TeleOp reports launcher RPM drop,
   drop percentage, drop timing (time from feed start until RPM falls below target minus `DEBUG_FIRING_STATS_TRIGGER`), recovery
   timing (time from feed start until RPM returns to full target), and between-shot left/right variance (avg/max in RPM and %
   over the `DEBUG_FIRING_STATS_VAR_TIME` window) to help tune flywheel recovery, with the detection window resetting on each

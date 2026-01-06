@@ -262,7 +262,6 @@ public class FiringController {
         latchedTargetValid = false;
         latchedShotTargetRpm = 0.0;
         clearLastShotTotals();
-        clearShotHistory();
         beginTransaction();
         this.preReadyLatchedAtRequest = preReadyLatchedAtRequest;
         updateMode();
@@ -561,7 +560,6 @@ public class FiringController {
         transactionActive = true;
         clearTimingTotals();
         lastShotComplete = false;
-        preReadyLatchedAtRequest = false;
         recovered = false;
     }
 

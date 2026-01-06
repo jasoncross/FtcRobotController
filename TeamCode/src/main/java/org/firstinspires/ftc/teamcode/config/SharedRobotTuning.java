@@ -19,6 +19,11 @@
  *         BaseAuto/TeleOp declare it "ready".
  *       • Keep modest so volleys remain responsive while filtering transient
  *         noise after large RPM adjustments.
+ *   - READY_LATCH_TOLERANCE_RPM / READY_LATCH_SETTLE_MS (ADDED 2026-01-05)
+ *       • Looser readiness latch used for firing fast-path decisions before a
+ *         shot transaction begins.
+ *   - FIRING_RECOVERY_RPM_BAND / FIRING_RECOVERY_HOLD_MS / FIRING_RECOVERY_MAX_MS
+ *       • Recovery threshold, debounce, and max guard for post-shot RPM rebound.
  *   - HOLD_FIRE_FOR_RPM (ADDED 2026-01-03)
  *       • TeleOp-only control for whether feed engagement waits for RPM readiness.
  *       • ALL waits for every shot (including continuous holds), INITIAL waits only
@@ -58,6 +63,7 @@ public final class SharedRobotTuning {
     // CHANGES (2025-11-24): Removed rotate-to-target timeout tuning; AutoSequence now passes
     //                        explicit per-step limits.
     // CHANGES (2026-01-03): Added HOLD_FIRE_FOR_RPM mode to control TeleOp RPM-ready feed gating.
+    // CHANGES (2026-01-05): Added readiness latch and recovery-band tunables for firing cadence.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -68,12 +74,17 @@ public final class SharedRobotTuning {
     // --- Launcher speed gate ---
     public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
     public static long   RPM_READY_SETTLE_MS        = 150L;   // Time launcher must remain inside tolerance before declaring ready
+    public static double READY_LATCH_TOLERANCE_RPM   = 120.0;  // Looser ±RPM window for the continuous readiness latch
+    public static long   READY_LATCH_SETTLE_MS       = 80L;    // Time inside latch window before ready latch is set
     public enum HoldFireForRpmMode {
         ALL,
         INITIAL,
         OFF
     }
     public static HoldFireForRpmMode HOLD_FIRE_FOR_RPM = HoldFireForRpmMode.ALL; // TeleOp feed RPM gate: ALL=every shot, INITIAL=first only, OFF=disabled
+    public static double FIRING_RECOVERY_RPM_BAND    = 250.0;  // Recovery band below target where RPM rebound is acceptable
+    public static long   FIRING_RECOVERY_HOLD_MS     = 0L;     // Optional debounce inside recovery band before exiting RECOVERING
+    public static long   FIRING_RECOVERY_MAX_MS      = 700L;   // Safety timeout to exit RECOVERING even if RPM never rebounds
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG

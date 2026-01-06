@@ -6,6 +6,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import org.firstinspires.ftc.teamcode.config.LauncherTuning;
+import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
 
 /*
  * FILE: Launcher.java
@@ -57,6 +58,8 @@ import org.firstinspires.ftc.teamcode.config.LauncherTuning;
  *     implement its own PID loop.
  * CHANGES (2025-11-19): Exposed left/right RPM readings for telemetry alongside
  *                       the averaged speed so drivers can see wheel balance.
+ * CHANGES (2026-01-05): Added a readiness latch that tracks looser RPM
+ *                       stability for firing fast-path decisions.
  */
 
 public class Launcher {
@@ -82,6 +85,8 @@ public class Launcher {
     // === STATE ===
     public double targetRpm = 0;                // Last commanded RPM request (TeleOp + Auto)
     public double atSpeedToleranceRPM = LauncherTuning.AT_SPEED_TOLERANCE_RPM;    // Local readiness window; align with shared tuning
+    private boolean readyLatched = false;       // Continuous readiness latch (looser RPM band)
+    private long readyLatchStartMs = 0L;        // Time the launcher first entered the latch band
 
     // === CONSTRUCTOR ===
     // CHANGES (2025-10-31): Added safeInit to hold zero RPM during INIT.
@@ -173,6 +178,32 @@ public class Launcher {
     /** Returns the measured RPM for the right flywheel only. */
     public double getRightRpm() {
         return ticksPerSecToRpm(right.getVelocity());
+    }
+
+    /** Update the continuous readiness latch for firing fast-path decisions. */
+    public void updateReadyLatch(long nowMs, double targetRpm) {
+        if (targetRpm <= 0.0 || !Double.isFinite(targetRpm)) {
+            readyLatched = false;
+            readyLatchStartMs = 0L;
+            return;
+        }
+        double tolerance = Math.max(0.0, SharedRobotTuning.READY_LATCH_TOLERANCE_RPM);
+        double error = Math.abs(getCurrentRpm() - targetRpm);
+        if (error <= tolerance) {
+            if (readyLatchStartMs == 0L) {
+                readyLatchStartMs = nowMs;
+            }
+            long settleMs = Math.max(0L, SharedRobotTuning.READY_LATCH_SETTLE_MS);
+            readyLatched = (nowMs - readyLatchStartMs) >= settleMs;
+            return;
+        }
+        readyLatched = false;
+        readyLatchStartMs = 0L;
+    }
+
+    /** Returns true when the continuous readiness latch is set. */
+    public boolean isReadyLatched() {
+        return readyLatched;
     }
 
     // === HELPER METHODS ===

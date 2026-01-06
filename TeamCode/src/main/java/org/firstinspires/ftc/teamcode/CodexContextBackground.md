@@ -95,6 +95,13 @@ neither target lock nor launcher-at-speed gating, keeping the same state machine
 when the pre-fire auto-aim window tunable is nonzero, honors the existing lock tolerance logic, skips mid-stream held shots, and
 always exits on timeout so neither TeleOp nor Auto can stall indefinitely.
 
+Firing readiness checks now latch the shot target RPM at `FIRE_REQUESTED` so RPM gating uses a stable reference even when vision
+targets are fluctuating, and spray-like shots skip the RPM window entirely while still running the post-shot recovery guard.
+A continuous readiness latch (looser band + settle) enables a fast-path when the launcher is already stable before a shot, and
+recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. TeleOp can optionally force a compact
+firing-state debug block below the telemetry separator (state/mode, last-shot timing line, and readiness/recovery metrics) via
+`TeleOpDriverDefaults.ENABLE_FIRING_STATE_DEBUG`.
+
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.
 

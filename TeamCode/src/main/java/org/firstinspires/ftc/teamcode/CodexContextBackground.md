@@ -82,7 +82,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - FeedStop can open immediately, but in TeleOp the feed motor waits for the launcher RPM window (with the shared settle time)
   whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot/hold) or `INITIAL` (first shot/stream start only);
   `OFF` disables the RPM-ready gate entirely. Autonomous firing now uses per-call `requireLauncherAtSpeed` flags instead. The
-  FeedStop return timer starts when the feed motor actually begins so the gate does not close early.
+  FeedStop return timer starts when the feed motor actually begins so the gate does not close early. Continuous/spray streams
+  keep the FeedStop released until the driver ends the stream.
 - A unified firing controller (`control/FiringController.java`) now owns the firing transaction state machine for both TeleOp and
   Auto: it handles FeedStop lead timing, feed power transitions, RPM-drop shot detection, intake suppression, and recovery loops
   without blocking the main loop. Shots advance from FEEDING → SHOT_DETECTED when either launcher RPM drops by the configured
@@ -196,6 +197,7 @@ firing-state debug block below the telemetry separator (state/mode, last-shot ti
 ## 🛑 StopAll System (Cross-cutting)
 - Safety-critical: all motors zero immediately.  
 - Enabled during TeleOp and can be triggered automatically.
+- FeedStop updates pause while STOP is latched so the servo remains still.
 
 ---
 

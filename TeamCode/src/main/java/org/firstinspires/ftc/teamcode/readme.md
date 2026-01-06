@@ -119,7 +119,7 @@ TeamCode/
     │   └── ControllerBindings.java           ← Centralized gamepad mapping/edge-detect helpers
     ├── subsystems/
     │   ├── Launcher.java                 ← Dual-flywheel subsystem (PIDF + AutoSpeed hooks)
-    │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating
+    │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating + continuous/spray FeedStop hold
     │   └── Intake.java                   ← Intake motor helper + assist timings
     ├── teleop/
     │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, debug telemetry gating + firing stats/state)
@@ -203,7 +203,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - D-pad left/right apply ±`LauncherTuning.MANUAL_RPM_STEP` adjustments for quick fine-tuning **only while Manual Lock is engaged** (keeps lock and AutoSpeed off).
 
 ### Intake, Feed, and Eject
-- `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply.
+- `DEFAULT_INTAKE_ENABLED` determines initial intake state; `safeInit()` keeps the motor idle during INIT before defaults apply. Auto modes still enable the intake as soon as START is pressed so autonomous routines begin with intake running.
 - Feeding automatically enables intake for `intakeAssistMs = FeedTuning.INTAKE_ASSIST_MS` (default `250 ms`) if it was off.
 - Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
 - Feed/Eject commands now ride the Feed subsystem's asynchronous cycle, so the TeleOp loop keeps processing drive/aim inputs while the feed motor pulses and the intake assist timer counts down in the background.
@@ -216,7 +216,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - Telemetry now shows `Intake: ON – FREE FLOW/PACKING/SATURATED/JAMMED` so field crews can tell whether the column is filling or cooling off between shots.
 - While `feed.isFeedCycleActive()` the intake automatically drops to the low `FEED_ACTIVE_HOLD_POWER` so launcher volleys do not stack more current draw; once the feed finishes, the state machine resumes normal power automatically.
 - FeedStop servo (`config/FeedStopConfig.java`) now homes in two guarded phases: it first steps open in the release direction to `SAFE_PRESET_OPEN_DEG` (capped by `MAX_HOME_TRAVEL_DEG`) without ever commanding below 0°, then seats against the BLOCK stop, dwells for `HOME_DWELL_MS`, and backs off by `HOME_BACKOFF_DEG` before parking. Homing is queued until START so INIT remains motionless, then runs immediately once the match begins. Every degree request is clamped inside `SOFT_CCW_LIMIT_DEG` (0°) and `SOFT_CW_LIMIT_DEG` (170°), so no runtime command can crash the linkage. After homing it rests at `HOLD_ANGLE_DEG` (~30°) to block the path, swings to `RELEASE_ANGLE_DEG` (~110°) when feeding, and defaults to the servo’s full 300° span (no `scaleRange`). Teams that enable `USE_AUTO_SCALE` let the subsystem compute the narrowest safe window (with `SAFETY_MARGIN_DEG` headroom) and telemetry now surfaces the mode, limits, scale range (or “scale=none”), direction sign, and any clamp/abort warnings. StopAll/stop() always return the gate to the homed 0° position before disabling.
-- FeedStop can open immediately on a fire request, but in TeleOp the feed motor waits until the launcher remains inside `SharedRobotTuning.RPM_TOLERANCE` for `SharedRobotTuning.RPM_READY_SETTLE_MS` whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot, including continuous holds) or `INITIAL` (first shot/stream start only); `OFF` bypasses the RPM gate entirely. Spray-like firing skips the RPM window outright, readiness checks use the latched shot target RPM to avoid vision jitter, and a looser ready-latch fast path can skip the window when the launcher is already stable. The FeedStop return timer starts only when the feed motor begins moving so the gate does not close early.
+- FeedStop can open immediately on a fire request, but in TeleOp the feed motor waits until the launcher remains inside `SharedRobotTuning.RPM_TOLERANCE` for `SharedRobotTuning.RPM_READY_SETTLE_MS` whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot, including continuous holds) or `INITIAL` (first shot/stream start only); `OFF` bypasses the RPM gate entirely. Spray-like firing skips the RPM window outright, readiness checks use the latched shot target RPM to avoid vision jitter, and a looser ready-latch fast path can skip the window when the launcher is already stable. Continuous and spray streams now keep the FeedStop held open for the full stream, returning to HOLD only once the driver releases the fire button. The FeedStop return timer starts only when the feed motor begins moving so the gate does not close early.
 - **Eject (B/Circle):** runs launcher at `TeleOpEjectTuning.RPM` (default `600 RPM`) for `TeleOpEjectTuning.TIME_MS` (default `1000 ms`), feeds once, then restores the previous RPM.
   The spool → feed → hold sequence is asynchronous, so drivers can keep steering (or cancel with StopAll) while the timer winds down.
 
@@ -365,7 +365,7 @@ or game mode owns each parameter before making adjustments.
 ### What is StopAll?
 `StopAll` immediately commands **drive, launcher, feed, and intake** to stop and **latches** a STOPPED state.
 While STOPPED, TeleOp ignores control outputs, reasserts **BRAKE zero-power behavior on every motor**, keeps mechanisms at zero power,
-and temporarily disables the feed motor's idle hold so the motor rests at 0.
+temporarily disables the feed motor's idle hold so the motor rests at 0, and freezes FeedStop updates so the servo remains motionless.
 The launcher automatically returns to FLOAT the next time RPM is commanded so normal spin-up behavior resumes after releasing the latch.
 Press **Start** again to **RESUME** normal control, which restores the idle hold automatically and re-applies the intake's prior ON/OFF state so drivers pick up exactly where they left off.
 
@@ -404,7 +404,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2026-01-06** – Moved TeleOp debug telemetry defaults and per-system debug enable flags into `DebugTelemetryConfig`, letting teams toggle individual debug blocks (aim, vision, feedstop, limelight auto-select, odometry, firing stats) while keeping the same SELECT/dashboard workflow.
+- **2026-01-06** – Moved TeleOp debug telemetry defaults and per-system debug enable flags into `DebugTelemetryConfig`, kept the FeedStop held open through continuous/spray streams until the fire button releases, and froze FeedStop updates while StopAll is latched so the gate stays still during STOP.
 - **2026-01-05** – Added a dedicated firing-state debug telemetry toggle with per-shot timing and readiness metrics, introduced a looser ready-latch fast path plus recovery-band exits for the firing controller, ensured continuous shots return the FeedStop before recovering, finalized per-shot timing snapshots/history with strict continuous pre-ready snapshotting, and ensured RECOVERING timing is captured once while clarifying spray-like RPM gate skipping in TeleOp/Auto docs.
 - **2026-01-04** – Added a shared firing controller for TeleOp + Auto with encoder-based RPM drop shot detection, bounded auto-aim-on-fire timing, a tap-then-hold spray stream gesture, and cleaned/annotated firing-related tunables while keeping Auto semantics intact.
 - **2026-01-03** – Added auto-drive stall-exit detection for blocked encoder moves (plus new DriveTuning stall tunables and telemetry), added TeleOp debug telemetry gating with SELECT/dashboard sync, rate-limited below-separator telemetry updates, expanded the always-on below-line hints (tag visibility + aim state), documented the new tunables plus layout notes, fixed the dashboard telemetry list reuse in TeleOp, refined HOLD_FIRE_FOR_RPM so TeleOp continuous feeds pause on RPM drops, added per-call AutoSequence RPM gating flags, derived the no-tag AutoSpeed RPM from the farthest calibration point, and added debug firing stats telemetry + tunable to report launcher drop/recovery timing plus between-shot variance after shots with per-press reset.

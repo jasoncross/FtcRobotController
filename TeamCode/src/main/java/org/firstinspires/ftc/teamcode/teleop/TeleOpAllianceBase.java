@@ -61,6 +61,8 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2026-01-06): Prevented FeedStop servo updates while StopAll is
+ *                       latched so the gate remains still during STOP.
  * CHANGES (2025-12-19): Added a Tag Visible telemetry line ahead of RPM
  *                       reporting that surfaces the alliance goal tag ID,
  *                       heading, and distance whenever the goal is visible
@@ -2750,7 +2752,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
     /** While STOP is latched, continuously enforce 0 outputs and render a concise status line. */
     private void onStoppedLoopHold(List<String> dashboardLines) {
         stopAll(); // defensive: keep everything off each frame
-        if (feed != null) feed.update();
         updateIntakeFlow();
         mirrorLine(dashboardLines, "⛔ STOPPED — press START to RESUME");
         telemetry.update();

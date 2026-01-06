@@ -802,7 +802,6 @@ public abstract class BaseAuto extends LinearOpMode {
                 updateLauncherReadyLatch(now);
                 firingController.update(now,
                         isAimReadyForFire(),
-                        launcher != null && launcher.isReadyLatched(),
                         launcher.targetRpm,
                         launcher.getLeftRpm(),
                         launcher.getRightRpm(),
@@ -900,7 +899,6 @@ public abstract class BaseAuto extends LinearOpMode {
                 updateLauncherReadyLatch(now);
                 firingController.update(now,
                         isAimReadyForFire(),
-                        launcher != null && launcher.isReadyLatched(),
                         launcher.targetRpm,
                         launcher.getLeftRpm(),
                         launcher.getRightRpm(),

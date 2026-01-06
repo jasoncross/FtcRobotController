@@ -284,7 +284,6 @@ public class FiringController {
 
     public void update(long nowMs,
                        boolean aimReady,
-                       boolean readyLatched,
                        double targetRpm,
                        double leftRpm,
                        double rightRpm,

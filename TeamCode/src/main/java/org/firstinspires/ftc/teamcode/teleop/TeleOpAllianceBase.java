@@ -2459,9 +2459,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         double targetRpm = (launcher != null) ? launcher.targetRpm : 0.0;
         double leftRpm = (launcher != null) ? launcher.getLeftRpm() : 0.0;
         double rightRpm = (launcher != null) ? launcher.getRightRpm() : 0.0;
-        boolean readyLatched = launcher != null && launcher.isReadyLatched();
-
-        firingController.update(nowMs, aimReadyForFire, readyLatched, targetRpm, leftRpm, rightRpm, intakeResumeState);
+        firingController.update(nowMs, aimReadyForFire, targetRpm, leftRpm, rightRpm, intakeResumeState);
     }
 
     private void updateLauncherReadyLatch(long nowMs) {

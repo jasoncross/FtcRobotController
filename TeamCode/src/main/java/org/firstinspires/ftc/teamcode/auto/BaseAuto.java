@@ -142,6 +142,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        lock windows without changing alliance-specific logic.
     // CHANGES (2026-01-03): Added requireLauncherAtSpeed parameters for AutoSequence firing
     //                        steps so autos can choose RPM gating per action.
+    // CHANGES (2026-01-05): Wired the launcher readiness latch into auto firing loops so
+    //                        fast-path shots and recovery timing stay consistent.
     // CHANGES (2025-11-18): Biased the tag lock window toward alliance-correct angles when
     //                        the robot is beyond the long-shot distance cutover.
     // CHANGES (2025-11-26): Persist the final fused odometry pose with explicit status-aware
@@ -271,7 +273,6 @@ public abstract class BaseAuto extends LinearOpMode {
     private String autoOpModeName;
     private Integer lastReportedPipelineIndex = null;
     private boolean lastReadyHadLock = false;
-    private long launcherReadyStartMs = 0L;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -319,25 +320,11 @@ public abstract class BaseAuto extends LinearOpMode {
         return Math.abs(heading) <= lockTolDeg();
     }
 
-    private boolean isLauncherReadyForFire(long nowMs) {
+    private void updateLauncherReadyLatch(long nowMs) {
         if (launcher == null) {
-            launcherReadyStartMs = 0L;
-            return false;
+            return;
         }
-        if (launcher.targetRpm <= 0.0) {
-            launcherReadyStartMs = 0L;
-            return false;
-        }
-        double tolerance = rpmTol();
-        double error = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
-        if (error <= tolerance) {
-            if (launcherReadyStartMs == 0L) {
-                launcherReadyStartMs = nowMs;
-            }
-            return (nowMs - launcherReadyStartMs) >= rpmSettleMs();
-        }
-        launcherReadyStartMs = 0L;
-        return false;
+        launcher.updateReadyLatch(nowMs, launcher.targetRpm);
     }
 
 
@@ -694,6 +681,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
 
             launcher.setTargetRpm(targetRpm);
+            updateLauncherReadyLatch(now);
 
             double currentRpm = launcher.getCurrentRpm();
             double error = Math.abs(currentRpm - launcher.targetRpm);
@@ -786,6 +774,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 }
             }
             launcher.setTargetRpm(holdTarget);
+            updateLauncherReadyLatch(System.currentTimeMillis());
 
             boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
             SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
@@ -798,6 +787,7 @@ public abstract class BaseAuto extends LinearOpMode {
                         System.currentTimeMillis(),
                         false,
                         sprayLike,
+                        launcher != null && launcher.isReadyLatched(),
                         intake.isOn(),
                         rpmGateMode,
                         true,
@@ -809,9 +799,9 @@ public abstract class BaseAuto extends LinearOpMode {
                 firingController.setIntakeDesiredState(intake.isOn());
                 firingController.setContinuousRequested(false);
                 firingController.setSprayLike(sprayLike);
+                updateLauncherReadyLatch(now);
                 firingController.update(now,
                         isAimReadyForFire(),
-                        isLauncherReadyForFire(now),
                         launcher.targetRpm,
                         launcher.getLeftRpm(),
                         launcher.getRightRpm(),
@@ -873,6 +863,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
         }
         launcher.setTargetRpm(holdTarget);
+        updateLauncherReadyLatch(System.currentTimeMillis());
 
         boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
         SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
@@ -897,6 +888,7 @@ public abstract class BaseAuto extends LinearOpMode {
                             now,
                             true,
                             sprayLike,
+                            launcher != null && launcher.isReadyLatched(),
                             intake.isOn(),
                             rpmGateMode,
                             true,
@@ -904,9 +896,9 @@ public abstract class BaseAuto extends LinearOpMode {
                 }
                 firingController.setContinuousRequested(continueRequested);
                 firingController.setSprayLike(sprayLike && continueRequested);
+                updateLauncherReadyLatch(now);
                 firingController.update(now,
                         isAimReadyForFire(),
-                        isLauncherReadyForFire(now),
                         launcher.targetRpm,
                         launcher.getLeftRpm(),
                         launcher.getRightRpm(),

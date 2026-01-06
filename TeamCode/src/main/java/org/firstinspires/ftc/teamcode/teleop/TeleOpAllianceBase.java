@@ -24,6 +24,8 @@
  *       • Telemetry smoothing constant for range/heading displays.
  *   - TELEOP_TELEMETRY_DEBUG_ENABLED / TELEOP_TELEMETRY_BELOW_HZ
  *       • Debug telemetry gating toggle and update rate for below-separator lines.
+ *   - ENABLE_FIRING_STATE_DEBUG
+ *       • Forces firing-state telemetry (timing + readiness) below the separator.
  *   - DEBUG_FIRING_STATS
  *       • Enables debug-only launcher RPM drop/recovery stats when firing.
  *   - DEBUG_FIRING_STATS_TRIGGER / DEBUG_FIRING_STATS_VAR_TIME
@@ -133,6 +135,8 @@
  * CHANGES (2026-01-04): Added drop-trigger and variance-window tunables for
  *                       firing stats, using the trigger threshold to time RPM
  *                       drop/recovery from feed start.
+ * CHANGES (2026-01-05): Added a firing state debug block plus readiness latch
+ *                       fast-path telemetry for firing cadence diagnostics.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -336,7 +340,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private AutoSpeedRumble autoSpeedToggleRumble = AutoSpeedRumble.NONE;
     private boolean autoAimEnabled   = DEFAULT_AUTOAIM_ENABLED;   // Live state for AprilTag aim assist
     private boolean longShotMode     = false;                     // Sticky long/normal shot window selection
-    private long launcherReadyStartMs = 0L;                       // Time launcher first entered the RPM window
 
     // AutoRPM tweak (per-press percentage scaling while AutoSpeed is enabled)
     private double autoRpmTweakScale  = TeleOpDriverDefaults.AUTORPM_TWEAK_SCALE;
@@ -828,7 +831,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             firingController.reset();
         }
         resetAutoRpmTweak();
-        launcherReadyStartMs = 0L;
 
         applyAutoSpeedEnablement(DEFAULT_AUTOSPEED_ENABLED, /*stopOnDisable=*/true);
 
@@ -957,9 +959,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
         aim.setDeadbandWindow(lockWindow.minDeg, lockWindow.maxDeg);
 
         boolean aimReadyForFire = isAimReadyForFire(goalVisibleSmoothed, lockWindow);
-        updateFiringController(now, ejectActive, aimReadyForFire);
-        updateAutoAimOnFire(goalVisibleForAim);
-        boolean shotAssistActive = autoAimOnFireActive;
 
         // AutoAim + grace handling
         if (autoAimEnabled) {
@@ -1049,6 +1048,11 @@ public abstract class TeleOpAllianceBase extends OpMode {
         } else if (!Double.isNaN(rangeMetersRaw) && Double.isFinite(rangeMetersRaw)) {
             currentDistanceInches = rangeMetersRaw * M_TO_IN;
         }
+
+        updateLauncherReadyLatch(now);
+        updateFiringController(now, ejectActive, aimReadyForFire);
+        updateAutoAimOnFire(goalVisibleForAim);
+        boolean shotAssistActive = autoAimOnFireActive;
 
         // --- Observe obelisk tags (IDs 21..23) and persist optimal order ---
         if (vision != null) vision.observeObelisk();
@@ -1159,6 +1163,32 @@ public abstract class TeleOpAllianceBase extends OpMode {
             if (!debugTelemetryEnabled && firingController != null && firingController.isSprayActive()) {
                 cachedBelowAlwaysLines.add("SPRAY MODE: ON");
                 cachedBelowAlwaysLines.add(formatLine("Firing", firingController.getTelemetrySummary()));
+            }
+
+            if (TeleOpDriverDefaults.ENABLE_FIRING_STATE_DEBUG && firingController != null) {
+                double latchedTarget = firingController.getLatchedShotTargetRpm();
+                double avgRpm = firingController.getAvgRpm();
+                double errorRpm = firingController.getErrorRpm();
+                boolean readyLatched = launcher != null && launcher.isReadyLatched();
+                String latchedTargetStr = (Double.isFinite(latchedTarget) && latchedTarget > 0.0)
+                        ? String.format(Locale.US, "%.0f", latchedTarget)
+                        : "N/A";
+                String avgRpmStr = Double.isFinite(avgRpm) ? String.format(Locale.US, "%.0f", avgRpm) : "N/A";
+                String errorRpmStr = Double.isFinite(errorRpm) ? String.format(Locale.US, "%.0f", errorRpm) : "N/A";
+
+                cachedBelowAlwaysLines.add(formatLine("Firing",
+                        String.format(Locale.US, "State=%s Mode=%s",
+                                firingController.getState().name(),
+                                firingController.getMode().name())));
+                cachedBelowAlwaysLines.add(formatLine("Firing Timing", firingController.getLastShotTimingSummary()));
+                cachedBelowAlwaysLines.add(formatLine("Firing Ready",
+                        String.format(Locale.US, "ReadyLatched=%s PreReady=%s LatchedTarget=%s AvgRpm=%s ErrRpm=%s Recovered=%s",
+                                readyLatched ? "YES" : "NO",
+                                firingController.wasPreReadyLatchedAtRequest() ? "YES" : "NO",
+                                latchedTargetStr,
+                                avgRpmStr,
+                                errorRpmStr,
+                                firingController.isRecovered() ? "YES" : "NO")));
             }
 
             if (debugTelemetryEnabled) {
@@ -2408,6 +2438,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
                     nowMs,
                     fireButtonDown,
                     sprayHoldActive,
+                    launcher != null && launcher.isReadyLatched(),
                     intakeResumeState,
                     holdFireForRpmMode(),
                     true,
@@ -2425,12 +2456,17 @@ public abstract class TeleOpAllianceBase extends OpMode {
         firingController.setContinuousRequested(fireButtonDown);
         firingController.setSprayLike(sprayHoldActive && fireButtonDown);
 
-        boolean launcherReady = isLauncherReadyForFeed(nowMs);
         double targetRpm = (launcher != null) ? launcher.targetRpm : 0.0;
         double leftRpm = (launcher != null) ? launcher.getLeftRpm() : 0.0;
         double rightRpm = (launcher != null) ? launcher.getRightRpm() : 0.0;
+        firingController.update(nowMs, aimReadyForFire, targetRpm, leftRpm, rightRpm, intakeResumeState);
+    }
 
-        firingController.update(nowMs, aimReadyForFire, launcherReady, targetRpm, leftRpm, rightRpm, intakeResumeState);
+    private void updateLauncherReadyLatch(long nowMs) {
+        if (launcher == null) {
+            return;
+        }
+        launcher.updateReadyLatch(nowMs, launcher.targetRpm);
     }
 
     private void updateAutoAimOnFire(boolean hasGoalTarget) {
@@ -2453,33 +2489,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             autoAimOnFireActive = false;
             aimLossStartMs = -1L;
         }
-    }
-
-    /** Returns true once the launcher has stayed within the ±RPM window long enough to feed. */
-    private boolean isLauncherReadyForFeed(long nowMs) {
-        if (holdFireForRpmMode() == SharedRobotTuning.HoldFireForRpmMode.OFF) {
-            launcherReadyStartMs = 0L;
-            return true;
-        }
-        if (launcher == null) {
-            launcherReadyStartMs = 0L;
-            return false;
-        }
-        if (launcher.targetRpm <= 0.0) {
-            launcherReadyStartMs = 0L;
-            return false;
-        }
-        double tolerance = SharedRobotTuning.RPM_TOLERANCE; // ±RPM window; overspeed is treated like underspeed
-        double error = Math.abs(launcher.getCurrentRpm() - launcher.targetRpm);
-        if (error <= tolerance) {
-            if (launcherReadyStartMs == 0L) {
-                launcherReadyStartMs = nowMs;
-            }
-            long settleMs = Math.max(0L, SharedRobotTuning.RPM_READY_SETTLE_MS);
-            return (nowMs - launcherReadyStartMs) >= settleMs;
-        }
-        launcherReadyStartMs = 0L;
-        return false;
     }
 
     private SharedRobotTuning.HoldFireForRpmMode holdFireForRpmMode() {

@@ -96,6 +96,7 @@ TeamCode/
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
     │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
+    │   ├── DebugTelemetryConfig.java         ← TeleOp debug telemetry defaults + per-system debug flags
     │   ├── ControllerTuning.java             ← Trigger thresholds
     │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
     │   ├── FeedTuning.java                   ← Feed power, duration, cooldown
@@ -105,7 +106,7 @@ TeamCode/
     │   ├── LimelightPipelineAutoSelectConfig.java ← Limelight INIT pipeline auto-selection profiles + timing
     │   ├── SharedRobotTuning.java            ← Cross-mode cadence, caps, IMU orientation, RPM feed gating
     │   ├── OdometryConfig.java               ← Field geometry + odometry fusion tunables
-    │   ├── TeleOpDriverDefaults.java         ← Driver preferences, manual ranges, firing stats thresholds, and firing debug toggle
+    │   ├── TeleOpDriverDefaults.java         ← Driver preferences, manual ranges, firing cadence timing, and intake defaults
     │   ├── TeleOpEjectTuning.java            ← Eject RPM + timing
     │   ├── TeleOpRumbleTuning.java           ← Haptic envelopes
     │   ├── VisionConfig.java                 ← Vision source selector + goal-tag localization filters/bounds
@@ -179,8 +180,8 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - **Translation is scaled** by `AutoAimTuning.AUTO_AIM_SPEED_SCALE` (default **0.25**) whenever AutoAim is ON; telemetry surfaces the active scale as `SpeedScale` to remind drivers how much throttle remains.
 - **Lock window:** At normal ranges the aim deadband remains symmetric (±`1.5°`, from `TagAimTuning.DEADBAND_DEG`). When the tag distance exceeds `AutoAimTuning.LONG_SHOT_DISTANCE_IN` (default **90 in**), the window biases toward the alliance goal to keep long volleys on the correct side of center—**RED locks between −1.5..0°**, **BLUE locks between 0..+1.5°**—as long as `AutoAimTuning.LONG_SHOT_ENABLED` remains true. Telemetry surfaces `ShotRangeMode=LONG` while the biased window is active and now holds the last range mode during brief tag dropouts until a new tag distance arrives, so lock tolerances do not flutter while frames are missing. Long-shot detection uses the range-scaled AprilTag distance (`VisionTuning.RANGE_SCALE`), so recalibration affects when this bias turns on.
   - TeleOp telemetry keeps the lock context near the top readout, showing AutoAim/AutoSpeed status and the RPM Target/Actual line split into left/right flywheel readings before other details.
-- When `TeleOpDriverDefaults.DEBUG_FIRING_STATS` and the TeleOp debug telemetry toggle are enabled, a below-separator block (shown first in the debug list) reports launcher RPM variance between left/right wheels (avg/max in RPM and % between shots over the `DEBUG_FIRING_STATS_VAR_TIME` window) plus RPM drop, drop percentage, drop timing (time from feed start until RPM falls below target minus `DEBUG_FIRING_STATS_TRIGGER`), and recovery timing (time from feed start until RPM returns to full target) for each fired shot (AVG/L/R) to help tune shot recovery; the detection window resets on each fire-button press.
-- `TeleOpDriverDefaults.ENABLE_FIRING_STATE_DEBUG` forces a compact firing-state block below the blank separator (even when global debug is off) showing current state/mode, the last-shot per-state timing line (`t(ms) FR/AIM/RPM/OPEN/FEED/SHOT/RET/REC`), and readiness/recovery values (ReadyLatched, PreReady, latched target RPM, AvgRpm, ErrorRpm, Recovered).
+- When `DebugTelemetryConfig.DEBUG_FIRING_STATS` and the TeleOp debug telemetry toggle are enabled, a below-separator block (shown first in the debug list) reports launcher RPM variance between left/right wheels (avg/max in RPM and % between shots over the `DEBUG_FIRING_STATS_VAR_TIME` window) plus RPM drop, drop percentage, drop timing (time from feed start until RPM falls below target minus `DEBUG_FIRING_STATS_TRIGGER`), and recovery timing (time from feed start until RPM returns to full target) for each fired shot (AVG/L/R) to help tune shot recovery; the detection window resets on each fire-button press.
+- `DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG` forces a compact firing-state block below the blank separator (even when global debug is off) showing current state/mode, the last-shot per-state timing line (`t(ms) FR/AIM/RPM/OPEN/FEED/SHOT/RET/REC`), and readiness/recovery values (ReadyLatched, PreReady, latched target RPM, AvgRpm, ErrorRpm, Recovered).
 - **Shot assists:** The temporary AutoAim nudge that runs during feed holds (tap or continuous stream) now returns to the driver’s previous AutoAim toggle immediately after the feed stops so continuous holds no longer leave AutoAim latched on.
 
 ### AutoSpeed
@@ -403,6 +404,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-06** – Moved TeleOp debug telemetry defaults and per-system debug enable flags into `DebugTelemetryConfig`, letting teams toggle individual debug blocks (aim, vision, feedstop, limelight auto-select, odometry, firing stats) while keeping the same SELECT/dashboard workflow.
 - **2026-01-05** – Added a dedicated firing-state debug telemetry toggle with per-shot timing and readiness metrics, introduced a looser ready-latch fast path plus recovery-band exits for the firing controller, ensured continuous shots return the FeedStop before recovering, finalized per-shot timing snapshots/history with strict continuous pre-ready snapshotting, and ensured RECOVERING timing is captured once while clarifying spray-like RPM gate skipping in TeleOp/Auto docs.
 - **2026-01-04** – Added a shared firing controller for TeleOp + Auto with encoder-based RPM drop shot detection, bounded auto-aim-on-fire timing, a tap-then-hold spray stream gesture, and cleaned/annotated firing-related tunables while keeping Auto semantics intact.
 - **2026-01-03** – Added auto-drive stall-exit detection for blocked encoder moves (plus new DriveTuning stall tunables and telemetry), added TeleOp debug telemetry gating with SELECT/dashboard sync, rate-limited below-separator telemetry updates, expanded the always-on below-line hints (tag visibility + aim state), documented the new tunables plus layout notes, fixed the dashboard telemetry list reuse in TeleOp, refined HOLD_FIRE_FOR_RPM so TeleOp continuous feeds pause on RPM drops, added per-call AutoSequence RPM gating flags, derived the no-tag AutoSpeed RPM from the farthest calibration point, and added debug firing stats telemetry + tunable to report launcher drop/recovery timing plus between-shot variance after shots with per-press reset.

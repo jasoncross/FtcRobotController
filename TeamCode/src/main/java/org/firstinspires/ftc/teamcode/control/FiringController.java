@@ -23,6 +23,8 @@ import java.util.Locale;
  *   - Auto helpers may block on isIdle() while calling update(...) inside loops.
  * CHANGES (2026-01-05): Added per-shot readiness snapshots, recovery band exits,
  *                       and feedstop-return fixes for continuous fire.
+ * CHANGES (2026-01-06): Keep the FeedStop released throughout continuous/spray
+ *                       streams, only returning to HOLD once the stream ends.
  */
 public class FiringController {
     private static final int HISTORY_SIZE = 5;
@@ -378,13 +380,17 @@ public class FiringController {
                     feed.setPower(FeedTuning.FIRE_POWER_LAUNCHING);
                 }
                 suppressIntake();
-                feedStopReturnAtMs = nowMs + Math.max(0L, feed != null ? feed.getReleaseHoldMs() : 0L);
-                transition(State.FEEDSTOP_RETURNS, nowMs);
+                if (shouldKeepFeedStopOpen()) {
+                    transition(State.RECOVERING, nowMs);
+                } else {
+                    feedStopReturnAtMs = nowMs + Math.max(0L, feed != null ? feed.getReleaseHoldMs() : 0L);
+                    transition(State.FEEDSTOP_RETURNS, nowMs);
+                }
                 break;
             case FEEDSTOP_RETURNS:
                 suppressIntake();
                 if (nowMs >= feedStopReturnAtMs) {
-                    if (feed != null) {
+                    if (feed != null && !shouldKeepFeedStopOpen()) {
                         feed.setHold();
                     }
                     transition(State.RECOVERING, nowMs);
@@ -406,6 +412,9 @@ public class FiringController {
                         preReadyLatchedAtRequest = readyNow;
                         transition(State.FIRE_REQUESTED, nowMs);
                     } else {
+                        if (feed != null && feed.getFeedStopState() == Feed.FeedStopState.RELEASE) {
+                            feed.setHold();
+                        }
                         transition(State.IDLE, nowMs);
                     }
                 }
@@ -454,6 +463,10 @@ public class FiringController {
         return autoAimAllowed
                 && autoAimWindowMs > 0L
                 && !(continuousRequested && !firstShotInStream);
+    }
+
+    private boolean shouldKeepFeedStopOpen() {
+        return continuousRequested || sprayLike;
     }
 
     private boolean isAutoAimTimeout(long nowMs) {

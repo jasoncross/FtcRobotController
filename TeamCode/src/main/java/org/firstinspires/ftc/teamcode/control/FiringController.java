@@ -25,6 +25,9 @@ import java.util.Locale;
  *                       and feedstop-return fixes for continuous fire.
  * CHANGES (2026-01-06): Keep the FeedStop released throughout continuous/spray
  *                       streams, only returning to HOLD once the stream ends.
+ * CHANGES (2026-01-07): Added burst/stream recovery tuning, skipped feed-lead
+ *                       delays when the gate is already open, and surfaced
+ *                       firing profile diagnostics for debug telemetry.
  */
 public class FiringController {
     private static final int HISTORY_SIZE = 5;
@@ -67,6 +70,11 @@ public class FiringController {
     private boolean sprayLike = false;
     private boolean firstShotInStream = true;
     private boolean preReadyLatchedAtRequest = false;
+    private long lastFireRequestMs = 0L;
+    private long msSinceLastRequest = -1L;
+    private boolean burstLikeActive = false;
+    private boolean streamingLikeActive = false;
+    private String firingProfile = Mode.SINGLE.name();
 
     private boolean autoAimAllowed = true;
     private long autoAimWindowMs = 0L;
@@ -82,6 +90,10 @@ public class FiringController {
     private long feedStopReturnAtMs = 0L;
     private long strictReadyStartMs = 0L;
     private long recoveryHoldStartMs = 0L;
+
+    private long leadMsApplied = 0L;
+    private double recoveryBandUsed = 0.0;
+    private long recoveryMaxMsUsed = 0L;
 
     private boolean feedMotorStarted = false;
     private long feedMotorStartedAtMs = 0L;
@@ -108,6 +120,11 @@ public class FiringController {
         sprayLike = false;
         firstShotInStream = true;
         preReadyLatchedAtRequest = false;
+        lastFireRequestMs = 0L;
+        msSinceLastRequest = -1L;
+        burstLikeActive = false;
+        streamingLikeActive = false;
+        firingProfile = Mode.SINGLE.name();
         autoAimAllowed = true;
         autoAimWindowMs = 0L;
         autoAimStartMs = 0L;
@@ -119,6 +136,9 @@ public class FiringController {
         feedStopReturnAtMs = 0L;
         strictReadyStartMs = 0L;
         recoveryHoldStartMs = 0L;
+        leadMsApplied = 0L;
+        recoveryBandUsed = 0.0;
+        recoveryMaxMsUsed = 0L;
         feedMotorStarted = false;
         feedMotorStartedAtMs = 0L;
         latchedTargetValid = false;
@@ -191,6 +211,30 @@ public class FiringController {
         return recovered;
     }
 
+    public long getLeadMsApplied() {
+        return leadMsApplied;
+    }
+
+    public String getFiringProfile() {
+        return firingProfile;
+    }
+
+    public boolean isBurstLike() {
+        return burstLikeActive;
+    }
+
+    public long getMsSinceLastRequest() {
+        return msSinceLastRequest;
+    }
+
+    public double getRecoveryBandUsed() {
+        return recoveryBandUsed;
+    }
+
+    public long getRecoveryMaxMsUsed() {
+        return recoveryMaxMsUsed;
+    }
+
     public String getLastShotTimingSummary() {
         return String.format(Locale.US, "t(ms) FR=%d AIM=%d RPM=%d OPEN=%d FEED=%d SHOT=%d RET=%d REC=%d",
                 lastShotTotalsMs[State.FIRE_REQUESTED.ordinal()],
@@ -251,6 +295,7 @@ public class FiringController {
         if (state != State.IDLE) {
             return;
         }
+        this.lastFireRequestMs = nowMs;
         this.continuousRequested = continuousRequested;
         this.sprayLike = sprayLike;
         this.autoAimAllowed = autoAimAllowed;
@@ -261,6 +306,7 @@ public class FiringController {
         this.feedMotorStartedAtMs = 0L;
         this.strictReadyStartMs = 0L;
         this.recoveryHoldStartMs = 0L;
+        this.leadMsApplied = 0L;
         latchedTargetValid = false;
         latchedShotTargetRpm = 0.0;
         clearLastShotTotals();
@@ -292,6 +338,9 @@ public class FiringController {
                        boolean intakeDesiredOn) {
         intakeRestoreState = intakeDesiredOn;
         avgRpm = (leftRpm + rightRpm) / 2.0;
+        boolean streamingLike = isStreamingLike();
+        boolean burstLike = !streamingLike && isBurstLike(nowMs);
+        updateDiagnostics(nowMs, streamingLike, burstLike);
         if (state == State.FIRE_REQUESTED && !latchedTargetValid) {
             latchTargetRpm(targetRpm);
         }
@@ -351,7 +400,10 @@ public class FiringController {
                     feed.setRelease();
                 }
                 if (feedLeadReadyAtMs == 0L) {
-                    feedLeadReadyAtMs = nowMs + Math.max(0L, feed != null ? feed.getFireLeadMs() : 0L);
+                    boolean feedStopReleased = feed != null && feed.getFeedStopState() == Feed.FeedStopState.RELEASE;
+                    long leadMs = computeFeedLeadMs(streamingLike, burstLike, feedStopReleased);
+                    leadMsApplied = leadMs;
+                    feedLeadReadyAtMs = nowMs + Math.max(0L, leadMs);
                 }
                 if (nowMs >= feedLeadReadyAtMs) {
                     transition(State.FEEDING, nowMs);
@@ -431,6 +483,7 @@ public class FiringController {
         if (next == State.FIRE_REQUESTED) {
             feedMotorStarted = false;
             feedMotorStartedAtMs = 0L;
+            leadMsApplied = 0L;
         }
         if (next != State.FEEDING) {
             feedingStartMs = 0L;
@@ -547,7 +600,7 @@ public class FiringController {
         if (!latchedTargetValid || latchedShotTargetRpm <= 0.0) {
             return true;
         }
-        double band = Math.max(0.0, SharedRobotTuning.FIRING_RECOVERY_RPM_BAND);
+        double band = Math.max(0.0, recoveryBandUsed);
         double threshold = latchedShotTargetRpm - band;
         if (avgRpm >= threshold) {
             long holdMs = Math.max(0L, SharedRobotTuning.FIRING_RECOVERY_HOLD_MS);
@@ -564,8 +617,69 @@ public class FiringController {
     }
 
     private boolean isRecoveryTimeout(long nowMs) {
-        long maxMs = Math.max(0L, SharedRobotTuning.FIRING_RECOVERY_MAX_MS);
+        long maxMs = Math.max(0L, recoveryMaxMsUsed);
         return maxMs > 0L && (nowMs - stateStartMs) >= maxMs;
+    }
+
+    private void updateDiagnostics(long nowMs, boolean streamingLike, boolean burstLike) {
+        streamingLikeActive = streamingLike;
+        burstLikeActive = burstLike;
+        if (lastFireRequestMs > 0L) {
+            msSinceLastRequest = Math.max(0L, nowMs - lastFireRequestMs);
+        } else {
+            msSinceLastRequest = -1L;
+        }
+        if (streamingLike) {
+            firingProfile = "STREAM";
+        } else if (burstLike) {
+            firingProfile = "BURST";
+        } else {
+            firingProfile = "SINGLE";
+        }
+        recoveryBandUsed = computeRecoveryBand(streamingLike, burstLike);
+        recoveryMaxMsUsed = computeRecoveryMaxMs(streamingLike, burstLike);
+    }
+
+    private boolean isStreamingLike() {
+        return continuousRequested || sprayLike;
+    }
+
+    private boolean isBurstLike(long nowMs) {
+        if (mode != Mode.SINGLE) {
+            return false;
+        }
+        if (lastFireRequestMs <= 0L) {
+            return false;
+        }
+        long windowMs = Math.max(0L, SharedRobotTuning.SINGLE_BURST_WINDOW_MS);
+        return (nowMs - lastFireRequestMs) <= windowMs;
+    }
+
+    private long computeFeedLeadMs(boolean streamingLike, boolean burstLike, boolean feedStopReleased) {
+        if ((streamingLike || burstLike) && feedStopReleased) {
+            return 0L;
+        }
+        return Math.max(0L, feed != null ? feed.getFireLeadMs() : 0L);
+    }
+
+    private double computeRecoveryBand(boolean streamingLike, boolean burstLike) {
+        if (streamingLike) {
+            return SharedRobotTuning.FIRING_STREAM_RECOVERY_RPM_BAND;
+        }
+        if (burstLike) {
+            return SharedRobotTuning.FIRING_BURST_RECOVERY_RPM_BAND;
+        }
+        return SharedRobotTuning.FIRING_RECOVERY_RPM_BAND;
+    }
+
+    private long computeRecoveryMaxMs(boolean streamingLike, boolean burstLike) {
+        if (streamingLike) {
+            return SharedRobotTuning.FIRING_STREAM_RECOVERY_MAX_MS;
+        }
+        if (burstLike) {
+            return SharedRobotTuning.FIRING_BURST_RECOVERY_MAX_MS;
+        }
+        return SharedRobotTuning.FIRING_RECOVERY_MAX_MS;
     }
 
     private void beginTransaction() {

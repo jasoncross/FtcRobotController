@@ -101,9 +101,12 @@ always exits on timeout so neither TeleOp nor Auto can stall indefinitely.
 Firing readiness checks now latch the shot target RPM at `FIRE_REQUESTED` so RPM gating uses a stable reference even when vision
 targets are fluctuating, and spray-like shots skip the RPM window entirely while still running the post-shot recovery guard.
 A continuous readiness latch (looser band + settle) enables a fast-path when the launcher is already stable before a shot, and
-recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. TeleOp can optionally force a compact
-firing-state debug block below the telemetry separator (state/mode, last-shot timing line, and readiness/recovery metrics) via
-`DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG`.
+recovery exits using a dedicated RPM band/timeout so the RECOVERING state never stalls. Streaming fire (spray/continuous) now
+uses its own recovery band + max timeout to keep cadence high when RPM sag is small, while rapid SINGLE taps inside the burst
+window adopt burst recovery tuning so “tap tap tap” sequences feel like a short burst without TeleOp-only logic. When streaming
+or bursting and the FeedStop gate is already RELEASE, the controller skips the per-shot lead delay to avoid paying the servo
+lead time repeatedly. TeleOp can optionally force a compact firing-state debug block below the telemetry separator
+(state/mode, last-shot timing line, and readiness/recovery metrics) via `DebugTelemetryConfig.ENABLE_FIRING_STATE_DEBUG`.
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.

@@ -8,6 +8,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.config.AutoAimTuning;
 import org.firstinspires.ftc.teamcode.config.AutoRpmConfig;
+import org.firstinspires.ftc.teamcode.config.DebugTelemetryConfig;
 import org.firstinspires.ftc.teamcode.config.FeedTuning;
 import org.firstinspires.ftc.teamcode.config.OdometryConfig;
 import org.firstinspires.ftc.teamcode.config.SharedRobotTuning;
@@ -104,6 +105,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        START without resets.
     // CHANGES (2025-12-28): Added Limelight pipeline memory fallback telemetry
     //                        lines while preserving urgent failure banner ordering.
+    // CHANGES (2026-01-07): Added debug-only firing telemetry lines for feedstop
+    //                        and cadence profiling during auto sequences.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -1303,6 +1306,31 @@ public abstract class BaseAuto extends LinearOpMode {
             String summary = feed.getFeedStopSummaryLine();
             telemetry.addLine(summary);
             mirroredLines.add(summary);
+        }
+        if (DebugTelemetryConfig.TELEOP_TELEMETRY_DEBUG_ENABLED && firingController != null) {
+            String feedStopState = (feed != null && feed.getFeedStopState() != null)
+                    ? feed.getFeedStopState().name()
+                    : "N/A";
+            long msSinceRequest = firingController.getMsSinceLastRequest();
+            String sinceRequestStr = (msSinceRequest >= 0L) ? String.valueOf(msSinceRequest) : "N/A";
+            String profile = firingController.getFiringProfile();
+            String burstLike = firingController.isBurstLike() ? "YES" : "NO";
+            String leadMs = String.valueOf(firingController.getLeadMsApplied());
+            String recoveryBand = String.format(Locale.US, "%.0f", firingController.getRecoveryBandUsed());
+            String recoveryMaxMs = String.valueOf(firingController.getRecoveryMaxMsUsed());
+
+            telemetry.addData("FeedStop State", feedStopState);
+            telemetry.addData("Firing Profile", profile);
+            telemetry.addData("Burst Like", String.format(Locale.US, "%s (%sms)", burstLike, sinceRequestStr));
+            telemetry.addData("Lead Ms", leadMs);
+            telemetry.addData("Recovery Band", recoveryBand);
+            telemetry.addData("Recovery Max (ms)", recoveryMaxMs);
+            mirroredLines.add("FeedStop State: " + feedStopState);
+            mirroredLines.add("Firing Profile: " + profile);
+            mirroredLines.add("Burst Like: " + burstLike + " (" + sinceRequestStr + "ms)");
+            mirroredLines.add("Lead Ms: " + leadMs);
+            mirroredLines.add("Recovery Band: " + recoveryBand);
+            mirroredLines.add("Recovery Max (ms): " + recoveryMaxMs);
         }
         if (limelightAutoSelector != null) {
             String profileLine = limelightAutoSelector.getProfileLine();

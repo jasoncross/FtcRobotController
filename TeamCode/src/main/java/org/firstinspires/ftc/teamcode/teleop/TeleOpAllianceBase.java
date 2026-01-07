@@ -63,6 +63,8 @@
  *
  * CHANGES (2026-01-07): Added edge-triggered StopAll hold entry/exit so FeedStop
  *                       parks once and resumes cleanly without servo spam.
+ * CHANGES (2026-01-07): Added debug-only firing cadence telemetry (profile,
+ *                       feedstop state, and recovery tuning readouts).
  * CHANGES (2026-01-06): Prevented FeedStop servo updates while StopAll is
  *                       latched so the gate remains still during STOP.
  * CHANGES (2025-12-19): Added a Tag Visible telemetry line ahead of RPM
@@ -1197,6 +1199,22 @@ public abstract class TeleOpAllianceBase extends OpMode {
                 if (firingController != null && DebugTelemetryConfig.DEBUG_FIRING_TELEMETRY) {
                     cachedBelowDebugLines.add(formatLine("Firing State", firingController.getState().name()));
                     cachedBelowDebugLines.add(formatLine("Firing Mode", firingController.getMode().name()));
+                    String feedStopState = (feed != null && feed.getFeedStopState() != null)
+                            ? feed.getFeedStopState().name()
+                            : "N/A";
+                    cachedBelowDebugLines.add(formatLine("FeedStop State", feedStopState));
+                    cachedBelowDebugLines.add(formatLine("Feed Lead (ms)", String.valueOf(firingController.getLeadMsApplied())));
+                    cachedBelowDebugLines.add(formatLine("Firing Profile", firingController.getFiringProfile()));
+                    long msSinceRequest = firingController.getMsSinceLastRequest();
+                    String sinceRequestStr = (msSinceRequest >= 0L) ? String.valueOf(msSinceRequest) : "N/A";
+                    cachedBelowDebugLines.add(formatLine("Burst Like",
+                            String.format(Locale.US, "%s (%sms)",
+                                    firingController.isBurstLike() ? "YES" : "NO",
+                                    sinceRequestStr)));
+                    cachedBelowDebugLines.add(formatLine("Recovery Band",
+                            String.format(Locale.US, "%.0f", firingController.getRecoveryBandUsed())));
+                    cachedBelowDebugLines.add(formatLine("Recovery Max (ms)",
+                            String.valueOf(firingController.getRecoveryMaxMsUsed())));
                 }
                 if (DebugTelemetryConfig.DEBUG_FIRING_STATS) {
                     String avgDiffRpm = formatFiringStatValue(launcherVarianceStats.avgDiffRpm(), "%.0f");

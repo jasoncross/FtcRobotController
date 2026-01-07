@@ -24,6 +24,10 @@
  *         shot transaction begins.
  *   - FIRING_RECOVERY_RPM_BAND / FIRING_RECOVERY_HOLD_MS / FIRING_RECOVERY_MAX_MS
  *       • Recovery threshold, debounce, and max guard for post-shot RPM rebound.
+ *   - FIRING_STREAM_RECOVERY_RPM_BAND / FIRING_STREAM_RECOVERY_MAX_MS
+ *       • Streaming-mode recovery band + timeout to keep cadence high between shots.
+ *   - SINGLE_BURST_WINDOW_MS / FIRING_BURST_RECOVERY_RPM_BAND / FIRING_BURST_RECOVERY_MAX_MS
+ *       • Rapid single-shot burst window and recovery tuning for quick tap sequences.
  *   - HOLD_FIRE_FOR_RPM (ADDED 2026-01-03)
  *       • TeleOp-only control for whether feed engagement waits for RPM readiness.
  *       • ALL waits for every shot (including continuous holds), INITIAL waits only
@@ -64,6 +68,7 @@ public final class SharedRobotTuning {
     //                        explicit per-step limits.
     // CHANGES (2026-01-03): Added HOLD_FIRE_FOR_RPM mode to control TeleOp RPM-ready feed gating.
     // CHANGES (2026-01-05): Added readiness latch and recovery-band tunables for firing cadence.
+    // CHANGES (2026-01-07): Retuned RPM readiness and added stream/burst recovery tunables.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -72,8 +77,8 @@ public final class SharedRobotTuning {
             RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;    // Direction USB port points; keep consistent with LOGO_DIRECTION
 
     // --- Launcher speed gate ---
-    public static double RPM_TOLERANCE              = 50.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
-    public static long   RPM_READY_SETTLE_MS        = 150L;   // Time launcher must remain inside tolerance before declaring ready
+    public static double RPM_TOLERANCE              = 75.0;   // Shared ±RPM window; Launcher.atSpeedToleranceRPM should match
+    public static long   RPM_READY_SETTLE_MS        = 80L;    // Time launcher must remain inside tolerance before declaring ready
     public static double READY_LATCH_TOLERANCE_RPM   = 120.0;  // Looser ±RPM window for the continuous readiness latch
     public static long   READY_LATCH_SETTLE_MS       = 80L;    // Time inside latch window before ready latch is set
     public enum HoldFireForRpmMode {
@@ -85,6 +90,11 @@ public final class SharedRobotTuning {
     public static double FIRING_RECOVERY_RPM_BAND    = 250.0;  // Recovery band below target where RPM rebound is acceptable
     public static long   FIRING_RECOVERY_HOLD_MS     = 0L;     // Optional debounce inside recovery band before exiting RECOVERING
     public static long   FIRING_RECOVERY_MAX_MS      = 700L;   // Safety timeout to exit RECOVERING even if RPM never rebounds
+    public static double FIRING_STREAM_RECOVERY_RPM_BAND = 600.0; // Streaming recovery band below target RPM before resuming cadence
+    public static long   FIRING_STREAM_RECOVERY_MAX_MS   = 200L;  // Streaming max recovery time to avoid long cadence stalls
+    public static long   SINGLE_BURST_WINDOW_MS          = 350L;  // Tap-to-tap window that marks a single-shot burst
+    public static double FIRING_BURST_RECOVERY_RPM_BAND  = 400.0; // Burst recovery band below target RPM for rapid taps
+    public static long   FIRING_BURST_RECOVERY_MAX_MS    = 300L;  // Burst max recovery time before forcing the next shot
 
     // --- Aim / drive caps used by Auto helpers (safe defaults) ---
     public static double LOCK_TOLERANCE_DEG         = 1.0;    // Bearing tolerance; keep aligned with Drivebase.TURN_TOLERANCE_DEG

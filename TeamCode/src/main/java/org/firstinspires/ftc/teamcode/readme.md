@@ -119,7 +119,7 @@ TeamCode/
     │   └── ControllerBindings.java           ← Centralized gamepad mapping/edge-detect helpers
     ├── subsystems/
     │   ├── Launcher.java                 ← Dual-flywheel subsystem (PIDF + AutoSpeed hooks)
-    │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating + continuous/spray FeedStop hold
+    │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating + StopAll FeedStop park + anti-jitter servo guard
     │   └── Intake.java                   ← Intake motor helper + assist timings
     ├── teleop/
     │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, debug telemetry gating + firing stats/state)
@@ -404,6 +404,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-07** – Added edge-triggered StopAll feed hold logic so FeedStop parks once and resumes cleanly, introduced an anti-jitter FeedStop command guard tunable, and refreshed the Feed/StopAll documentation to match the new stop-hold behavior.
 - **2026-01-06** – Moved TeleOp debug telemetry defaults and per-system debug enable flags into `DebugTelemetryConfig`, kept the FeedStop held open through continuous/spray streams until the fire button releases, and froze FeedStop updates while StopAll is latched so the gate stays still during STOP.
 - **2026-01-05** – Added a dedicated firing-state debug telemetry toggle with per-shot timing and readiness metrics, introduced a looser ready-latch fast path plus recovery-band exits for the firing controller, ensured continuous shots return the FeedStop before recovering, finalized per-shot timing snapshots/history with strict continuous pre-ready snapshotting, and ensured RECOVERING timing is captured once while clarifying spray-like RPM gate skipping in TeleOp/Auto docs.
 - **2026-01-04** – Added a shared firing controller for TeleOp + Auto with encoder-based RPM drop shot detection, bounded auto-aim-on-fire timing, a tap-then-hold spray stream gesture, and cleaned/annotated firing-related tunables while keeping Auto semantics intact.

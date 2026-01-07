@@ -79,6 +79,8 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 - Coordinated with launcher readiness and StopAll safety.
 - FeedStop homing is now queued until START so INIT stays motionless; the servo homes and parks at the blocking angle as soon as
   the match begins.
+- StopAll now enters a stop-hold mode that parks the FeedStop once, pauses the homing/state machine, and resumes cleanly when
+  STOP is released to avoid continuous servo command spam.
 - FeedStop can open immediately, but in TeleOp the feed motor waits for the launcher RPM window (with the shared settle time)
   whenever `SharedRobotTuning.HOLD_FIRE_FOR_RPM` is set to `ALL` (every shot/hold) or `INITIAL` (first shot/stream start only);
   `OFF` disables the RPM-ready gate entirely. Autonomous firing now uses per-call `requireLauncherAtSpeed` flags instead. The
@@ -197,7 +199,7 @@ firing-state debug block below the telemetry separator (state/mode, last-shot ti
 ## 🛑 StopAll System (Cross-cutting)
 - Safety-critical: all motors zero immediately.  
 - Enabled during TeleOp and can be triggered automatically.
-- FeedStop updates pause while STOP is latched so the servo remains still.
+- FeedStop enters an edge-triggered stop-hold park on STOP entry and ignores repeated updates until STOP is released.
 
 ---
 

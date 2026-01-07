@@ -84,6 +84,7 @@ public class Feed {
     //                       feed motor while holding the FeedStop open.
     // CHANGES (2026-01-03): Added a feed-cycle start flag so TeleOp can timestamp shot events
     //                       for debug firing stats without blocking feed behavior.
+    // CHANGES (2026-01-07): Added StopAll hold gating plus anti-jitter FeedStop servo command guard.
     public double firePower = FeedTuning.FIRE_POWER; // Shared motor power; referenced by BaseAuto.fireN() + TeleOp bindings
     public int fireTimeMs   = FeedTuning.FIRE_TIME_MS;  // Duration of each feed pulse (ms); ensure sequences allow recovery time
     public int minCycleMs   = FeedTuning.MIN_CYCLE_MS;  // Minimum delay between feeds; prevents double-fire even if buttons spammed
@@ -119,6 +120,7 @@ public class Feed {
     private boolean continuousFeedPowerEnabled = true;
     private boolean feedReadyGate = true;
     private boolean feedMotorStarted = false;
+    private boolean stopHoldEnabled = false;
 
     private boolean useAutoScale = false;
     private boolean autoScaleApplied = false;
@@ -144,6 +146,10 @@ public class Feed {
     private String softLimitMessage = null;
 
     private boolean feedStopHomeQueued = false;
+    private double commandEpsilonDeg = 0.0;
+    private long commandMinPeriodMs = 0L;
+    private double lastCommandedDeg = Double.NaN;
+    private long lastCommandedAtMs = 0L;
 
     private HomeState homeState = HomeState.IDLE;
     private long homeStateStartMs = 0L;
@@ -207,6 +213,9 @@ public class Feed {
         feedStopHomeQueued = false;
         useAutoScale = false;
         autoScaleApplied = false;
+        stopHoldEnabled = false;
+        lastCommandedDeg = Double.NaN;
+        lastCommandedAtMs = 0L;
         applyFeedStopConfigValues();
         cycleState = FeedCycleState.IDLE;
         cycleStateStartMs = 0L;
@@ -297,6 +306,33 @@ public class Feed {
         feedStopState = FeedStopState.RELEASE;
     }
 
+    /** Pause FeedStop updates and park the gate while StopAll is latched. */
+    public void setStopHoldEnabled(boolean enabled) {
+        if (stopHoldEnabled == enabled) {
+            return;
+        }
+        stopHoldEnabled = enabled;
+        if (enabled) {
+            releaseUntilMs = 0L;
+            feedAllowedAfterMs = 0L;
+            continuousFeedActive = false;
+            continuousFeedPowerEnabled = true;
+            cycleState = FeedCycleState.IDLE;
+            feedMotorStarted = false;
+            applySafetyConfig();
+            motor.setPower(0.0);
+            if (feedStopReady && feedStop != null) {
+                commandAngleImmediate(softCcwLimitDeg, true);
+                feedStopState = FeedStopState.BLOCK;
+            }
+            return;
+        }
+        applyIdleHoldPower();
+        if (!feedStopHomed && feedStopReady && feedStop != null) {
+            beginFeedStopHoming();
+        }
+    }
+
     /** Request a release window, extending the hold timer and enforcing fire lead time. */
     public void requestReleaseHold() {
         if (!feedStopReady || feedStop == null) return;
@@ -307,6 +343,9 @@ public class Feed {
 
     /** Update servo state machine; call every loop. */
     public void update() {
+        if (stopHoldEnabled) {
+            return;
+        }
         long now = System.currentTimeMillis();
         updateHoming(now);
 
@@ -732,6 +771,10 @@ public class Feed {
     private void applyFeedStopConfigValues() {
         directionSign = resolveDirectionSign(FeedStopConfig.DIRECTION_SIGN);
         useAutoScale = FeedStopConfig.USE_AUTO_SCALE;
+        commandEpsilonDeg = Math.max(0.0, FeedStopConfig.COMMAND_EPSILON_DEG);
+        commandMinPeriodMs = Math.max(0L, FeedStopConfig.COMMAND_MIN_PERIOD_MS);
+        lastCommandedDeg = Double.NaN;
+        lastCommandedAtMs = 0L;
         double configuredSafeOpen = Math.max(0.0, FeedStopConfig.SAFE_PRESET_OPEN_DEG);
         double legacyOvershoot = Math.max(0.0, FeedStopConfig.HOME_OVERSHOOT_DEG);
         safePresetOpenDeg = Math.max(configuredSafeOpen, legacyOvershoot);
@@ -752,6 +795,8 @@ public class Feed {
         configuredReleaseAngleDeg = releaseAngleDeg;
         releaseHoldMs = Math.max(0L, holdMs);
         fireLeadMs = Math.max(0L, leadMs);
+        lastCommandedDeg = Double.NaN;
+        lastCommandedAtMs = 0L;
         recalcScaleAndAngles();
         recomputeTargetPositions();
         if (feedStopReady && feedStop != null) {
@@ -877,10 +922,27 @@ public class Feed {
     }
 
     private double commandAngleImmediate(double targetDeg) {
+        return commandAngleImmediate(targetDeg, false);
+    }
+
+    private double commandAngleImmediate(double targetDeg, boolean force) {
         if (!feedStopReady || feedStop == null) return clampAngleForCommand(targetDeg);
+        if (stopHoldEnabled && !force) {
+            return clampAngleForCommand(targetDeg);
+        }
+        long now = System.currentTimeMillis();
         double commanded = clampAngleForCommand(targetDeg);
+        if (!force && Double.isFinite(lastCommandedDeg)) {
+            boolean withinEpsilon = Math.abs(commanded - lastCommandedDeg) <= commandEpsilonDeg;
+            boolean withinPeriod = (now - lastCommandedAtMs) < commandMinPeriodMs;
+            if (withinEpsilon && withinPeriod) {
+                return commanded;
+            }
+        }
         double position = positionForAngle(commanded);
         feedStop.setPosition(position);
+        lastCommandedDeg = commanded;
+        lastCommandedAtMs = now;
         return commanded;
     }
 

@@ -61,6 +61,8 @@
  *   - SharedRobotTuning and AutoRpmConfig remain the authoritative sources for
  *     shared tunables—update those before tweaking the local copies below.
  *
+ * CHANGES (2026-01-07): Added edge-triggered StopAll hold entry/exit so FeedStop
+ *                       parks once and resumes cleanly without servo spam.
  * CHANGES (2026-01-06): Prevented FeedStop servo updates while StopAll is
  *                       latched so the gate remains still during STOP.
  * CHANGES (2025-12-19): Added a Tag Visible telemetry line ahead of RPM
@@ -845,12 +847,13 @@ public abstract class TeleOpAllianceBase extends OpMode {
     @Override
     public void loop() {
         long now = System.currentTimeMillis();
-        if (feed != null) {
-            feed.update();
-        }
-        updateIntakeFlow();
-        updatePendingToggleRumbles(now);
         List<String> dashboardLines = new ArrayList<>();
+
+        // -------- High-priority Start edge-detect (works even while STOPPED) --------
+        boolean start1 = gamepad1.start, start2 = gamepad2.start;
+        boolean startPressed = (!lastStartG1 && start1) || (!lastStartG2 && start2);
+        lastStartG1 = start1; lastStartG2 = start2;
+        if (startPressed) setStopLatched(!stopLatched); // toggles STOP ↔ RESUME (calls stopAll() when entering STOP)
 
         if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
             limelightAutoSelector.update();
@@ -866,12 +869,6 @@ public abstract class TeleOpAllianceBase extends OpMode {
             maybeSeedPoseFromVision();
         }
 
-        // -------- High-priority Start edge-detect (works even while STOPPED) --------
-        boolean start1 = gamepad1.start, start2 = gamepad2.start;
-        boolean startPressed = (!lastStartG1 && start1) || (!lastStartG2 && start2);
-        lastStartG1 = start1; lastStartG2 = start2;
-        if (startPressed) toggleStopLatch(); // toggles STOP ↔ RESUME (calls stopAll() when entering STOP)
-
         // -------- Optional Auto-Stop timer (top-line telemetry only when enabled) --------
         if (autoStopTimerEnabled) {
             long elapsedMs = Math.max(0, now - teleopInitMillis);
@@ -884,13 +881,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
             if (!autoStopTriggered && remainingMs == 0) {
                 autoStopTriggered = true;
-                stopLatched = true;
-                feed.setIdleHoldActive(false); // keep feed fully stopped while StopAll is latched
-                feed.setBlock();
-                if (intake != null) {
-                    intakeResumeState = intake.isOn();
-                }
-                stopAll();
+                setStopLatched(true);
                 mirrorLine(dashboardLines, "⛔ AutoStop reached — STOP ALL engaged (press START to RESUME)");
             }
         }
@@ -901,6 +892,12 @@ public abstract class TeleOpAllianceBase extends OpMode {
             sendDashboard(fusedPose, "STOPPED", dashboardLines);
             return;
         }
+
+        if (feed != null) {
+            feed.update();
+        }
+        updateIntakeFlow();
+        updatePendingToggleRumbles(now);
 
         // -------- Normal controls (only run when NOT STOPPED) --------
 
@@ -2728,11 +2725,16 @@ public abstract class TeleOpAllianceBase extends OpMode {
     }
 
     /** Toggle STOP latch. When entering STOP, calls stopAll() and shows telemetry cue; press Start again to resume. */
-    private void toggleStopLatch() {
-        stopLatched = !stopLatched;
+    private void setStopLatched(boolean enabled) {
+        if (stopLatched == enabled) {
+            return;
+        }
+        stopLatched = enabled;
         if (stopLatched) {
-            feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
-            feed.setBlock();
+            if (feed != null) {
+                feed.setStopHoldEnabled(true);
+                feed.setIdleHoldActive(false); // ensure idle counter-rotation is off while stopped
+            }
             if (intake != null) {
                 intakeResumeState = intake.isOn();
             }
@@ -2740,7 +2742,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             // Optional haptic cue: single pulse to confirm STOP
             pulseSingle(gamepad1);
         } else {
-            feed.setIdleHoldActive(true); // restore idle hold once TeleOp control resumes
+            if (feed != null) {
+                feed.setStopHoldEnabled(false);
+                feed.setIdleHoldActive(true); // restore idle hold once TeleOp control resumes
+            }
             if (intake != null) {
                 intake.set(intakeResumeState);
             }
@@ -2749,10 +2754,8 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
     }
 
-    /** While STOP is latched, continuously enforce 0 outputs and render a concise status line. */
+    /** While STOP is latched, render a concise status line. */
     private void onStoppedLoopHold(List<String> dashboardLines) {
-        stopAll(); // defensive: keep everything off each frame
-        updateIntakeFlow();
         mirrorLine(dashboardLines, "⛔ STOPPED — press START to RESUME");
         telemetry.update();
     }

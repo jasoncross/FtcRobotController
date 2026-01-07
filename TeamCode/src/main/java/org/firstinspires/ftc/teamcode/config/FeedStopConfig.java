@@ -52,6 +52,7 @@ public final class FeedStopConfig {
     // CHANGES (2025-11-09): Default to full-span servo travel, added USE_AUTO_SCALE toggle, and retired SCALE_MIN/MAX tunables.
     // CHANGES (2025-11-07): Added guarded homing presets (safe open + travel cap) and soft-limit clamps for degrees-based control.
     // CHANGES (2025-12-31): Added SKIP_SAFE_OPEN_ON_START to prevent a brief gate dip at START.
+    // CHANGES (2026-01-07): Added anti-jitter command guard tunables for FeedStop servo updates.
     public static boolean USE_AUTO_SCALE = false;    // Optional servo auto-scaling toggle (default full span)
     public static double DIRECTION_SIGN = +1.0;      // +1 when release is toward higher PWM, -1 when toward lower PWM
     public static boolean SKIP_SAFE_OPEN_ON_START = true; // Skip the safe-open sweep when homing after START
@@ -67,4 +68,6 @@ public final class FeedStopConfig {
     public static double SAFETY_MARGIN_DEG = 5.0;   // Extra clearance added when sizing the PWM span (deg)
     public static long RELEASE_HOLD_MS = 250;       // Duration to remain at RELEASE (ms)
     public static long FIRE_LEAD_MS = 500;           // Delay before feed motor starts (ms)
+    public static double COMMAND_EPSILON_DEG = 0.35; // FeedStop command deadband; smaller deltas skip servo updates (deg)
+    public static long COMMAND_MIN_PERIOD_MS = 250;  // Minimum time between identical FeedStop commands (ms)
 }

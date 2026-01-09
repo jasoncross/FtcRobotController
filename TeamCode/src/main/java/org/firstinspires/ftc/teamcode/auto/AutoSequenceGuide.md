@@ -26,7 +26,11 @@ behavior consistent across all autos.
 
 1. Call `sequence()` inside your `runSequence()` override.
 2. Chain the desired steps in the order they should execute.
-3. Finish with `.run()` to execute the scripted actions.
+3. Use `endgameMove(...)` or `addEndgameStep(...)` for the final retreat actions that should wait until the MAIN phase is over.
+4. Finish with `.run()` to execute the scripted actions.
+
+AutoSequence runs MAIN steps until they finish or `BaseAuto.mainPhaseOver()` flips true (30 s total minus the per-OpMode endgame
+reserve). ENDGAME steps can run immediately after MAIN completes, and they will also run if MAIN time expires mid-sequence.
 
 ### Start pose seeding & TeleOp handoff
 
@@ -66,6 +70,7 @@ field-aware helpers to know about are:
 | --- | --- | --- |
 | `rememberHeading(label)` | Captures the current IMU heading for later reuse (non-blocking). | Call before you plan to return to the same orientation; the step runs instantly without pausing surrounding motion. |
 | `move(label, distanceIn, headingDeg, twistDeg, speedCap)` | Drives a straight line while steering toward the requested heading change so the robot ends the move at the starting heading plus `twistDeg`. | Distance is signed; `headingDeg` is **relative to the robot’s current facing** (0° = drive straight ahead, 180° = drive straight backwards) and is converted to an absolute heading at runtime so paths stay robot-centric regardless of field orientation. `twistDeg` is relative to the heading at the start of the step (0° to maintain orientation). Power clamps to `speedCap` and never exceeds `SharedRobotTuning.DRIVE_MAX_POWER`; the twist controller shares the same cap while blending rotation during the translation. |
+| `endgameMove(label, distanceIn, headingDeg, twistDeg, speedCap)` | Schedules a move in the ENDGAME phase so it waits until the MAIN phase is over (per the endgame reserve). | Use for final retreat moves that must start near the end of autonomous without interrupting normal MAIN steps. |
 | `moveToPosition(label, targetX, targetY, headingDeg, speedCap)` | Field-centric drive to a specific odometry coordinate using fused odometry (drive encoders + IMU + AprilTags) so the robot center arrives at `targetX, targetY` and finishes at `headingDeg`. | Uses `BaseAuto.moveToPosition(...)` helper; clamps speed to `SharedRobotTuning.DRIVE_MAX_POWER` and reuses turn tolerances from drive helpers. |
 | `rotate(label, deltaDeg, speedCap)` | Relative IMU turn by `deltaDeg`. | Positive values turn counter-clockwise from the current heading. |
 | `rotateToHeading(label, headingDeg, speedCap)` | Absolute IMU turn to `headingDeg`. | Computes the shortest path from the current heading and clamps power with `SharedRobotTuning.TURN_TWIST_CAP` if `speedCap` is higher. |
@@ -83,6 +88,7 @@ field-aware helpers to know about are:
 | `returnToStoredHeading(label, speedCap)` | Turns back to the most recent stored heading. | No-op if `rememberHeading()` was never called. Honors the same twist caps as other turn helpers. |
 | `setStartingPose(x, y, headingDeg)` *(INIT helper)* | Seeds the fused odometry pose during INIT before the OpMode starts. | Call inside your auto class (outside the `sequence()` chain) to declare the expected robot-center pose on the field; BaseAuto and TeleOp also use this hook when re-localizing from goal tags so Auto→TeleOp pose handoff stays continuous. |
 | `custom(action)` / `custom(label, action)` | Runs arbitrary code. | `action` is an `AutoStep` executed synchronously; use for bespoke logic such as toggling vision pipelines or adjusting subsystem states. |
+| `addEndgameStep(action)` | Adds a custom ENDGAME step. | Runs after MAIN time expires; useful for one-off retreat steps without building a full helper. |
 
 > **Scan sweep primer:** `rotateToTarget(...)` multiplies `SharedRobotTuning.TURN_TWIST_CAP` by the provided `turnSpeedFraction` to compute the twist command while scanning. When the goal tag is not visible, the helper drives the robot to the requested `primarySweepDeg`, then follows the counter-sweep rule you provide before repeating (unless you omit the counter sweep entirely). Passing a **positive** `oppositeSweepDeg` pushes through zero into the other direction (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 90, 30)` visits +90°, returns to 0°, checks -30°, and comes back to center). Passing a **negative** value stops short of zero by that magnitude so the scan bounces on the same side (for example, `.rotateToTarget("Scan", ScanDirection.CCW, 0.25, 180, -90)` swings 180° counter-clockwise, returns clockwise to +90°—still on the counter-clockwise side of center—and heads back toward 180°). Passing **zero** returns to center before re-running the primary sweep, and omitting `oppositeSweepDeg` holds at the primary sweep limit with no return leg. Choose larger sweep angles when you need to search a wider arc; tweak `TURN_TWIST_CAP` to globally change the underlying twist cap.
 
@@ -162,7 +168,21 @@ the wall and must end facing upfield.
 recovery. Shorten only after confirming the feed motor and flywheels can
 reset without sagging RPM.
 
-### 3. Clearing a Jam Mid-Route
+### 3. Endgame Retreat with a Custom Step
+
+```java
+sequence()
+    .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
+    .readyToLaunch("Ready launcher", 3200)
+    .fire("Volley", 3, true, true, 3000)
+    .addEndgameStep(() -> drive.move(8.0, 0.0, 0.6))
+    .run();
+```
+
+**When to use:** When you need a quick, one-off ENDGAME action without a
+dedicated helper (for example, a short retreat move).
+
+### 4. Clearing a Jam Mid-Route
 
 ```java
 sequence()
@@ -178,7 +198,7 @@ want a one-button recovery after detecting a misfire. The eject step
 mirrors the TeleOp B-button behavior: it temporarily overrides AutoSpeed,
 feeds once with intake assist, and then restores the prior RPM.
 
-### 4. Custom Intake-Assist Routine for Testing
+### 5. Custom Intake-Assist Routine for Testing
 
 ```java
 sequence()
@@ -315,4 +335,4 @@ handoffs and mentor reviews.
 
 ---
 
-*Last updated: 2026‑01‑03*
+*Last updated: 2026‑01‑09*

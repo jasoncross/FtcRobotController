@@ -71,8 +71,11 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (+12, -72, 0) in the field-center frame (human wall = −72" Y).
+    // CHANGES (2026-01-09): Added a 1s endgame reserve and moved the final retreat drive into ENDGAME sequencing.
+    private static final long ENDGAME_RESERVE_MS = 1000;
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
+    @Override protected long endgameReserveMs() { return ENDGAME_RESERVE_MS; }
     public Auto_Red_Human() { setStartingPose(12.0, -63.0, 0.0); }
     // Telemetry callout for the field-side volunteer verifying orientation (edit
     // this whenever start staging changes so the Start Pose telemetry stays
@@ -97,7 +100,7 @@ public class Auto_Red_Human extends BaseAuto {
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.6, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 250)
                 .fireContinuous("firing",1500,true, true)
-                .move("Drive out",8,0,0,1)
+                .endgameMove("Drive out",8,0,0,1)
                 .run();
     }
 }

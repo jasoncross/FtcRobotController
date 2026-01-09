@@ -214,6 +214,13 @@ public abstract class BaseAuto extends LinearOpMode {
     // CHANGES (2025-12-31): Allowed FeedStop to open while continuous-fire waits on RPM readiness,
     //                        gating the feed motor instead of the gate motion.
     //                        with the IMU seed definition.
+    // CHANGES (2026-01-09): Added an autonomous match timer with per-OpMode endgame reserves,
+    //                        MAIN/ENDGAME AutoSequence phases, and main-phase early-exit guards
+    //                        so endgame retreat moves can start on time.
+    // CHANGES (2026-01-09): Allowed ENDGAME steps to run immediately once MAIN steps finish,
+    //                        without waiting for the endgame reserve timer.
+    // CHANGES (2026-01-09): Added auto timer and MAIN/ENDGAME status telemetry near the
+    //                        top of the Auto status block for clearer runtime context.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -241,6 +248,9 @@ public abstract class BaseAuto extends LinearOpMode {
 
     // Optional hook allowing derived autos to perform extra telemetry or sensor prep pre-start.
     protected void onPreStartLoop() {}
+
+    /** Override in derived autos to reserve time for endgame actions (per-OpMode constant). */
+    protected long endgameReserveMs() { return 0L; }
 
     // Core subsystems shared by all autos.
     protected Drivebase drive;           // Field-centric mecanum drive helper
@@ -275,11 +285,13 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double DEF_AUTO_SEED_RPM  = 2500.0;
     private static final long   DEF_RPM_SETTLE_MS  = 150L;
     private static final long   DEFAULT_BETWEEN_MS = 3000; // Default between-shot wait used when callers pass ≤ 0
+    private static final long   AUTO_DURATION_MS   = 30000L;
     private static final double M_TO_IN            = 39.37007874015748;
 
     private String autoOpModeName;
     private Integer lastReportedPipelineIndex = null;
     private boolean lastReadyHadLock = false;
+    private long autoStartMs = -1L;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -332,6 +344,29 @@ public abstract class BaseAuto extends LinearOpMode {
             return;
         }
         launcher.updateReadyLatch(nowMs, launcher.targetRpm);
+    }
+
+    /** Elapsed autonomous time (ms) since START. */
+    protected final long autoElapsedMs() {
+        if (autoStartMs < 0L) {
+            return 0L;
+        }
+        return Math.max(0L, System.currentTimeMillis() - autoStartMs);
+    }
+
+    /** Remaining autonomous time (ms), clamped to ≥ 0. */
+    protected final long autoRemainingMs() {
+        return Math.max(0L, AUTO_DURATION_MS - autoElapsedMs());
+    }
+
+    /** Remaining MAIN-phase time (ms) after reserving endgame, clamped to ≥ 0. */
+    protected final long mainRemainingMs() {
+        return Math.max(0L, autoRemainingMs() - Math.max(0L, endgameReserveMs()));
+    }
+
+    /** True when MAIN phase is over and ENDGAME steps should begin. */
+    protected final boolean mainPhaseOver() {
+        return mainRemainingMs() <= 0L;
     }
 
 
@@ -421,6 +456,7 @@ public abstract class BaseAuto extends LinearOpMode {
             stopVisionIfAny();
             return;
         }
+        autoStartMs = System.currentTimeMillis();
         if (limelightAutoSelector != null) {
             limelightAutoSelector.notifyOpModeStarted();
         }
@@ -518,6 +554,10 @@ public abstract class BaseAuto extends LinearOpMode {
         long startMs = System.currentTimeMillis();
 
         while (opModeIsActive()) {
+            if (mainPhaseOver()) {
+                drive.stopAll();
+                return false;
+            }
             FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (timeoutMs > 0 && (now - startMs) >= timeoutMs) {
@@ -664,6 +704,12 @@ public abstract class BaseAuto extends LinearOpMode {
             updateIntakeFlowForAuto();
             FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
+            if (mainPhaseOver()) {
+                updateStatusWithPose(phase + " – endgame reserve", false, loopPose);
+                telemetry.update();
+                lastReadyHadLock = false;
+                return false;
+            }
             if (now >= deadline) {
                 updateStatusWithPose(phase + " – timeout", false, loopPose);
                 telemetry.addData("Phase", phase);
@@ -765,9 +811,15 @@ public abstract class BaseAuto extends LinearOpMode {
         autoCtrl.setAutoEnabled(true);
         boolean resumeIntakeAfterFire = intake.isOn();
         for (int i = 0; i < count && opModeIsActive(); i++) {
+            if (mainPhaseOver()) {
+                break;
+            }
             final String shotPhase = String.format("Volley %d/%d", i + 1, count);
             boolean lockedForShot = !requireLock;
             if (requireLock) {
+                if (mainPhaseOver()) {
+                    break;
+                }
                 lockedForShot = requireLockOrTimeOut(1200, shotPhase + " – acquire lock");
                 if (!lockedForShot) {
                     updateStatusWithPose("Hold position", false, updateOdometryPose());
@@ -775,6 +827,9 @@ public abstract class BaseAuto extends LinearOpMode {
                     telemetry.update();
                     continue; // do not free-fire when lock required
                 }
+            }
+            if (mainPhaseOver()) {
+                break;
             }
 
             double holdTarget = autoCtrl.hold();
@@ -805,7 +860,7 @@ public abstract class BaseAuto extends LinearOpMode {
                         TeleOpDriverDefaults.FIRING_AUTO_AIM_TIME_THRESHOLD_MS);
             }
 
-            while (opModeIsActive() && firingController != null && !firingController.isIdle()) {
+            while (opModeIsActive() && !mainPhaseOver() && firingController != null && !firingController.isIdle()) {
                 long now = System.currentTimeMillis();
                 firingController.setIntakeDesiredState(intake.isOn());
                 firingController.setContinuousRequested(false);
@@ -828,6 +883,9 @@ public abstract class BaseAuto extends LinearOpMode {
                 telemetry.update();
                 idle();
             }
+            if (mainPhaseOver()) {
+                break;
+            }
 
             // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
             double recoverTarget = autoCtrl.hold();
@@ -837,6 +895,9 @@ public abstract class BaseAuto extends LinearOpMode {
             launcher.setTargetRpm(recoverTarget);
 
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
+            if (mainPhaseOver()) {
+                break;
+            }
             sleep((int)delay);
             feed.update();
             updateIntakeFlowForAuto();
@@ -859,10 +920,16 @@ public abstract class BaseAuto extends LinearOpMode {
         if (runMs <= 0L) {
             return;
         }
+        if (mainPhaseOver()) {
+            return;
+        }
 
         boolean resumeIntakeAfterFire = intake.isOn();
         boolean lockedForRun = !requireLock;
         if (requireLock) {
+            if (mainPhaseOver()) {
+                return;
+            }
             lockedForRun = lastReadyHadLock || requireLockOrTimeOut(1200, label + " – acquire lock");
             if (!lockedForRun) {
                 updateStatusWithPose(label + " – skipped (no lock)", false, updateOdometryPose());
@@ -890,7 +957,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         long start = System.currentTimeMillis();
         long endMs = start + runMs;
-        while (opModeIsActive()) {
+        while (opModeIsActive() && !mainPhaseOver()) {
             long now = System.currentTimeMillis();
             boolean continueRequested = now < endMs;
 
@@ -969,7 +1036,7 @@ public abstract class BaseAuto extends LinearOpMode {
         long start = System.currentTimeMillis();
         long lastFlip = start;
 
-        while (opModeIsActive() && (System.currentTimeMillis() - start) < guardMs) {
+        while (opModeIsActive() && !mainPhaseOver() && (System.currentTimeMillis() - start) < guardMs) {
             updateIntakeFlowForAuto();
             VisionTargetProvider provider = visionTargetProvider;
             Double smoothedHeading = (provider != null) ? provider.getSmoothedHeadingErrorDeg() : null;
@@ -1198,6 +1265,17 @@ public abstract class BaseAuto extends LinearOpMode {
 
         telemetry.addData("Phase", statusPhase);
         mirroredLines.add("Phase: " + statusPhase);
+
+        String autoPhaseLabel = mainPhaseOver() ? "ENDGAME" : "MAIN";
+        String timerLine = String.format(Locale.US,
+                "Elapsed %d / Remaining %d / Main %d",
+                autoElapsedMs(),
+                autoRemainingMs(),
+                mainRemainingMs());
+        telemetry.addData("Auto Timer (ms)", timerLine);
+        telemetry.addData("Auto Phase", autoPhaseLabel);
+        mirroredLines.add("Auto Timer (ms): " + timerLine);
+        mirroredLines.add("Auto Phase: " + autoPhaseLabel);
 
         telemetry.addLine("");
         mirroredLines.add("");
@@ -1493,6 +1571,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
     protected final class AutoSequence {
         private final List<AutoStep> steps = new ArrayList<>();
+        private final List<AutoStep> endgameSteps = new ArrayList<>();
         private double storedHeading = Double.NaN;
         private boolean lastLock = false;
         private boolean lastAimReady = false;
@@ -1502,22 +1581,17 @@ public abstract class BaseAuto extends LinearOpMode {
             return this;
         }
 
+        private AutoSequence addEndgameStepInternal(AutoStep step) {
+            endgameSteps.add(step);
+            return this;
+        }
+
         private String resolveLabel(String provided, String fallback) {
             return (provided == null || provided.isEmpty()) ? fallback : provided;
         }
 
-        public AutoSequence rememberHeading(String phase) {
-            return addStep(() -> {
-                storedHeading = drive.heading();
-                String label = resolveLabel(phase, "Record heading");
-                updateStatusWithPose(label, lastLock, updateOdometryPose());
-                telemetry.addData("Stored heading (deg)", storedHeading);
-                telemetry.update();
-            });
-        }
-
-        public AutoSequence move(String phase, double distanceInches, double headingDeg, double twistDeg, double speedCap) {
-            return addStep(() -> {
+        private AutoStep buildMoveStep(String phase, double distanceInches, double headingDeg, double twistDeg, double speedCap) {
+            return () -> {
                 String label = resolveLabel(phase, "Move");
                 lastLock = false;
                 lastAimReady = false;
@@ -1539,7 +1613,29 @@ public abstract class BaseAuto extends LinearOpMode {
                 drive.stopAll();
                 updateStatusWithPose(label + " complete", false, updateOdometryPose());
                 telemetry.update();
+            };
+        }
+
+        public AutoSequence rememberHeading(String phase) {
+            return addStep(() -> {
+                storedHeading = drive.heading();
+                String label = resolveLabel(phase, "Record heading");
+                updateStatusWithPose(label, lastLock, updateOdometryPose());
+                telemetry.addData("Stored heading (deg)", storedHeading);
+                telemetry.update();
             });
+        }
+
+        public AutoSequence move(String phase, double distanceInches, double headingDeg, double twistDeg, double speedCap) {
+            return addStep(buildMoveStep(phase, distanceInches, headingDeg, twistDeg, speedCap));
+        }
+
+        public AutoSequence endgameMove(String phase, double distanceInches, double headingDeg, double twistDeg, double speedCap) {
+            return addEndgameStepInternal(buildMoveStep(phase, distanceInches, headingDeg, twistDeg, speedCap));
+        }
+
+        public AutoSequence addEndgameStep(AutoStep step) {
+            return addEndgameStepInternal(step);
         }
 
         public AutoSequence rotate(String phase, double degrees, double speedCap) {
@@ -1856,6 +1952,21 @@ public abstract class BaseAuto extends LinearOpMode {
 
         public void run() throws InterruptedException {
             for (AutoStep step : steps) {
+                if (!opModeIsActive()) {
+                    return;
+                }
+                if (mainPhaseOver()) {
+                    break;
+                }
+                step.run();
+                if (mainPhaseOver()) {
+                    break;
+                }
+            }
+            if (!opModeIsActive()) {
+                return;
+            }
+            for (AutoStep step : endgameSteps) {
                 if (!opModeIsActive()) {
                     break;
                 }

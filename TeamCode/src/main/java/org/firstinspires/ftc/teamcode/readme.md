@@ -81,7 +81,7 @@ TeamCode/
     ├── assist/
     │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
-    │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder (intake auto-enables at START)
+    │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder (match timer + MAIN/ENDGAME phases; intake auto-enables at START)
     │   ├── Auto_Blue_30.java                 ← Blue alliance safety auto (drive 30" and stop)
     │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 long-run volley → retreat)
     │   ├── Auto_Blue_Human_LongShot.java     ← Blue human-side launch-line volley → drive upfield
@@ -405,7 +405,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2026-01-09** – Ensured AUTO always reasserts the intake-on default at START, immediately syncs the firing controller’s desired intake state, and restores intake after each auto firing sequence so autonomous routines keep collecting.
+- **2026-01-09** – Ensured AUTO always reasserts the intake-on default at START, immediately syncs the firing controller’s desired intake state, restores intake after each auto firing sequence, added MAIN/ENDGAME timing reserves with immediate ENDGAME sequencing once MAIN steps complete, and surfaced the auto timer/phase telemetry near the top of the AUTO status block.
 - **2026-01-07** – Added edge-triggered StopAll feed hold logic so FeedStop parks once and resumes cleanly, introduced an anti-jitter FeedStop command guard tunable, and retuned firing cadence (snappier RPM gate, stream/burst recovery tuning, feed-lead skips when the gate stays open) with debug-only telemetry updates to validate the new firing profiles across TeleOp and Auto.
 - **2026-01-06** – Moved TeleOp debug telemetry defaults and per-system debug enable flags into `DebugTelemetryConfig`, kept the FeedStop held open through continuous/spray streams until the fire button releases, and froze FeedStop updates while StopAll is latched so the gate stays still during STOP.
 - **2026-01-05** – Added a dedicated firing-state debug telemetry toggle with per-shot timing and readiness metrics, introduced a looser ready-latch fast path plus recovery-band exits for the firing controller, ensured continuous shots return the FeedStop before recovering, finalized per-shot timing snapshots/history with strict continuous pre-ready snapshotting, and ensured RECOVERING timing is captured once while clarifying spray-like RPM gate skipping in TeleOp/Auto docs.

@@ -73,8 +73,11 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (-12, -72, 0) in the field-center frame (human wall = −72" Y).
+    // CHANGES (2026-01-09): Added a 1s endgame reserve and moved the final retreat drive into ENDGAME sequencing.
+    private static final long ENDGAME_RESERVE_MS = 1000;
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
+    @Override protected long endgameReserveMs() { return ENDGAME_RESERVE_MS; }
     public Auto_Blue_Human_LongShot() { setStartingPose(-12.0, -63.0, 0.0); }
     // Telemetry label describing the expected robot orientation at init (edit
     // this string whenever the start pose changes so the Driver Station prompt
@@ -101,7 +104,7 @@ public class Auto_Blue_Human_LongShot extends BaseAuto {
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 500)
                 .fireContinuous("firing",1500,false, true)
-                .move("Drive out",8,0,0,1)
+                .endgameMove("Drive out",8,0,0,1)
 
                 .run();
     }

@@ -105,6 +105,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        START without resets.
     // CHANGES (2025-12-28): Added Limelight pipeline memory fallback telemetry
     //                        lines while preserving urgent failure banner ordering.
+    // CHANGES (2026-01-09): Synced the auto-start intake enable with the firing controller
+    //                        desired state so all autos begin with intake running.
     // CHANGES (2026-01-07): Added debug-only firing telemetry lines for feedstop
     //                        and cadence profiling during auto sequences.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
@@ -423,6 +425,9 @@ public abstract class BaseAuto extends LinearOpMode {
         feed.startFeedStopAfterStart();
         feed.setIdleHoldActive(true); // Allow idle counter-rotation only after START
         intake.set(true);             // Mirror TeleOp default: intake runs once the match starts
+        if (firingController != null) {
+            firingController.setIntakeDesiredState(true);
+        }
         if (vision != null) vision.setObeliskAutoLatchEnabled(true); // Capture motifs during movement
 
         try { runSequence(); }

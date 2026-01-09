@@ -195,6 +195,9 @@ lead time repeatedly. TeleOp can optionally force a compact firing-state debug b
   reports both values in telemetry.
 - Aim/launcher prep loops exit as soon as their readiness goals are satisfied, using timeouts only as fallbacks so sequences
   proceed immediately once a step is complete.
+- BaseAuto now tracks the 30 s autonomous match timer and supports MAIN vs ENDGAME sequencing: MAIN steps run until they finish
+  or the per-OpMode endgame reserve is reached, then ENDGAME steps begin so final retreat moves can start on time without
+  changing the underlying aim/fire behavior.
 - The dashboard-driven `TEST: Drive Distance Tuner` OpMode (`auto/TEST_DriveDistanceTuner.java`) uses BaseAuto + AutoSequence
   to run single move/rotate steps with configurable distance, heading, twist, and speed caps for calibration checks.
 

@@ -168,7 +168,21 @@ the wall and must end facing upfield.
 recovery. Shorten only after confirming the feed motor and flywheels can
 reset without sagging RPM.
 
-### 3. Clearing a Jam Mid-Route
+### 3. Endgame Retreat with a Custom Step
+
+```java
+sequence()
+    .rotateToTarget("Find Tag", ScanDirection.CW, 0.25, 90, 30, 10000)
+    .readyToLaunch("Ready launcher", 3200)
+    .fire("Volley", 3, true, true, 3000)
+    .addEndgameStep(() -> drive.move(8.0, 0.0, 0.6))
+    .run();
+```
+
+**When to use:** When you need a quick, one-off ENDGAME action without a
+dedicated helper (for example, a short retreat move).
+
+### 4. Clearing a Jam Mid-Route
 
 ```java
 sequence()
@@ -184,7 +198,7 @@ want a one-button recovery after detecting a misfire. The eject step
 mirrors the TeleOp B-button behavior: it temporarily overrides AutoSpeed,
 feeds once with intake assist, and then restores the prior RPM.
 
-### 4. Custom Intake-Assist Routine for Testing
+### 5. Custom Intake-Assist Routine for Testing
 
 ```java
 sequence()

@@ -219,6 +219,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        so endgame retreat moves can start on time.
     // CHANGES (2026-01-09): Allowed ENDGAME steps to run immediately once MAIN steps finish,
     //                        without waiting for the endgame reserve timer.
+    // CHANGES (2026-01-09): Added auto timer and MAIN/ENDGAME status telemetry near the
+    //                        top of the Auto status block for clearer runtime context.
 
     // Implemented by child classes to define alliance, telemetry description, scan direction, and core actions.
     protected abstract Alliance alliance();
@@ -1263,6 +1265,17 @@ public abstract class BaseAuto extends LinearOpMode {
 
         telemetry.addData("Phase", statusPhase);
         mirroredLines.add("Phase: " + statusPhase);
+
+        String autoPhaseLabel = mainPhaseOver() ? "ENDGAME" : "MAIN";
+        String timerLine = String.format(Locale.US,
+                "Elapsed %d / Remaining %d / Main %d",
+                autoElapsedMs(),
+                autoRemainingMs(),
+                mainRemainingMs());
+        telemetry.addData("Auto Timer (ms)", timerLine);
+        telemetry.addData("Auto Phase", autoPhaseLabel);
+        mirroredLines.add("Auto Timer (ms): " + timerLine);
+        mirroredLines.add("Auto Phase: " + autoPhaseLabel);
 
         telemetry.addLine("");
         mirroredLines.add("");

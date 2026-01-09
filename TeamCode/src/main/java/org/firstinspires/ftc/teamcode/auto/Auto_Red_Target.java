@@ -74,19 +74,17 @@ public class Auto_Red_Target extends BaseAuto {
         sequence()
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
-                .spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 0.85)
-                // Telemetry label mirrors the shared driver callout; BaseAuto still targets the RED goal (ID 24).
+                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 1)
                 .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
-                .readyToLaunch("Ready launcher for volley", 3200)
-                .fire("Fire volley", 3, true, true, 300)
+                .readyToLaunch("Ready launcher for volley", 500)
+                .fireContinuous("firing",2000,true, true)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive to balls", 26.0, 90.0, -45.0, 0.85)
-                .move("Drive backward", 26.0, 180.0, 0.0, 0.85)
-                .move("Drive to triangle", 48.0, -15.0, -135.0, 0.85)
+                .move("Drive to balls", 26.0, 90.0, -45.0, 1)
+                .move("Drive backward", 26.0, 180.0, 0.0, 1)
+                .move("Drive to triangle", 48.0, -15.0, -135.0, 1)
                 //.fire("Fire volley", 3, false, true, 0)
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",1500,true, true)
+                .fireContinuous("firing",2000,true, true)
                 //.waitFor("Hold position", 500)
                 .run();
     }

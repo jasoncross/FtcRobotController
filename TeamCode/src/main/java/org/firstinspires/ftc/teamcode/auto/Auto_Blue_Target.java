@@ -76,7 +76,7 @@ public class Auto_Blue_Target extends BaseAuto {
                 .move("Drive to standoff", 40.0, 0.0, 0.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",1500,false, true)
+                .fireContinuous("firing",2000,true, true)
                 //.fire("Fire volley", 3, true, true, 00)
                 .returnToStoredHeading("Return to start heading", .25)
                 .move("Drive to balls", 26.0, -90.0, 45.0, 1)
@@ -84,7 +84,7 @@ public class Auto_Blue_Target extends BaseAuto {
                 .move("Drive to triangle", 48.0, 15.0, 135.0, 1)
                 //.fire("Fire volley", 3, true, true, 100)
                 .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",1500,true, true)
+                .fireContinuous("firing",2000,true, true)
                 //.waitFor("Hold position", 500)
                 .run();
     }

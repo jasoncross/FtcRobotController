@@ -189,7 +189,7 @@ lead time repeatedly. TeleOp can optionally force a compact firing-state debug b
 - Start-pose seeding now aligns the IMU heading offset and INIT telemetry reports the seed pose, IMU yaw, and any vision override reason.
 - Auto dashboard updates are now driven from a single cached odometry update each loop so the field overlay stays in lockstep with motion without double-updating; Auto loops should call `updateOdometryPose()` once per iteration and pass the cached pose into `updateStatusWithPose(...)`.
 - Auto saves the final fused pose (including heading) to `PoseStore` on stop/cleanup, and TeleOp restores that pose on init to preserve heading continuity.
-- Auto start now reasserts intake-on defaults and immediately syncs the firing controller’s desired intake state so all autonomous routines begin with intake running.
+- Auto start now reasserts intake-on defaults, immediately syncs the firing controller’s desired intake state, and restores intake after auto firing sequences so autonomous routines keep collecting.
 - AutoSequence `move(...)` steps now treat the heading argument as **relative to the robot’s current facing** so translation
   vectors stay robot-centric even after mid-match heading changes; the builder resolves the absolute heading internally and
   reports both values in telemetry.

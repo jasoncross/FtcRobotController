@@ -62,7 +62,7 @@ public final class AutoRpmConfig {
             2800.0,
             3000.0,
             3200.0,
-            3900.0,
+            4000.0,
             4250.0
     }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()

@@ -197,8 +197,6 @@ lead time repeatedly. TeleOp can optionally force a compact firing-state debug b
   proceed immediately once a step is complete.
 - AutoSequence `readyToLaunch(...)` now supports an optional fallback launch distance so AutoSpeed can seed RPM before a tag
   distance is visible, then overrides that speed once a live lock arrives.
-- AutoSequence `adjustAutoScale(...)` applies TeleOp-style AutoRPM percentage tweaks during autonomous runs, scaling all
-  subsequent AutoSpeed targets without changing the calibration table.
 - BaseAuto now tracks the 30 s autonomous match timer and supports MAIN vs ENDGAME sequencing: MAIN steps run until they finish
   or the per-OpMode endgame reserve is reached, then ENDGAME steps begin so final retreat moves can start on time without
   changing the underlying aim/fire behavior.

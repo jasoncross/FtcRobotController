@@ -73,7 +73,7 @@ public class Auto_Blue_Human extends BaseAuto {
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (-12, -72, 0) in the field-center frame (human wall = −72" Y).
     // CHANGES (2026-01-09): Added a 1s endgame reserve and moved the final retreat drive into ENDGAME sequencing.
-    private static final long ENDGAME_RESERVE_MS = 1000;
+    private static final long ENDGAME_RESERVE_MS = 1500;
     // Alliance identity for BaseAuto scaffolding.
     @Override protected Alliance alliance() { return Alliance.BLUE; }
     @Override protected long endgameReserveMs() { return ENDGAME_RESERVE_MS; }
@@ -91,15 +91,15 @@ public class Auto_Blue_Human extends BaseAuto {
                 .rememberHeading("Record start heading")
                 .move("Drive forward to target firing zone", 74.0, 0.0, 0.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, 90, 30, 10000)
-                .readyToLaunch("Ready launcher for volley", 0)
+                .readyToLaunch("Ready launcher for volley", 0, 62)
                 .fireContinuous("firing",1500,true, false)
                 //.fire("Fire volley", 3, true, true, 000)
                 .returnToStoredHeading("Return to start heading", 0.85)
                 .move("Drive to balls", 52.0, 170.0, -90.0, 1.0)
-                .move("Drive backward", 32.0, 180.0, 0.0, 1.0)
-                .move("Drive to triangle", 58.0, -26.0, 115.0, 1.0)
+                .move("Drive backward", 34.0, 180.0, 0.0, 1.0)
+                .move("Drive to triangle", 56.0, -26.0, 115.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.4, -30, 30, 1000)
-                .readyToLaunch("Ready launcher for volley", 0)
+                .readyToLaunch("Ready launcher for volley", 500,117 )
                 .fireContinuous("firing",1500,false, true)
                 .endgameMove("Drive out",8,0,0,1)
                 .run();

@@ -107,8 +107,6 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        lines while preserving urgent failure banner ordering.
     // CHANGES (2026-01-10): Added a fallback launch distance option for readyToLaunch
     //                        so autos can seed AutoSpeed when range is unknown.
-    // CHANGES (2026-01-10): Added AutoSequence-adjustable AutoRPM scaling so autos can
-    //                        apply TeleOp-style percent tweaks during a run.
     // CHANGES (2026-01-09): Synced the auto-start intake enable with the firing controller
     //                        desired state so all autos begin with intake running.
     // CHANGES (2026-01-09): Reasserted intake enable after auto firing sequences so intake
@@ -270,9 +268,6 @@ public abstract class BaseAuto extends LinearOpMode {
     // Controllers supporting aiming and RPM automation.
     protected final TagAimController aim = new TagAimController();
     protected final LauncherAutoSpeedController autoCtrl = new LauncherAutoSpeedController();
-    private double autoRpmScaleFactor = 1.0; // AutoRPM multiplier for auto sequences (1.0 = no tweak)
-    private static final double AUTO_RPM_SCALE_MIN = 0.50;
-    private static final double AUTO_RPM_SCALE_MAX = 1.50;
     protected Odometry odometry;                     // Fused drive + IMU + AprilTag pose
     protected FieldPose startPose = new FieldPose(0.0, OdometryConfig.HUMAN_WALL_Y, 0.0); // Staging pose seeded by derived autos
     private boolean visionSeededStart = false;
@@ -754,7 +749,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 targetRpm = fallbackRpm;
             }
 
-            launcher.setTargetRpm(applyAutoRpmScale(targetRpm));
+            launcher.setTargetRpm(targetRpm);
             updateLauncherReadyLatch(now);
 
             double currentRpm = launcher.getCurrentRpm();
@@ -864,7 +859,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     holdTarget = autoSeedRpm();
                 }
             }
-            launcher.setTargetRpm(applyAutoRpmScale(holdTarget));
+            launcher.setTargetRpm(holdTarget);
             updateLauncherReadyLatch(System.currentTimeMillis());
 
             boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
@@ -917,7 +912,7 @@ public abstract class BaseAuto extends LinearOpMode {
             if (recoverTarget <= 0) {
                 recoverTarget = holdTarget;
             }
-            launcher.setTargetRpm(applyAutoRpmScale(recoverTarget));
+            launcher.setTargetRpm(recoverTarget);
 
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
             if (mainPhaseOver()) {
@@ -972,7 +967,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 holdTarget = autoSeedRpm();
             }
         }
-        launcher.setTargetRpm(applyAutoRpmScale(holdTarget));
+        launcher.setTargetRpm(holdTarget);
         updateLauncherReadyLatch(System.currentTimeMillis());
 
         boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
@@ -988,7 +983,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             double sustainTarget = autoCtrl.hold();
             if (sustainTarget > 0) {
-                launcher.setTargetRpm(applyAutoRpmScale(sustainTarget));
+                launcher.setTargetRpm(sustainTarget);
             }
 
             if (firingController != null) {
@@ -1583,20 +1578,11 @@ public abstract class BaseAuto extends LinearOpMode {
         try { autoCtrl.setDefaultRpm(seed); } catch (Throwable ignored) {}
         double target = autoCtrl.hold();
         if (target <= 0) { target = seed; }
-        double scaledTarget = applyAutoRpmScale(target);
-        launcher.setTargetRpm(scaledTarget);
+        launcher.setTargetRpm(target);
         updateStatusWithPose(label, false, updateOdometryPose());
-        telemetry.addData("Target RPM", scaledTarget);
-        telemetry.addData("AutoRPM scale", String.format(Locale.US, "x%.3f", autoRpmScaleFactor));
+        telemetry.addData("Target RPM", target);
         telemetry.addData("Auto default RPM", seed);
         telemetry.update();
-    }
-
-    private double applyAutoRpmScale(double rpm) {
-        if (!Double.isFinite(rpm) || rpm <= 0.0) {
-            return rpm;
-        }
-        return rpm * autoRpmScaleFactor;
     }
 
     protected final AutoSequence sequence() {
@@ -1917,28 +1903,6 @@ public abstract class BaseAuto extends LinearOpMode {
             });
         }
 
-        public AutoSequence adjustAutoScale(String phase, double percentage) {
-            return addStep(() -> {
-                String label = resolveLabel(phase, "Adjust AutoRPM scale");
-                double before = autoRpmScaleFactor;
-                double candidate = autoRpmScaleFactor * (1.0 + percentage);
-                autoRpmScaleFactor = clamp(candidate, AUTO_RPM_SCALE_MIN, AUTO_RPM_SCALE_MAX);
-                updateStatusWithPose(label, false, updateOdometryPose());
-                telemetry.addData("Requested tweak (%)", String.format(Locale.US, "%+.1f", percentage * 100.0));
-                telemetry.addData("AutoRPM scale", String.format(Locale.US, "x%.3f (was x%.3f)", autoRpmScaleFactor, before));
-                if (autoCtrl.isAutoEnabled()) {
-                    double holdTarget = autoCtrl.hold();
-                    if (holdTarget <= 0) {
-                        holdTarget = launcher.targetRpm;
-                    }
-                    if (holdTarget > 0) {
-                        launcher.setTargetRpm(applyAutoRpmScale(holdTarget));
-                    }
-                }
-                telemetry.update();
-            });
-        }
-
         public AutoSequence eject(String phase) {
             return addStep(() -> {
                 String label = resolveLabel(phase, "Eject artifact");
@@ -1987,7 +1951,7 @@ public abstract class BaseAuto extends LinearOpMode {
                     if (holdTarget <= 0) {
                         holdTarget = (restoreRpm > 0) ? restoreRpm : autoSeedRpm();
                     }
-                    launcher.setTargetRpm(applyAutoRpmScale(holdTarget));
+                    launcher.setTargetRpm(holdTarget);
                 } else {
                     launcher.setTargetRpm(restoreRpm);
                 }

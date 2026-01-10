@@ -39,9 +39,11 @@ public class Auto_Red_30 extends BaseAuto {
     // Main autonomous path: drive 30" and stop.
     // CHANGES (2025-11-13): Updated header to describe pure-movement plan and removed unused imports.
     // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
+    // CHANGES (2026-01-10): Added AutoSequence AutoRPM tweak step for parity with TeleOp scale nudges.
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
+                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 .move("Clear wall (drive 30 in)", 30.0, 0.0, 0.0, 0.85)
                 .run();
     }

@@ -107,6 +107,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        lines while preserving urgent failure banner ordering.
     // CHANGES (2026-01-10): Added a fallback launch distance option for readyToLaunch
     //                        so autos can seed AutoSpeed when range is unknown.
+    // CHANGES (2026-01-10): Added AutoSequence auto-RPM scaling steps so autos can
+    //                        apply per-press AutoSpeed tweaks like TeleOp.
     // CHANGES (2026-01-09): Synced the auto-start intake enable with the firing controller
     //                        desired state so all autos begin with intake running.
     // CHANGES (2026-01-09): Reasserted intake enable after auto firing sequences so intake
@@ -294,6 +296,9 @@ public abstract class BaseAuto extends LinearOpMode {
     private Integer lastReportedPipelineIndex = null;
     private boolean lastReadyHadLock = false;
     private long autoStartMs = -1L;
+    private static final double AUTO_RPM_TWEAK_MIN = 0.50;
+    private static final double AUTO_RPM_TWEAK_MAX = 1.50;
+    private double autoRpmTweakFactor = 1.0;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -322,6 +327,27 @@ public abstract class BaseAuto extends LinearOpMode {
     private double autoSeedRpm() {
         try { return SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED; }
         catch (Throwable t) { return DEF_AUTO_SEED_RPM; }
+    }
+
+    private double clampAutoRpmTweak(double factor) {
+        return clamp(factor, AUTO_RPM_TWEAK_MIN, AUTO_RPM_TWEAK_MAX);
+    }
+
+    private double scaleAutoRpm(double rpm) {
+        if (!Double.isFinite(rpm)) {
+            return rpm;
+        }
+        return rpm * autoRpmTweakFactor;
+    }
+
+    private double unscaleAutoRpm(double rpm) {
+        if (!Double.isFinite(rpm)) {
+            return rpm;
+        }
+        if (Math.abs(autoRpmTweakFactor) < 1e-6) {
+            return rpm;
+        }
+        return rpm / autoRpmTweakFactor;
     }
 
     private long rpmSettleMs() {
@@ -749,7 +775,8 @@ public abstract class BaseAuto extends LinearOpMode {
                 targetRpm = fallbackRpm;
             }
 
-            launcher.setTargetRpm(targetRpm);
+            double scaledTargetRpm = scaleAutoRpm(targetRpm);
+            launcher.setTargetRpm(scaledTargetRpm);
             updateLauncherReadyLatch(now);
 
             double currentRpm = launcher.getCurrentRpm();
@@ -854,12 +881,12 @@ public abstract class BaseAuto extends LinearOpMode {
 
             double holdTarget = autoCtrl.hold();
             if (holdTarget <= 0) {
-                holdTarget = launcher.targetRpm;
+                holdTarget = unscaleAutoRpm(launcher.targetRpm);
                 if (holdTarget <= 0) {
                     holdTarget = autoSeedRpm();
                 }
             }
-            launcher.setTargetRpm(holdTarget);
+            launcher.setTargetRpm(scaleAutoRpm(holdTarget));
             updateLauncherReadyLatch(System.currentTimeMillis());
 
             boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
@@ -912,7 +939,7 @@ public abstract class BaseAuto extends LinearOpMode {
             if (recoverTarget <= 0) {
                 recoverTarget = holdTarget;
             }
-            launcher.setTargetRpm(recoverTarget);
+            launcher.setTargetRpm(scaleAutoRpm(recoverTarget));
 
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
             if (mainPhaseOver()) {
@@ -962,12 +989,12 @@ public abstract class BaseAuto extends LinearOpMode {
         autoCtrl.setAutoEnabled(true);
         double holdTarget = autoCtrl.hold();
         if (holdTarget <= 0) {
-            holdTarget = launcher.targetRpm;
+            holdTarget = unscaleAutoRpm(launcher.targetRpm);
             if (holdTarget <= 0) {
                 holdTarget = autoSeedRpm();
             }
         }
-        launcher.setTargetRpm(holdTarget);
+        launcher.setTargetRpm(scaleAutoRpm(holdTarget));
         updateLauncherReadyLatch(System.currentTimeMillis());
 
         boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
@@ -983,7 +1010,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             double sustainTarget = autoCtrl.hold();
             if (sustainTarget > 0) {
-                launcher.setTargetRpm(sustainTarget);
+                launcher.setTargetRpm(scaleAutoRpm(sustainTarget));
             }
 
             if (firingController != null) {
@@ -1578,9 +1605,12 @@ public abstract class BaseAuto extends LinearOpMode {
         try { autoCtrl.setDefaultRpm(seed); } catch (Throwable ignored) {}
         double target = autoCtrl.hold();
         if (target <= 0) { target = seed; }
-        launcher.setTargetRpm(target);
+        double scaledTarget = scaleAutoRpm(target);
+        launcher.setTargetRpm(scaledTarget);
         updateStatusWithPose(label, false, updateOdometryPose());
-        telemetry.addData("Target RPM", target);
+        telemetry.addData("Target RPM", scaledTarget);
+        telemetry.addData("AutoRPM scale", autoRpmTweakFactor);
+        telemetry.addData("Base RPM", target);
         telemetry.addData("Auto default RPM", seed);
         telemetry.update();
     }
@@ -1696,6 +1726,25 @@ public abstract class BaseAuto extends LinearOpMode {
                 lastLock = false;
                 lastAimReady = false;
                 spinLauncherToAutoRpmDefault(phase);
+            });
+        }
+
+        public AutoSequence adjustAutoScale(String phase, double percentage) {
+            return addStep(() -> {
+                String label = resolveLabel(phase, "Adjust AutoRPM scale");
+                lastLock = false;
+                lastAimReady = false;
+                double pct = Double.isFinite(percentage) ? percentage : 0.0;
+                double prior = autoRpmTweakFactor;
+                double candidate = prior * (1.0 + pct);
+                autoRpmTweakFactor = clampAutoRpmTweak(candidate);
+                updateStatusWithPose(label, false, updateOdometryPose());
+                if (!Double.isFinite(percentage)) {
+                    telemetry.addLine("⚠️ Invalid tweak value; using 0%");
+                }
+                telemetry.addData("Requested tweak", String.format(Locale.US, "%+.2f%%", pct * 100.0));
+                telemetry.addData("AutoRPM scale", String.format(Locale.US, "%.3f → %.3f", prior, autoRpmTweakFactor));
+                telemetry.update();
             });
         }
 
@@ -1949,9 +1998,12 @@ public abstract class BaseAuto extends LinearOpMode {
                     autoCtrl.setAutoEnabled(true);
                     double holdTarget = previousHold;
                     if (holdTarget <= 0) {
-                        holdTarget = (restoreRpm > 0) ? restoreRpm : autoSeedRpm();
+                        holdTarget = unscaleAutoRpm(restoreRpm);
+                        if (holdTarget <= 0) {
+                            holdTarget = autoSeedRpm();
+                        }
                     }
-                    launcher.setTargetRpm(holdTarget);
+                    launcher.setTargetRpm(scaleAutoRpm(holdTarget));
                 } else {
                     launcher.setTargetRpm(restoreRpm);
                 }

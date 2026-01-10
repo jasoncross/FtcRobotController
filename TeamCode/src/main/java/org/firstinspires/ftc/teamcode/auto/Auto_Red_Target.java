@@ -63,6 +63,7 @@ public class Auto_Red_Target extends BaseAuto {
     // CHANGES (2025-11-25): rotateToTarget scan now hard-codes the 10 s timeout on the call instead of relying on BaseAuto.
     // CHANGES (2025-11-26): Standardized rotate-to-target timeout literal to 10000 ms for readability.
     // CHANGES (2025-11-24): Added explicit twist parameter (0°) to AutoSequence.move(...) per new API.
+    // CHANGES (2026-01-10): Added AutoSequence AutoRPM tweak step for TeleOp-style scale adjustments.
     // Provide BaseAuto with alliance context for mirrored helper logic.
     @Override protected Alliance alliance() { return Alliance.RED; }
     // Orientation reminder for match setup crew (edit to refresh the Start Pose
@@ -72,6 +73,7 @@ public class Auto_Red_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
+                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
                 .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 1)

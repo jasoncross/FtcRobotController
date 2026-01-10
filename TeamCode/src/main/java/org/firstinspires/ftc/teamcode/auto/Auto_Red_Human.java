@@ -72,6 +72,7 @@ public class Auto_Red_Human extends BaseAuto {
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (+12, -72, 0) in the field-center frame (human wall = −72" Y).
     // CHANGES (2026-01-09): Added a 1s endgame reserve and moved the final retreat drive into ENDGAME sequencing.
+    // CHANGES (2026-01-10): Added AutoSequence AutoRPM tweak step for TeleOp-style scale adjustments.
     private static final long ENDGAME_RESERVE_MS = 1500;
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
@@ -86,6 +87,7 @@ public class Auto_Red_Human extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
+                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
                 .move("Drive forward to target firing zone", 76, 0.0, -45.0, 1)

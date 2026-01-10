@@ -105,6 +105,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        START without resets.
     // CHANGES (2025-12-28): Added Limelight pipeline memory fallback telemetry
     //                        lines while preserving urgent failure banner ordering.
+    // CHANGES (2026-01-10): Added a fallback launch distance option for readyToLaunch
+    //                        so autos can seed AutoSpeed when range is unknown.
     // CHANGES (2026-01-09): Synced the auto-start intake enable with the firing controller
     //                        desired state so all autos begin with intake running.
     // CHANGES (2026-01-09): Reasserted intake enable after auto firing sequences so intake
@@ -685,6 +687,10 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     protected final boolean readyLauncherUntilReady(long timeoutMs, String phase) {
+        return readyLauncherUntilReady(timeoutMs, phase, null);
+    }
+
+    protected final boolean readyLauncherUntilReady(long timeoutMs, String phase, Double launchDistanceIn) {
         drive.stopAll();
         autoCtrl.setAutoEnabled(true);
         try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
@@ -694,6 +700,9 @@ public abstract class BaseAuto extends LinearOpMode {
         final double fallbackRpm = autoSeedRpm();
         try { autoCtrl.setDefaultRpm(fallbackRpm); } catch (Throwable ignored) {}
         lastReadyHadLock = false;
+        Double fallbackDistance = (launchDistanceIn != null && Double.isFinite(launchDistanceIn))
+                ? launchDistanceIn
+                : null;
 
         boolean hadLock = false;
         long start = System.currentTimeMillis();
@@ -728,10 +737,14 @@ public abstract class BaseAuto extends LinearOpMode {
             if (distanceIn != null) { hadLock = true; }
 
             double targetRpm;
+            boolean usingFallbackDistance = false;
             if (distanceIn != null) {
                 targetRpm = autoCtrl.updateWithVision(distanceIn);
             } else if (hadLock) {
                 targetRpm = autoCtrl.updateWithVision(null);
+            } else if (fallbackDistance != null) {
+                usingFallbackDistance = true;
+                targetRpm = autoCtrl.updateWithVision(fallbackDistance);
             } else {
                 targetRpm = fallbackRpm;
             }
@@ -742,7 +755,14 @@ public abstract class BaseAuto extends LinearOpMode {
             double currentRpm = launcher.getCurrentRpm();
             double error = Math.abs(currentRpm - launcher.targetRpm);
             boolean withinBand = error <= tolerance;
-            String distanceText = (distanceIn == null) ? "---" : String.format(Locale.US, "%.1f", distanceIn);
+            String distanceText;
+            if (distanceIn == null) {
+                distanceText = (usingFallbackDistance && fallbackDistance != null)
+                        ? String.format(Locale.US, "%.1f (fallback)", fallbackDistance)
+                        : "---";
+            } else {
+                distanceText = String.format(Locale.US, "%.1f", distanceIn);
+            }
 
             if (withinBand && hadLock) {
                 if (settleStart < 0) settleStart = now;
@@ -1802,6 +1822,19 @@ public abstract class BaseAuto extends LinearOpMode {
         public AutoSequence readyToLaunch(String phase, long timeoutMs) {
             return addStep(() -> {
                 lastAimReady = readyLauncherUntilReady(timeoutMs, phase);
+                if (lastReadyHadLock) {
+                    lastLock = true;
+                }
+                if (!lastAimReady) {
+                    telemetry.addLine("⚠️ Launcher not at speed before timeout");
+                    telemetry.update();
+                }
+            });
+        }
+
+        public AutoSequence readyToLaunch(String phase, long timeoutMs, double launchDistanceIn) {
+            return addStep(() -> {
+                lastAimReady = readyLauncherUntilReady(timeoutMs, phase, launchDistanceIn);
                 if (lastReadyHadLock) {
                     lastLock = true;
                 }

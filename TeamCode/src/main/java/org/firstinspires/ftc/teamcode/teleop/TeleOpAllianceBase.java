@@ -145,6 +145,9 @@
  *                       fast-path telemetry for firing cadence diagnostics.
  * CHANGES (2026-01-10): Moved TeleOp debug telemetry defaults and per-system
  *                       debug flags into DebugTelemetryConfig.
+ * CHANGES (2026-01-10): Restored AutoAim after continuous-fire releases and
+ *                       made triple-tap intake reverse tracking use per-tap
+ *                       timing so the gesture is easier to trigger again.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -476,6 +479,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private int intakeReverseTapWindowMs = TeleOpDriverDefaults.INTAKE_REVERSE_TAP_WINDOW_MS;
     private int intakeReverseTapCount = 0;
     private long intakeReverseWindowStartMs = 0L;
+    private long intakeReverseLastTapMs = 0L;
     private boolean intakeReverseStartState = false;
 
     private FiringController firingController;
@@ -2510,7 +2514,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             return;
         }
 
-        if (autoAimOnFireActive && firingController.isIdle()) {
+        boolean fireButtonReleased = !fireButtonDownLast;
+        boolean firingInactive = !firingController.isAutoAimWindowActive()
+                && !firingController.isFeedActive();
+        if (autoAimOnFireActive && (firingController.isIdle() || (fireButtonReleased && firingInactive))) {
             autoAimEnabled = autoAimOnFireRestoreState;
             autoAimOnFireActive = false;
             aimLossStartMs = -1L;
@@ -2535,14 +2542,15 @@ public abstract class TeleOpAllianceBase extends OpMode {
         }
 
         long now = System.currentTimeMillis();
-        if (intakeReverseTapCount == 0 || (now - intakeReverseWindowStartMs) > intakeReverseTapWindowMs) {
+        if (intakeReverseTapCount == 0 || (now - intakeReverseLastTapMs) > intakeReverseTapWindowMs) {
             intakeReverseTapCount = 0;
             intakeReverseWindowStartMs = now;
             intakeReverseStartState = intake.isOn();
         }
 
         intakeReverseTapCount++;
-        if (intakeReverseTapCount >= 3 && (now - intakeReverseWindowStartMs) <= intakeReverseTapWindowMs) {
+        intakeReverseLastTapMs = now;
+        if (intakeReverseTapCount >= 3) {
             intake.startReverse(intakeReverseStartState);
             resetIntakeReverseGesture();
             intakeResumeState = intakeReverseStartState;
@@ -2682,6 +2690,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
     private void resetIntakeReverseGesture() {
         intakeReverseTapCount = 0;
         intakeReverseWindowStartMs = 0L;
+        intakeReverseLastTapMs = 0L;
         intakeReverseStartState = (intake != null) && intake.isOn();
     }
 

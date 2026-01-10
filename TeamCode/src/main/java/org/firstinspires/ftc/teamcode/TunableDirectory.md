@@ -2,6 +2,7 @@
 
 This directory clusters every adjustable value in `TeamCode` by what the driver station team actually tunes—launcher speed, drivetrain motion, intake flow, vision alignment, etc.—instead of by source file. Each table calls out where a number lives, whether it affects **TeleOp**, **Autonomous**, or **Both**, how the robot behaves when it changes, and which copy to edit when multiple values interact.
 
+**2026-01-10 update:** No new tunables; readyToLaunch can seed AutoSpeed with a fallback distance, continuous-fire auto-aim restores to the prior toggle, and the intake reverse triple-tap gesture uses per-tap timing again.
 **2026-01-09 update:** No new tunables; clarified that Auto starts with intake enabled, syncs the firing controller intake state at START, and reasserts intake after firing sequences.
 **2026-01-07 update:** Added firing cadence tunables for stream/burst recovery and tap-burst windows, retuned RPM readiness gating, and clarified FeedStop lead skips when streaming or bursting with the gate already released.
 **2026-01-06 update:** Moved TeleOp debug telemetry defaults and per-system debug flags into `DebugTelemetryConfig`, clarified that continuous/spray firing keeps the FeedStop open until the stream ends, and noted that StopAll freezes FeedStop updates so the servo remains still while stopped.

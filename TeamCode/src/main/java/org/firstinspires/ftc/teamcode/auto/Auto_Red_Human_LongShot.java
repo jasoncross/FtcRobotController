@@ -69,6 +69,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     // CHANGES (2025-11-24): Added explicit twist parameters (0°) to AutoSequence.move(...) calls per new API.
     // CHANGES (2025-12-11): Recentered odometry start pose to (+12, -72, 0) in the field-center frame (human wall = −72" Y).
     // CHANGES (2026-01-09): Added a 1s endgame reserve and moved the final retreat drive into ENDGAME sequencing.
+    // CHANGES (2026-01-10): Added AutoSequence AutoRPM scaling to mirror TeleOp tweak steps.
     private static final long ENDGAME_RESERVE_MS = 1000;
     // Provide BaseAuto the active alliance to load correct AprilTag data.
     @Override protected Alliance alliance() { return Alliance.RED; }
@@ -84,6 +85,7 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     protected void runSequence() throws InterruptedException {
         sequence()
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
+                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 .rememberHeading("Record start heading")
                 .readyToLaunch("Ready launcher for volley", 500)
                 .move("Drive forward to clear wall", 8.0, 0.0, 0.0, 1)

@@ -111,6 +111,7 @@ lead time repeatedly. TeleOp can optionally force a compact firing-state debug b
 
 ### 🌀 Intake ([`subsystems/Intake.java`](./subsystems/Intake.java))
 - Tuned power levels with jam-clearing logic.
+- Triple-tap reverse latch now cancels any pending intake-assist restore so the reverse run stays active until the next intake toggle press.
 
 ### 🎮 Controller Bindings ([`input/ControllerBindings.java`](./input/ControllerBindings.java))
 - Centralized button/toggle logic with rumble feedback.

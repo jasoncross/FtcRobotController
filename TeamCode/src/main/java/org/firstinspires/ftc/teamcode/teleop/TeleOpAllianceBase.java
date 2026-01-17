@@ -150,6 +150,9 @@
  * CHANGES (2026-01-10): Restored AutoAim after continuous-fire releases and
  *                       made triple-tap intake reverse tracking use per-tap
  *                       timing so the gesture is easier to trigger again.
+ * CHANGES (2026-01-17): Prevented intake-assist restores from cancelling the
+ *                       triple-tap reverse latch so reverse holds until the
+ *                       next intake toggle press.
  * CHANGES (2025-12-09): Dashboard packets now mirror only the driver-station
  *                       telemetry lines (no dashboard-only metrics) while
  *                       keeping field overlays; Obelisk scanning now falls back
@@ -2553,6 +2556,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
         intakeReverseTapCount++;
         intakeReverseLastTapMs = now;
         if (intakeReverseTapCount >= 3) {
+            resetIntakeAssistState();
             intake.startReverse(intakeReverseStartState);
             resetIntakeReverseGesture();
             intakeResumeState = intakeReverseStartState;
@@ -2636,6 +2640,10 @@ public abstract class TeleOpAllianceBase extends OpMode {
             resetIntakeAssistState();
             return;
         }
+        if (intake.isReversing()) {
+            resetIntakeAssistState();
+            return;
+        }
 
         if (intakeAssistWaitingForFeed) {
             if (feed.isFeedCycleActive() || feed.isContinuousFeedActive()) {
@@ -2666,6 +2674,9 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void startIntakeAssist(boolean wasOn, long extraHoldMs) {
         if (intake == null) {
+            return;
+        }
+        if (intake.isReversing()) {
             return;
         }
         if (wasOn) {

@@ -123,7 +123,7 @@ TeamCode/
     │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating + StopAll FeedStop park + anti-jitter servo guard
     │   └── Intake.java                   ← Intake motor helper + assist timings
     ├── teleop/
-    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, debug telemetry gating + firing stats/state)
+    │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, intake reverse latch protection, debug telemetry gating + firing stats/state)
     │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
     │   ├── TeleOp_Red.java                   ← Red-side TeleOp wrapper (preselect + rumble cues)
     │   └── TeleOp_Test_CameraStream.java     ← Diagnostics TeleOp for streaming + AprilTag checks
@@ -405,7 +405,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, and refreshed the AutoSpeed documentation to match the new configuration flow.
+- **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, refreshed the AutoSpeed documentation to match the new configuration flow, and ensured the intake reverse triple-tap latch is not cancelled by pending intake-assist restores so reverse stays active until the next intake toggle press.
 - **2026-01-10** – Restored AutoAim to the driver’s prior toggle after continuous-fire releases, refreshed the intake reverse triple-tap timing to be per-tap again so the gesture triggers reliably, added an AutoSequence ready-to-launch fallback distance option to seed AutoSpeed until a tag lock supplies live range, and introduced AutoSequence AutoRPM scale tweaks (applied as a +2% bump in the RED autos).
 - **2026-01-09** – Ensured AUTO always reasserts the intake-on default at START, immediately syncs the firing controller’s desired intake state, restores intake after each auto firing sequence, added MAIN/ENDGAME timing reserves with immediate ENDGAME sequencing once MAIN steps complete, and surfaced the auto timer/phase telemetry near the top of the AUTO status block.
 - **2026-01-07** – Added edge-triggered StopAll feed hold logic so FeedStop parks once and resumes cleanly, introduced an anti-jitter FeedStop command guard tunable, and retuned firing cadence (snappier RPM gate, stream/burst recovery tuning, feed-lead skips when the gate stays open) with debug-only telemetry updates to validate the new firing profiles across TeleOp and Auto.

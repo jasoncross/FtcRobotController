@@ -121,7 +121,7 @@ TeamCode/
     ├── subsystems/
     │   ├── Launcher.java                 ← Dual-flywheel subsystem (PIDF + AutoSpeed hooks)
     │   ├── Feed.java                     ← Feed motor timing + RPM-ready feed gating + StopAll FeedStop park + anti-jitter servo guard
-    │   └── Intake.java                   ← Intake motor helper + assist timings
+    │   └── Intake.java                   ← Intake motor helper + assist timings + reverse latch guard
     ├── teleop/
     │   ├── TeleOpAllianceBase.java           ← Shared TeleOp logic (launcher modes, assists, intake reverse latch protection, debug telemetry gating + firing stats/state)
     │   ├── TeleOp_Blue.java                  ← Blue-side TeleOp wrapper (preselect + rumble cues)
@@ -209,6 +209,7 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - Feed motor holds position with BRAKE zero-power behavior; idle counter-rotation (`FeedTuning.IDLE_HOLD_POWER`, default `-0.5`) only enables after START.
 - Feed/Eject commands now ride the Feed subsystem's asynchronous cycle, so the TeleOp loop keeps processing drive/aim inputs while the feed motor pulses and the intake assist timer counts down in the background.
 - When drivers have manually toggled the intake OFF before feeding, the assist only borrows it for the configured window and then returns it to OFF automatically instead of leaving it latched ON.
+- The intake reverse latch ignores forward intake reasserts (including assist restores) so a triple-tap reverse stays latched until the next intake toggle press or an explicit stop.
 - Whenever the intake is ON it samples the motor encoder roughly every 50 ms and classifies four flow phases:
   - **FREE FLOW** – shaft spins freely at `IntakeTuning.FILL_POWER` until the first ball hits the top of the ramp.
   - **PACKING** – encoder delta drops under the contact threshold, so the subsystem records `packStartTicks`, drops to `PACKING_POWER`, and keeps feeding until total travel reaches `PACKING_RANGE_TICKS` (≈three balls). If travel stops increasing for multiple samples, the state now flips to JAMMED even when encoder jitter stays just above the stall threshold.
@@ -405,7 +406,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
-- **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, refreshed the AutoSpeed documentation to match the new configuration flow, and ensured the intake reverse triple-tap latch is not cancelled by pending intake-assist restores so reverse stays active until the next intake toggle press.
+- **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, refreshed the AutoSpeed documentation to match the new configuration flow, and ensured the intake reverse triple-tap latch ignores forward intake reasserts (including assist restores) so reverse stays active until the next intake toggle press.
 - **2026-01-10** – Restored AutoAim to the driver’s prior toggle after continuous-fire releases, refreshed the intake reverse triple-tap timing to be per-tap again so the gesture triggers reliably, added an AutoSequence ready-to-launch fallback distance option to seed AutoSpeed until a tag lock supplies live range, and introduced AutoSequence AutoRPM scale tweaks (applied as a +2% bump in the RED autos).
 - **2026-01-09** – Ensured AUTO always reasserts the intake-on default at START, immediately syncs the firing controller’s desired intake state, restores intake after each auto firing sequence, added MAIN/ENDGAME timing reserves with immediate ENDGAME sequencing once MAIN steps complete, and surfaced the auto timer/phase telemetry near the top of the AUTO status block.
 - **2026-01-07** – Added edge-triggered StopAll feed hold logic so FeedStop parks once and resumes cleanly, introduced an anti-jitter FeedStop command guard tunable, and retuned firing cadence (snappier RPM gate, stream/burst recovery tuning, feed-lead skips when the gate stays open) with debug-only telemetry updates to validate the new firing profiles across TeleOp and Auto.

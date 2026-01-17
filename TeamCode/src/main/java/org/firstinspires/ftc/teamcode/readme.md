@@ -95,7 +95,7 @@ TeamCode/
     │   └── AutoSequenceGuide.md              ← Reference + examples for the AutoSequence builder
     ├── config/
     │   ├── AutoAimTuning.java                ← AutoAim overrides (twist, RPM seed)
-    │   ├── AutoRpmConfig.java                ← Distance→RPM curve + smoothing
+    │   ├── AutoRpmConfig.java                ← Alliance-specific distance→RPM curves + smoothing
     │   ├── DebugTelemetryConfig.java         ← TeleOp debug telemetry defaults + per-system debug flags
     │   ├── ControllerTuning.java             ← Trigger thresholds
     │   ├── DriveTuning.java                  ← Wheel geometry + IMU turn gains
@@ -189,10 +189,10 @@ For broader context on how the subsystems, StopAll latch, and rule constraints i
 - When **enabled**, AutoSpeed calculates launcher RPM from AprilTag distance via `LauncherAutoSpeedController`.
 - When **disabled**, right trigger controls RPM directly.
 - **Defaults:**
-  - AutoRPM now reads a config-driven calibration table from `config/AutoRpmConfig.java`
-    (default points: **35 in→2600 RPM**, **37 in→2500 RPM**, **60 in→2550 RPM**, **67 in→2750 RPM**, **82 in→3050 RPM**,
-    **100 in→3800 RPM**). The controller linearly interpolates between entries and clamps outside the range.
-  - **Default hold** while no tag is visible uses the **farthest calibration RPM** in `AutoRpmConfig` (keeps the launcher spooled until the first tag fix).
+  - AutoRPM now reads alliance-specific calibration tables from `config/AutoRpmConfig.java`
+    (default points: **48 in→2750 RPM**, **55 in→2600 RPM**, **65 in→2650 RPM**, **78 in→2800 RPM**, **88 in→3000 RPM**,
+    **100 in→3200 RPM**, **120 in→4000 RPM**, **130 in→4250 RPM**). The controller linearly interpolates between entries and clamps outside the range.
+  - **Default hold** while no tag is visible uses the **farthest calibration RPM** from the active alliance table in `AutoRpmConfig` (keeps the launcher spooled until the first tag fix).
   - Holds the **last vision-derived RPM** once at least one tag fix has occurred.
 - **Driver toggles:** Gamepad Y buttons queue AutoSpeed enable/disable requests so the TeleOp loop finishes scanning
   controls before seeding RPM or emitting rumble pulses—drive/aim inputs stay live while the launcher mode flips.
@@ -405,6 +405,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, and refreshed the AutoSpeed documentation to match the new configuration flow.
 - **2026-01-10** – Restored AutoAim to the driver’s prior toggle after continuous-fire releases, refreshed the intake reverse triple-tap timing to be per-tap again so the gesture triggers reliably, added an AutoSequence ready-to-launch fallback distance option to seed AutoSpeed until a tag lock supplies live range, and introduced AutoSequence AutoRPM scale tweaks (applied as a +2% bump in the RED autos).
 - **2026-01-09** – Ensured AUTO always reasserts the intake-on default at START, immediately syncs the firing controller’s desired intake state, restores intake after each auto firing sequence, added MAIN/ENDGAME timing reserves with immediate ENDGAME sequencing once MAIN steps complete, and surfaced the auto timer/phase telemetry near the top of the AUTO status block.
 - **2026-01-07** – Added edge-triggered StopAll feed hold logic so FeedStop parks once and resumes cleanly, introduced an anti-jitter FeedStop command guard tunable, and retuned firing cadence (snappier RPM gate, stream/burst recovery tuning, feed-lead skips when the gate stays open) with debug-only telemetry updates to validate the new firing profiles across TeleOp and Auto.

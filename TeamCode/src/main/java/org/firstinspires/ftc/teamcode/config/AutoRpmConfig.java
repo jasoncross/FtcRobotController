@@ -10,8 +10,12 @@
  *     TeleOpAllianceBase to copy the values into the controller at runtime.
  *
  * TUNABLE PARAMETERS (SEE TunableDirectory.md → Launcher speed & flywheel control)
- *   - CALIBRATION_DISTANCES_IN / CALIBRATION_RPMS (ADDED 2025-11-15)
- *       • Ordered arrays of inches + RPM pairs that define the entire calibration table.
+ *   - BLUE_CALIBRATION_DISTANCES_IN / BLUE_CALIBRATION_RPMS (ADDED 2025-11-15, SPLIT 2026-01-17)
+ *       • Ordered arrays of inches + RPM pairs that define the BLUE alliance calibration table.
+ *       • Supports any N ≥ 2 entries. LauncherAutoSpeedController interpolates between
+ *         neighboring points and clamps outside the table bounds.
+ *   - RED_CALIBRATION_DISTANCES_IN / RED_CALIBRATION_RPMS (ADDED 2026-01-17)
+ *       • Ordered arrays of inches + RPM pairs that define the RED alliance calibration table.
  *       • Supports any N ≥ 2 entries. LauncherAutoSpeedController interpolates between
  *         neighboring points and clamps outside the table bounds.
  *   - SMOOTH_ALPHA
@@ -24,8 +28,8 @@
  *         Now derived from the farthest calibration point instead of a manual value.
  *
  * METHODS
- *   - apply(LauncherAutoSpeedController ctrl)
- *       • Copies all tunables into the supplied controller. Call from TeleOp init
+ *   - apply(LauncherAutoSpeedController ctrl, Alliance alliance)
+ *       • Copies all tunables into the supplied controller for the active alliance. Call from TeleOp init
  *         and BaseAuto runOpMode() before relying on AutoSpeed.
  *
  * NOTES
@@ -34,9 +38,13 @@
  *   - Provide at least two calibration points; values do not need to be evenly spaced.
  *   - Launcher.RPM_MIN/RPM_MAX still clamp the final command; adjust those in
  *     subsystems/Launcher.java when hardware changes require broader limits.
+ *
+ * CHANGES (2026-01-17): Split AutoRPM calibration tables by alliance and
+ *                       applied the selection through AutoRpmConfig.apply(...).
  */
 package org.firstinspires.ftc.teamcode.config;
 
+import org.firstinspires.ftc.teamcode.Alliance;
 import org.firstinspires.ftc.teamcode.control.LauncherAutoSpeedController;
 
 public final class AutoRpmConfig {
@@ -45,7 +53,8 @@ public final class AutoRpmConfig {
     // --- Tunables shared by TeleOp & Auto ---
     // CHANGES (2025-11-15): Replaced fixed near/far anchors with a full calibration table (default 6 points, 35–100 in).
     // CHANGES (2026-01-03): Default no-tag RPM now derives from the farthest calibration point.
-    public static double[] CALIBRATION_DISTANCES_IN = {
+    // CHANGES (2026-01-17): Split AutoRPM calibration tables by alliance (RED/BLUE) with identical defaults.
+    public static double[] BLUE_CALIBRATION_DISTANCES_IN = {
             48.0,
             55.0,
             65.0,
@@ -54,8 +63,8 @@ public final class AutoRpmConfig {
             100.0,
             120.0,
             130.0
-    }; // Inches for the calibration table (must align with CALIBRATION_RPMS)
-    public static double[] CALIBRATION_RPMS = {
+    }; // Blue alliance inches for the calibration table (must align with BLUE_CALIBRATION_RPMS)
+    public static double[] BLUE_CALIBRATION_RPMS = {
             2750.0,
             2600.0,
             2650.0,
@@ -64,30 +73,60 @@ public final class AutoRpmConfig {
             3200.0,
             4000.0,
             4250.0
-    }; // RPM values paired with CALIBRATION_DISTANCES_IN entries
+    }; // Blue alliance RPM values paired with BLUE_CALIBRATION_DISTANCES_IN entries
+    public static double[] RED_CALIBRATION_DISTANCES_IN = {
+            48.0,
+            55.0,
+            65.0,
+            78.0,
+            88.0,
+            100.0,
+            120.0,
+            130.0
+    }; // Red alliance inches for the calibration table (must align with RED_CALIBRATION_RPMS)
+    public static double[] RED_CALIBRATION_RPMS = {
+            2750.0,
+            2600.0,
+            2650.0,
+            2800.0,
+            3000.0,
+            3200.0,
+            4000.0,
+            4250.0
+    }; // Red alliance RPM values paired with RED_CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
 
-    /** Apply standard params to a controller. Safe to call repeatedly. */
-    public static void apply(LauncherAutoSpeedController ctrl) {
+    /** Apply standard params to a controller for the requested alliance. Safe to call repeatedly. */
+    public static void apply(LauncherAutoSpeedController ctrl, Alliance alliance) {
         if (ctrl == null) return;
-        ctrl.setDefaultRpm(resolveNoTagRpm());
-        ctrl.setCalibrationCurve(CALIBRATION_DISTANCES_IN, CALIBRATION_RPMS);
+        ctrl.setDefaultRpm(resolveNoTagRpm(alliance));
+        ctrl.setCalibrationCurve(resolveDistances(alliance), resolveRpms(alliance));
         ctrl.setSmoothingAlpha(SMOOTH_ALPHA);
     }
 
     /** RPM to hold while AutoSpeed runs without a tag lock (uses farthest calibration point). */
-    public static double resolveNoTagRpm() {
-        if (CALIBRATION_DISTANCES_IN == null || CALIBRATION_RPMS == null) return 0.0;
-        if (CALIBRATION_DISTANCES_IN.length == 0 || CALIBRATION_RPMS.length == 0) return 0.0;
+    public static double resolveNoTagRpm(Alliance alliance) {
+        double[] distances = resolveDistances(alliance);
+        double[] rpms = resolveRpms(alliance);
+        if (distances == null || rpms == null) return 0.0;
+        if (distances.length == 0 || rpms.length == 0) return 0.0;
         int maxIndex = 0;
-        double maxDistance = CALIBRATION_DISTANCES_IN[0];
-        int count = Math.min(CALIBRATION_DISTANCES_IN.length, CALIBRATION_RPMS.length);
+        double maxDistance = distances[0];
+        int count = Math.min(distances.length, rpms.length);
         for (int i = 1; i < count; i++) {
-            if (CALIBRATION_DISTANCES_IN[i] > maxDistance) {
-                maxDistance = CALIBRATION_DISTANCES_IN[i];
+            if (distances[i] > maxDistance) {
+                maxDistance = distances[i];
                 maxIndex = i;
             }
         }
-        return CALIBRATION_RPMS[maxIndex];
+        return rpms[maxIndex];
+    }
+
+    private static double[] resolveDistances(Alliance alliance) {
+        return (alliance == Alliance.RED) ? RED_CALIBRATION_DISTANCES_IN : BLUE_CALIBRATION_DISTANCES_IN;
+    }
+
+    private static double[] resolveRpms(Alliance alliance) {
+        return (alliance == Alliance.RED) ? RED_CALIBRATION_RPMS : BLUE_CALIBRATION_RPMS;
     }
 }

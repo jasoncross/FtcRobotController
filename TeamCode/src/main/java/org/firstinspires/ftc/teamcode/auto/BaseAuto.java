@@ -115,6 +115,8 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        resumes automatically once volleys complete.
     // CHANGES (2026-01-07): Added debug-only firing telemetry lines for feedstop
     //                        and cadence profiling during auto sequences.
+    // CHANGES (2026-01-17): Selected alliance-specific AutoRPM calibration tables
+    //                        for autonomous launcher AutoSpeed initialization.
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -462,7 +464,7 @@ public abstract class BaseAuto extends LinearOpMode {
         feed.initFeedStop(hardwareMap, telemetry);
         seedOdometryFromPose(startPose, "startPose", false);
 
-        try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {} // Sync AutoSpeed curve
+        try { AutoRpmConfig.apply(autoCtrl, alliance()); } catch (Throwable ignored) {} // Sync AutoSpeed curve
         ObeliskSignal.clear(); // Reset Obelisk latch before looking for motifs
 
         while (!isStarted() && !isStopRequested()) {
@@ -719,7 +721,7 @@ public abstract class BaseAuto extends LinearOpMode {
     protected final boolean readyLauncherUntilReady(long timeoutMs, String phase, Double launchDistanceIn) {
         drive.stopAll();
         autoCtrl.setAutoEnabled(true);
-        try { AutoRpmConfig.apply(autoCtrl); } catch (Throwable ignored) {}
+        try { AutoRpmConfig.apply(autoCtrl, alliance()); } catch (Throwable ignored) {}
 
         final long settleMs = rpmSettleMs();
         final double tolerance = rpmTol();

@@ -65,6 +65,8 @@
  *                       parks once and resumes cleanly without servo spam.
  * CHANGES (2026-01-07): Added debug-only firing cadence telemetry (profile,
  *                       feedstop state, and recovery tuning readouts).
+ * CHANGES (2026-01-17): Applied alliance-specific AutoRPM calibration tables
+ *                       when seeding TeleOp AutoSpeed.
  * CHANGES (2026-01-06): Prevented FeedStop servo updates while StopAll is
  *                       latched so the gate remains still during STOP.
  * CHANGES (2025-12-19): Added a Tag Visible telemetry line ahead of RPM
@@ -736,7 +738,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         // ---- Auto RPM Controller Init ----
         ensureAutoCtrl();
-        AutoRpmConfig.apply(autoCtrl);      // CENTRALIZED
+        AutoRpmConfig.apply(autoCtrl, alliance());      // CENTRALIZED
         autoCtrl.setAutoEnabled(autoSpeedEnabled);
 
         // ---- FIRST LINE telemetry (init): obelisk memory ----
@@ -1026,7 +1028,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
         if (autoRpmActive && !ejectActive) {
             ensureAutoCtrl();
-            AutoRpmConfig.apply(autoCtrl); // CENTRALIZED params + smoothing
+            AutoRpmConfig.apply(autoCtrl, alliance()); // CENTRALIZED params + smoothing
 
             Double rangeM = null;
             if (smRangeMeters != null && Double.isFinite(smRangeMeters)) {
@@ -1793,7 +1795,7 @@ public abstract class TeleOpAllianceBase extends OpMode {
 
     private void applyAutoSpeedEnablement(boolean enable, boolean stopOnDisable) {
         ensureAutoCtrl();
-        AutoRpmConfig.apply(autoCtrl);
+        AutoRpmConfig.apply(autoCtrl, alliance());
 
         autoSpeedEnabled = enable;
         autoCtrl.setAutoEnabled(enable);

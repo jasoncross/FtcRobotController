@@ -69,6 +69,9 @@ import org.firstinspires.ftc.teamcode.config.IntakeTuning;
  *                       that runs until the intake toggle is tapped again, then
  *                       restores the previous on/off state and aligned changelog
  *                       dates with the 2025-11-25 release.
+ * CHANGES (2026-01-17): Guarded reverse latch state so forward enable requests
+ *                       do not cancel a latched reverse; reverse exits only via
+ *                       the explicit resume or stop paths.
  */
 public class Intake {
     private final DcMotorEx motor;
@@ -138,8 +141,14 @@ public class Intake {
 
     /** Set intake to run or stop at the configured power (reset classifier on enable). */
     public void set(boolean enable) {
+        if (reversing && enable) {
+            return;
+        }
+        if (reversing && !enable) {
+            reversing = false;
+            reverseResumeOn = false;
+        }
         on = enable;
-        reversing = false;
         if (enable) {
             state = FlowState.FREE_FLOW;
             jamRecoverUntilMs = 0L;

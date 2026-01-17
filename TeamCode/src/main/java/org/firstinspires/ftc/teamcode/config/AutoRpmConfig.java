@@ -60,19 +60,21 @@ public final class AutoRpmConfig {
             65.0,
             78.0,
             88.0,
-            100.0,
+            115.0,
             120.0,
-            130.0
+            130.0,
+            140.0
     }; // Blue alliance inches for the calibration table (must align with BLUE_CALIBRATION_RPMS)
     public static double[] BLUE_CALIBRATION_RPMS = {
-            2750.0,
-            2600.0,
-            2650.0,
-            2800.0,
-            3000.0,
-            3200.0,
-            4000.0,
-            4250.0
+            2350.0,
+            2550.0,
+            2550.0,
+            2700.0,
+            2900.0,
+            3800.0,
+            3900.0,
+            4050.0,
+            4300.0
     }; // Blue alliance RPM values paired with BLUE_CALIBRATION_DISTANCES_IN entries
     public static double[] RED_CALIBRATION_DISTANCES_IN = {
             48.0,
@@ -80,19 +82,21 @@ public final class AutoRpmConfig {
             65.0,
             78.0,
             88.0,
-            100.0,
+            115.0,
             120.0,
-            130.0
+            130.0,
+            140.0
     }; // Red alliance inches for the calibration table (must align with RED_CALIBRATION_RPMS)
     public static double[] RED_CALIBRATION_RPMS = {
-            2750.0,
-            2600.0,
-            2650.0,
-            2800.0,
-            3000.0,
-            3200.0,
-            4000.0,
-            4250.0
+            2350.0,
+            2550.0,
+            2550.0,
+            2700.0,
+            2900.0,
+            3800.0,
+            3900.0,
+            4050.0,
+            4300.0
     }; // Red alliance RPM values paired with RED_CALIBRATION_DISTANCES_IN entries
     public static double SMOOTH_ALPHA      = 0.15;  // Exponential smoothing factor applied after every apply()
 

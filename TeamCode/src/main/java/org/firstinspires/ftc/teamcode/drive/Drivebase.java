@@ -123,7 +123,8 @@ public class Drivebase {
     // CHANGES (2026-01-03): Added stall-exit detection for Auto encoder moves to bail out when blocked,
     //                        with tunable velocity/position thresholds and a minimum stall window.
     // CHANGES (2026-01-18): Swapped auto moves to cruise at full speed until the final taper window,
-    //                        and bounded heading-hold twist so translation stays dominant.
+    //                        bounded heading-hold twist so translation stays dominant, and fixed the
+    //                        moveWithTwist remaining-distance tracking variable reuse.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -482,15 +483,15 @@ public class Drivebase {
             }
 
             if (stallExitEnabled && transSpeed > 1e-3) {
-                double remainingInches = Math.max(0.0, targetDistanceAbs - traveledInches);
+                double stallRemainingInches = Math.max(0.0, targetDistanceAbs - traveledInches);
                 double currentTime = stallClock.seconds();
                 double dtSec = currentTime - lastSampleTime;
                 if (dtSec > 0) {
                     double velocity = stepDistanceInches / Math.max(1e-3, dtSec);
-                    double remainingDelta = lastRemainingInches - remainingInches;
+                    double remainingDelta = lastRemainingInches - stallRemainingInches;
                     boolean notClosing = remainingDelta <= stallPositionEps;
                     boolean tooSlow = velocity <= stallVelocityEps;
-                    boolean eligible = remainingInches > stallPositionEps;
+                    boolean eligible = stallRemainingInches > stallPositionEps;
                     if (eligible && (notClosing || tooSlow)) {
                         if (stallStartSec < 0.0) {
                             stallStartSec = currentTime;
@@ -502,7 +503,7 @@ public class Drivebase {
                         stallStartSec = -1.0;
                     }
                 }
-                lastRemainingInches = remainingInches;
+                lastRemainingInches = stallRemainingInches;
                 lastSampleTime = currentTime;
             }
 

@@ -61,16 +61,19 @@ These constraints drive the emphasis on stable IMU turning, safe power distribut
 
 ### 🧭 Drivebase ([`drive/Drivebase.java`](./drive/Drivebase.java))
 - Field/robot-centric mecanum with IMU-backed turning.
-- Encoder-based translation with controlled tapering.
-- Twist-enabled moves keep translation locked to the requested field heading while steering toward the target yaw, with encoder-derived distance tracking that remains accurate during simultaneous rotation.
+- Encoder-based translation now cruises at the commanded speed until the final taper window, then ramps down to the configured minimum for a controlled stop.
+- Twist-enabled moves keep translation locked to the requested field heading while steering toward the target yaw, with encoder-derived distance tracking that remains accurate during simultaneous rotation; heading-hold twist is scaled and clamped so translation remains dominant.
 - Shared across TeleOp and Auto.
  - Auto encoder moves now abort early when a stall is detected (non-zero command but velocity/error progress remain below thresholds for a tuned window), preventing autos from wasting time pushing into walls.
  - Encoder distance math assumes 1× (non-quadrature) counts per revolution in `DriveTuning.TICKS_PER_REV`; only use 4× counts if the hub actually reports quadrature ticks.
 
 #### 🚀 Movement speed constraints to watch
 - `SharedRobotTuning.DRIVE_MAX_POWER` is the global ceiling for AutoSequence move speed; lowering it below 1.0 will cap every scripted drive even if individual steps request more. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/SharedRobotTuning.java†L71-L72】
-- `DriveTuning.AUTO_MOVE_MIN_SPEED` and `AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED` set the taper floors inside `Drivebase.move(...)` and `moveWithTwist(...)`, so overly low values can make the robot crawl as it finishes encoder-driven moves while higher floors keep it brisk near the target. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/DriveTuning.java†L34-L39】
+- `DriveTuning.AUTO_MOVE_MIN_SPEED`, `AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED`, and `AUTO_MOVE_TAPER_START_FRACTION` define the cruise-then-taper profile for AutoSequence encoder moves: drive at full commanded speed until the final fraction of distance, then ramp linearly down to the min speed. Keeping the taper window short preserves fast average speed while still easing into the stop. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/DriveTuning.java†L34-L41】
+- `DriveTuning.AUTO_MOVE_TWIST_SCALE` and `AUTO_MOVE_MAX_TWIST` bound heading-hold twist during Auto moves so translation power stays dominant even while the IMU correction is active. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/DriveTuning.java†L37-L41】
 - `SharedRobotTuning.TURN_TWIST_CAP` clamps twist authority for scans and blended drive/aim steps; large heading changes during translation may feel slower if this cap is tight. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/config/SharedRobotTuning.java†L70-L72】
+
+The Auto move profile intentionally avoids tapering across the *entire* distance because that keeps average speed far below the requested cap and makes long moves feel sluggish. Instead, moves cruise at the commanded speed for most of their travel and only decelerate in the final taper window, preserving speed while still landing softly at the target. Heading-hold twist stays active throughout but is scaled and clamped so translation remains the dominant component. 【F:TeamCode/src/main/java/org/firstinspires/ftc/teamcode/drive/Drivebase.java†L222-L475】
 
 ### 🚀 Launcher ([`subsystems/Launcher.java`](./subsystems/Launcher.java))
 - Dual 5202 flywheels under velocity PIDF.

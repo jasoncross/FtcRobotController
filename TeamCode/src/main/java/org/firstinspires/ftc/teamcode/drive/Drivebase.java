@@ -85,6 +85,11 @@ public class Drivebase {
     // Auto translation taper floors (tunable)
     public static final double AUTO_MOVE_MIN_SPEED = DriveTuning.AUTO_MOVE_MIN_SPEED;
     public static final double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = DriveTuning.AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED;
+    public static final double AUTO_MOVE_TAPER_START_FRACTION = DriveTuning.AUTO_MOVE_TAPER_START_FRACTION;
+    public static final double AUTO_MOVE_TWIST_SCALE = DriveTuning.AUTO_MOVE_TWIST_SCALE;
+    public static final double AUTO_MOVE_MAX_TWIST = DriveTuning.AUTO_MOVE_MAX_TWIST;
+
+    private static final boolean DEBUG_AUTO_MOVE_TELEMETRY = false;
 
     // ======= INTERNAL =======
     private final LinearOpMode linear;   // Non-null only in Autonomous usage
@@ -117,6 +122,9 @@ public class Drivebase {
     //                        are no longer affected by odometry calibration.
     // CHANGES (2026-01-03): Added stall-exit detection for Auto encoder moves to bail out when blocked,
     //                        with tunable velocity/position thresholds and a minimum stall window.
+    // CHANGES (2026-01-18): Swapped auto moves to cruise at full speed until the final taper window,
+    //                        bounded heading-hold twist so translation stays dominant, and fixed the
+    //                        moveWithTwist remaining-distance tracking variable reuse.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -222,6 +230,7 @@ public class Drivebase {
     public void move(double distanceInches, double degrees, double speed) {
         if (!isActive()) return;  // TeleOp: don't block
         final double minSpeed = AUTO_MOVE_MIN_SPEED;
+        final double taperStartFraction = clamp(AUTO_MOVE_TAPER_START_FRACTION, 1e-3, 1.0);
         final boolean stallExitEnabled = DriveTuning.AUTO_ENABLE_STALL_EXIT;
         final double stallVelocityEps = DriveTuning.AUTO_STALL_VELOCITY_EPSILON;
         final double stallPositionEps = DriveTuning.AUTO_STALL_POSITION_EPSILON;
@@ -279,9 +288,11 @@ public class Drivebase {
                 break;
             }
 
-            double progress = clamp(meanDelta / targetTicks, 0.0, 1.0);
-            double remaining = 1.0 - progress;
-            double commandedSpeed = minSpeed + (maxSpeed - minSpeed) * remaining;
+            double remainingTicks = max(0.0, targetTicks - meanDelta);
+            double remainingFraction = clamp(remainingTicks / targetTicks, 0.0, 1.0);
+            double commandedSpeed = (remainingFraction > taperStartFraction)
+                    ? maxSpeed
+                    : minSpeed + (maxSpeed - minSpeed) * (remainingFraction / taperStartFraction);
             commandedSpeed = clamp(commandedSpeed, minSpeed, maxSpeed);
 
             double driveCmd = commandedSpeed * forward;
@@ -297,6 +308,12 @@ public class Drivebase {
             fr.setPower(frP / maxMag);
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
+
+            if (DEBUG_AUTO_MOVE_TELEMETRY) {
+                telemetry.addData("AutoMove SpeedCmd", String.format("%.3f", commandedSpeed));
+                telemetry.addData("AutoMove Remaining", String.format("%.3f", remainingFraction));
+                telemetry.update();
+            }
 
             if (stallExitEnabled && commandedSpeed > 1e-3) {
                 double remainingInches = Math.max(0.0, (targetTicks - meanDelta) / TICKS_PER_IN);
@@ -352,6 +369,9 @@ public class Drivebase {
         if (!isActive()) return; // TeleOp: don't block
 
         final double minTranslationSpeed = AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED;
+        final double taperStartFraction = clamp(AUTO_MOVE_TAPER_START_FRACTION, 1e-3, 1.0);
+        final double twistScale = AUTO_MOVE_TWIST_SCALE;
+        final double maxAutoTwist = AUTO_MOVE_MAX_TWIST;
         final boolean stallExitEnabled = DriveTuning.AUTO_ENABLE_STALL_EXIT;
         final double stallVelocityEps = DriveTuning.AUTO_STALL_VELOCITY_EPSILON;
         final double stallPositionEps = DriveTuning.AUTO_STALL_POSITION_EPSILON;
@@ -399,6 +419,10 @@ public class Drivebase {
 
             double twistCmd = TURN_KP * err + TURN_KD * derr;
             twistCmd = clamp(twistCmd, -twistSpeed, twistSpeed);
+            double rawTwist = twistCmd;
+            twistCmd *= twistScale;
+            double scaledTwist = twistCmd;
+            twistCmd = clamp(twistCmd, -maxAutoTwist, maxAutoTwist);
 
             int flPos = fl.getCurrentPosition();
             int frPos = fr.getCurrentPosition();
@@ -423,10 +447,12 @@ public class Drivebase {
             double stepDistanceInches = abs(hypot(driveStepInches, strafeStepInches));
             traveledInches += stepDistanceInches;
 
-            double progress = clamp(traveledInches / targetDistanceAbs, 0.0, 1.0);
-            double remaining = 1.0 - progress;
-            double transSpeed = minTranslationSpeed
-                    + (translationSpeed - minTranslationSpeed) * remaining;
+            double remainingInches = max(0.0, targetDistanceAbs - traveledInches);
+            double remainingFraction = clamp(remainingInches / targetDistanceAbs, 0.0, 1.0);
+            double transSpeed = (remainingFraction > taperStartFraction)
+                    ? translationSpeed
+                    : minTranslationSpeed
+                    + (translationSpeed - minTranslationSpeed) * (remainingFraction / taperStartFraction);
             transSpeed = clamp(transSpeed, minTranslationSpeed, translationSpeed);
 
             double driveCmd = transSpeed * forward;
@@ -443,20 +469,29 @@ public class Drivebase {
             bl.setPower(blP / maxMag);
             br.setPower(brP / maxMag);
 
+            if (DEBUG_AUTO_MOVE_TELEMETRY) {
+                telemetry.addData("AutoMove SpeedCmd", String.format("%.3f", transSpeed));
+                telemetry.addData("AutoMove Remaining", String.format("%.3f", remainingFraction));
+                telemetry.addData("AutoMove TwistRaw", String.format("%.3f", rawTwist));
+                telemetry.addData("AutoMove TwistScaled", String.format("%.3f", scaledTwist));
+                telemetry.addData("AutoMove TwistClamped", String.format("%.3f", twistCmd));
+                telemetry.update();
+            }
+
             if (traveledInches >= targetDistanceAbs) {
                 break;
             }
 
             if (stallExitEnabled && transSpeed > 1e-3) {
-                double remainingInches = Math.max(0.0, targetDistanceAbs - traveledInches);
+                double stallRemainingInches = Math.max(0.0, targetDistanceAbs - traveledInches);
                 double currentTime = stallClock.seconds();
                 double dtSec = currentTime - lastSampleTime;
                 if (dtSec > 0) {
                     double velocity = stepDistanceInches / Math.max(1e-3, dtSec);
-                    double remainingDelta = lastRemainingInches - remainingInches;
+                    double remainingDelta = lastRemainingInches - stallRemainingInches;
                     boolean notClosing = remainingDelta <= stallPositionEps;
                     boolean tooSlow = velocity <= stallVelocityEps;
-                    boolean eligible = remainingInches > stallPositionEps;
+                    boolean eligible = stallRemainingInches > stallPositionEps;
                     if (eligible && (notClosing || tooSlow)) {
                         if (stallStartSec < 0.0) {
                             stallStartSec = currentTime;
@@ -468,7 +503,7 @@ public class Drivebase {
                         stallStartSec = -1.0;
                     }
                 }
-                lastRemainingInches = remainingInches;
+                lastRemainingInches = stallRemainingInches;
                 lastSampleTime = currentTime;
             }
 

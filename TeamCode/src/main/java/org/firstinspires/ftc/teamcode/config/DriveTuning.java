@@ -32,6 +32,8 @@
  *                        drive distances remain accurate for Auto moves.
  * CHANGES (2026-01-03): Added auto stall-exit detection tunables for encoder
  *                        moves so blocked drive steps can end early.
+ * CHANGES (2026-01-18): Added cruise-then-taper and twist-bound tunables for
+ *                        faster AutoSequence encoder moves with bounded heading hold.
  */
 package org.firstinspires.ftc.teamcode.config;
 
@@ -55,8 +57,11 @@ public final class DriveTuning {
     public static double TURN_SETTLE_TIME_SEC = 0.15; // Seconds inside tolerance before declaring done
 
     // Auto translation taper floors (prevent stalling near completion)
-    public static double AUTO_MOVE_MIN_SPEED                 = 0.15; // Min speed for encoder-delta move() ramp
-    public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.15; // Min translation speed for moveWithTwist() ramp
+    public static double AUTO_MOVE_MIN_SPEED                 = 0.30; // Min speed for encoder-delta move() ramp
+    public static double AUTO_MOVE_WITH_TWIST_MIN_TRANS_SPEED = 0.30; // Min translation speed for moveWithTwist() ramp
+    public static double AUTO_MOVE_TAPER_START_FRACTION       = 0.10; // Fraction of distance (end window) to begin decel
+    public static double AUTO_MOVE_TWIST_SCALE                = 0.60; // Scales auto heading-hold twist before mixing
+    public static double AUTO_MOVE_MAX_TWIST                  = 0.35; // Absolute clamp on auto move twist power
 
     // Auto stall exit detection (Autonomous only)
     public static boolean AUTO_ENABLE_STALL_EXIT          = true;  // Allow auto encoder moves to exit early on stall

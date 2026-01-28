@@ -81,7 +81,7 @@ TeamCode/
     ├── assist/
     │   └── AutoAimSpeed.java                 ← Shared AutoAim + AutoSpeed helper
     ├── auto/
-    │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder (match timer + MAIN/ENDGAME phases; intake auto-enables at START; readyToLaunch supports fallback launch distance; AutoRPM scale tweaks supported)
+    │   ├── BaseAuto.java                     ← Shared Auto mode logic + AutoSequence builder (match timer + MAIN/ENDGAME phases; intake auto-enables at START; always-on AutoRPM service with last-seen distance hold; readyToLaunch is non-blocking and supports fallback launch distance; AutoRPM scale tweaks supported)
     │   ├── Auto_Blue_30.java                 ← Blue alliance safety auto (drive 30" and stop)
     │   ├── Auto_Blue_Human.java              ← Blue human-side auto (Tag 20 long-run volley → retreat)
     │   ├── Auto_Blue_Human_LongShot.java     ← Blue human-side launch-line volley → drive upfield
@@ -322,7 +322,7 @@ Refer to the [AutoSequence Builder Guide](./auto/AutoSequenceGuide.md) for the f
 6. **Return to the starting heading** using the shared IMU helper.
 7. **Drive forward 24"** upfield toward the classifier.
 
-> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. In TeleOp, feed gating honors `SharedRobotTuning.HOLD_FIRE_FOR_RPM` (ALL = every shot/hold, INITIAL = first shot only, OFF = no RPM gate); in Autonomous, each AutoSequence fire step now chooses RPM gating via its `requireLauncherAtSpeed` flag. `readyLauncherUntilReady()` shares the TeleOp AutoSpeed curve while seeding from `SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED` and waiting out `SharedRobotTuning.RPM_READY_SETTLE_MS`, and the launcher target resets to the configured hold RPM if vision drops. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
+> **Common Safeguards** – All modes call `updateStatus(...)` while scanning, spinning, and firing so drivers can verify the tag lock, RPM, and Obelisk state live. In TeleOp, feed gating honors `SharedRobotTuning.HOLD_FIRE_FOR_RPM` (ALL = every shot/hold, INITIAL = first shot only, OFF = no RPM gate); in Autonomous, each AutoSequence fire step chooses RPM gating via its `requireLauncherAtSpeed` flag. Auto now runs an always-on AutoRPM service that updates the launcher target every loop (including driving and firing), holds the last valid distance briefly when vision flickers (`AUTO_DISTANCE_LAST_SEEN_HOLD_MS`), and refreshes the readiness latch continuously so firing can begin as soon as the launcher is stable. `readyToLaunch(...)` is now a non-blocking prep step that keeps AutoSpeed active and can seed RPM with a fallback distance without stalling the sequence. Startup states now mirror TeleOp: the intake enables only after START, feed idle hold engages once the match begins, and stopAll() releases the counter-rotation just like the TeleOp latch.
 
 ---
 ## Obelisk AprilTag Signal (DECODE 2025–26)
@@ -406,6 +406,7 @@ Press **Start** again to **RESUME** normal control, which restores the idle hold
 ---
 
 ## Revision History
+- **2026-01-28** – Added an always-on AutoRPM service for Autonomous so launcher targets update continuously (including during drive loops and firing), added a last-seen distance hold tunable to ride out brief vision flicker, converted `readyToLaunch(...)` into a non-blocking prep step, and refreshed Auto documentation/telemetry guidance to match the new flow.
 - **2026-01-18** – Updated encoder-based AutoSequence moves to cruise at the commanded speed until the final taper window, then ramp down near the end; bounded auto heading-hold twist so translation remains dominant during move steps; added drive tunables for the taper start fraction and twist scaling/clamping, and refreshed docs to explain the faster auto move model.
 - **2026-01-17** – Split AutoRPM calibration tables by alliance, applied the selected curve in both TeleOp and Auto when seeding AutoSpeed, refreshed the AutoSpeed documentation to match the new configuration flow, and ensured the intake reverse triple-tap latch ignores forward intake reasserts (including assist restores) so reverse stays active until the next intake toggle press.
 - **2026-01-10** – Restored AutoAim to the driver’s prior toggle after continuous-fire releases, refreshed the intake reverse triple-tap timing to be per-tap again so the gesture triggers reliably, added an AutoSequence ready-to-launch fallback distance option to seed AutoSpeed until a tag lock supplies live range, and introduced AutoSequence AutoRPM scale tweaks (applied as a +2% bump in the RED autos).

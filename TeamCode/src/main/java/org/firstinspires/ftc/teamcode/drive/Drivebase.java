@@ -92,6 +92,10 @@ public class Drivebase {
     private static final boolean DEBUG_AUTO_MOVE_TELEMETRY = false;
 
     // ======= INTERNAL =======
+    public interface AutoLoopHook {
+        void onLoop();
+    }
+
     private final LinearOpMode linear;   // Non-null only in Autonomous usage
     private final Telemetry telemetry;
 
@@ -100,6 +104,7 @@ public class Drivebase {
 
     // Remember baseline run mode to restore after RUN_TO_POSITION moves (Auto)
     private DcMotor.RunMode baseRunModeAfterMove = DcMotor.RunMode.RUN_USING_ENCODER;
+    private AutoLoopHook autoLoopHook = null;
 
     // ---------- Constructor for AUTONOMOUS (blocking helpers allowed) ----------
     // CHANGES (2025-11-04): Aligned Auto move() forward sign with TeleOp + added vector telemetry.
@@ -125,6 +130,8 @@ public class Drivebase {
     // CHANGES (2026-01-18): Swapped auto moves to cruise at full speed until the final taper window,
     //                        bounded heading-hold twist so translation stays dominant, and fixed the
     //                        moveWithTwist remaining-distance tracking variable reuse.
+    // CHANGES (2026-01-28): Added an AutoLoopHook callback so BaseAuto services (AutoRPM updates) can
+    //                        run during blocking move/turn loops without impacting TeleOp behavior.
 
     public Drivebase(LinearOpMode op) {
         this.linear = op;
@@ -342,6 +349,7 @@ public class Drivebase {
                 lastSampleTime = currentTime;
             }
 
+            runAutoLoopHook();
             idle();
         }
 
@@ -507,6 +515,7 @@ public class Drivebase {
                 lastSampleTime = currentTime;
             }
 
+            runAutoLoopHook();
             idle();
         }
 
@@ -556,6 +565,7 @@ public class Drivebase {
             } else {
                 settleStart = -1;
             }
+            runAutoLoopHook();
             idle();
         }
         stopAll();
@@ -599,6 +609,11 @@ public class Drivebase {
         fl.setPower(p); fr.setPower(p); bl.setPower(p); br.setPower(p);
     }
 
+    /** Optional callback to run inside blocking Auto loops. */
+    public void setAutoLoopHook(AutoLoopHook hook) {
+        this.autoLoopHook = hook;
+    }
+
     /** Stop all drive motors. (Alias retained for compatibility with TeleOp StopAll.) */
     public void stop() { stopAll(); }
 
@@ -632,6 +647,12 @@ public class Drivebase {
             if (m.getZeroPowerBehavior() != behavior) {
                 m.setZeroPowerBehavior(behavior);
             }
+        }
+    }
+
+    private void runAutoLoopHook() {
+        if (autoLoopHook != null) {
+            autoLoopHook.onLoop();
         }
     }
 

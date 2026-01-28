@@ -78,9 +78,9 @@ field-aware helpers to know about are:
 | `adjustAutoScale(label, percentage)` | Applies a multiplicative tweak to all AutoSpeed RPM outputs for the remainder of autonomous. | Works like TeleOp’s D-pad AutoRPM tweak: a `0.02` tweak raises RPM targets by 2%, `-0.02` lowers by 2%. Adjustments multiply the current scale and clamp to 0.50–1.50. |
 | `rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, oppositeSweepDeg, timeoutMs)`<br/>`rotateToTarget(label, direction, turnSpeedFraction, primarySweepDeg, timeoutMs)`<br/>`rotateToTarget(label, turnSpeedFraction, primarySweepDeg, timeoutMs)` | Sweeps for the alliance goal AprilTag using repeatable angular passes until lock tolerance is satisfied (or the timeout elapses). | Pass `ScanDirection.CW/CCW` (or omit to default clockwise) to set the opening sweep. `turnSpeedFraction` scales the shared twist cap (0–1). `primarySweepDeg` sets how far to travel in the opening direction. `oppositeSweepDeg` governs the counter sweep: positive values cross through zero into the opposite side by that magnitude, negative values stop short of zero by that magnitude before reversing, zero returns to center before heading back out, and omitting the argument holds at the primary sweep limit with no counter pass. Provide `timeoutMs` per call (autos currently pass **10 000 ms** = **10 s**) to abort the scan if no tag lock is found. |
 | `visionMode(label, mode)` | Swaps the AprilTag vision profile mid-sequence. | Calls `VisionAprilTag.applyProfile(...)`, reapplies `VisionTuning.RANGE_SCALE`, and logs the active resolution so you can flip between `P480` and `P720` before aim steps. When `VisionConfig.VISION_SOURCE` is `LIMELIGHT`, this step is ignored because Limelight does not expose these webcam profiles. |
-| `readyToLaunch(label, timeoutMs)`<br/>`readyToLaunch(label, timeoutMs, launchDistanceIn)` | Spins the launcher via AutoSpeed and waits for the RPM window + settle timer. | Requires the goal tag lock; continuously recalculates the AutoSpeed target from live tag distance until the launcher stays inside the tolerance band for `SharedRobotTuning.RPM_READY_SETTLE_MS` or the timeout hits. When the optional `launchDistanceIn` is provided, AutoSpeed uses that distance to seed RPM until a real tag distance arrives, then overrides it with the live lock. |
+| `readyToLaunch(label, timeoutMs)`<br/>`readyToLaunch(label, timeoutMs, launchDistanceIn)` | Non-blocking launcher prep step that keeps AutoRPM warm without stalling the sequence. | AutoRPM is always-on during Auto, so this step simply keeps AutoSpeed active, optionally seeds RPM with `launchDistanceIn`, and refreshes telemetry. The launcher target continues updating every loop via the always-on AutoRPM service (including while driving and firing), using the last-seen distance hold window to ride out brief vision flicker. |
 | `fire(label, shots, requireTargetLock, requireLauncherAtSpeed, betweenShotsMs)` | Fires `shots` artifacts with a caller-provided cadence. | If `requireTargetLock` is false, skips the AprilTag lock check. If `requireLauncherAtSpeed` is true, waits for the RPM window before each shot. Set `betweenShotsMs` ≥ feed recovery time (≈3000 ms tested). |
-| `fireContinuous(label, timeMs, requireTargetLock, requireLauncherAtSpeed)` | Holds the FeedStop open and streams feed power until `timeMs` elapse. | Keeps AutoSpeed enabled so launcher RPM stays latched; when `requireTargetLock` is true the step is skipped if the prior aim step never achieved lock, and the builder now remembers a successful `readyToLaunch(...)` lock so continuous fire will proceed instead of being dropped. `requireLauncherAtSpeed` gates only the initial launch before the stream begins. |
+| `fireContinuous(label, timeMs, requireTargetLock, requireLauncherAtSpeed)` | Holds the FeedStop open and streams feed power until `timeMs` elapse. | AutoRPM stays active throughout the stream, refreshing the launcher target every loop. When `requireTargetLock` is true the step is skipped if the prior aim step never achieved lock, and the builder remembers a successful `readyToLaunch(...)` lock so continuous fire will proceed instead of being dropped. `requireLauncherAtSpeed` gates only the initial launch before the stream begins. |
 | `waitFor(label, ms)` | Pauses without moving. | Helpful after driving or firing to let the robot settle. |
 | `eject(label)` | Runs the TeleOp eject routine mid-auto. | Temporarily overrides AutoSpeed, spins to `TeleOpEjectTuning.RPM`, feeds once with intake assist, then restores the previous RPM/AutoSpeed state. |
 | `intake(label, enabled)` | Toggles the floor intake on or off. | Adds telemetry showing the requested state before calling `intake.set(enabled)`. Useful for pickup experiments without writing custom steps. |
@@ -215,11 +215,10 @@ sequence()
 feed timing without requiring a tag lock. Avoid using no-lock shots in
 competition code.
 
-**Timeout behavior:** Steps with timeouts (for example, `rotateToTarget(...)`
-or `readyToLaunch(...)`) now advance as soon as their goals are satisfied;
-the timeout acts only as a fallback when locks/at-speed gates never clear.
-This keeps sequences moving instead of idling until the full timeout expires
-after a successful aim or launcher prep.
+**Timeout behavior:** Steps with timeouts (for example, `rotateToTarget(...)`)
+advance as soon as their goals are satisfied; the timeout acts only as a
+fallback when locks never clear. `readyToLaunch(...)` is now non-blocking,
+so it no longer waits on RPM readiness before the sequence advances.
 
 ---
 
@@ -248,19 +247,16 @@ builder methods so telemetry remains responsive.
   spinning before the goal tag is visible (for example, while driving to
   a launch spot). The launcher keeps that RPM latched until another step
   refreshes it.
-- **`readyToLaunch(...)`** requires a valid AprilTag lock (pair it with
-  `rotateToTarget(...)`). While it runs, AutoSpeed continually samples
-  tag range and recomputes the RPM target until the launcher stays
-  within `SharedRobotTuning.RPM_TOLERANCE` for the
-  `SharedRobotTuning.RPM_READY_SETTLE_MS` window, or the timeout expires.
-  The optional `launchDistanceIn` overload uses that distance to seed
-  AutoSpeed when no lock is available yet, then overrides it as soon as
-  a live tag distance is seen. When the step finishes, the same AutoSpeed
-  hold keeps the wheels at the last calculated target.
+- **`readyToLaunch(...)`** is now non-blocking. It keeps AutoSpeed active,
+  optionally seeds RPM with `launchDistanceIn`, and refreshes telemetry so
+  crews can see the current readiness state without pausing the route.
+  The always-on AutoRPM service continues to recompute targets from live
+  vision (with a brief last-seen distance hold window during flicker),
+  so firing steps can begin as soon as the readiness latch is satisfied.
 
 In both cases the launcher continues spinning at the commanded AutoSpeed
-setpoint for later steps because `BaseAuto` leaves the AutoSpeed
-controller enabled and reasserts the held RPM after each feed.
+setpoint for later steps because AutoRPM now updates continuously during
+Auto, including while driving, scanning, and firing.
 
 ---
 

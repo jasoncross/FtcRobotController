@@ -195,13 +195,13 @@ lead time repeatedly. TeleOp can optionally force a compact firing-state debug b
 - Auto dashboard updates are now driven from a single cached odometry update each loop so the field overlay stays in lockstep with motion without double-updating; Auto loops should call `updateOdometryPose()` once per iteration and pass the cached pose into `updateStatusWithPose(...)`.
 - Auto saves the final fused pose (including heading) to `PoseStore` on stop/cleanup, and TeleOp restores that pose on init to preserve heading continuity.
 - Auto start now reasserts intake-on defaults, immediately syncs the firing controller’s desired intake state, and restores intake after auto firing sequences so autonomous routines keep collecting.
+- Auto now runs an always-on AutoRPM service that updates the launcher target every loop (including drive, scan, and firing steps), holding the last valid vision distance briefly when tags flicker (`SharedRobotTuning.AUTO_DISTANCE_LAST_SEEN_HOLD_MS`) so volleys can begin as soon as the readiness latch is satisfied.
 - AutoSequence `move(...)` steps now treat the heading argument as **relative to the robot’s current facing** so translation
   vectors stay robot-centric even after mid-match heading changes; the builder resolves the absolute heading internally and
   reports both values in telemetry.
-- Aim/launcher prep loops exit as soon as their readiness goals are satisfied, using timeouts only as fallbacks so sequences
-  proceed immediately once a step is complete.
-- AutoSequence `readyToLaunch(...)` now supports an optional fallback launch distance so AutoSpeed can seed RPM before a tag
-  distance is visible, then overrides that speed once a live lock arrives.
+- AutoSequence `readyToLaunch(...)` is now a non-blocking prep step; it keeps AutoSpeed active, optionally seeds RPM with the
+  fallback launch distance, and relies on the always-on AutoRPM service plus the readiness latch for firing gates instead of
+  waiting inside the step.
 - AutoSequence now includes `adjustAutoScale(...)` steps so autonomous routines can apply TeleOp-style AutoRPM tweak
   multipliers (e.g., +2%) across the remaining sequence.
 - BaseAuto now tracks the 30 s autonomous match timer and supports MAIN vs ENDGAME sequencing: MAIN steps run until they finish

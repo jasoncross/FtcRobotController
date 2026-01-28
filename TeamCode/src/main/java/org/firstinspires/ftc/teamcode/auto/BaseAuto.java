@@ -68,6 +68,9 @@ import java.util.Objects;
  *       • Readiness window used by aimSpinUntilReady().
  *       • Coordinate with Launcher.atSpeedToleranceRPM and AutoAimSpeed’s local
  *         copy when adjusting precision.
+ *   - SharedRobotTuning.AUTO_DISTANCE_LAST_SEEN_HOLD_MS
+ *       • Auto-only hold window for the last valid vision distance before
+ *         AutoRPM reverts to holding the last computed RPM.
  *   - SharedRobotTuning.INITIAL_AUTO_DEFAULT_SPEED
  *       • Seeds launcher RPM before the first goal lock via spinLauncherToAutoRpmDefault().
  *       • Mirrors TeleOp's AutoSpeed warm-up so both modes share the same idle spin.
@@ -117,6 +120,9 @@ public abstract class BaseAuto extends LinearOpMode {
     //                        and cadence profiling during auto sequences.
     // CHANGES (2026-01-17): Selected alliance-specific AutoRPM calibration tables
     //                        for autonomous launcher AutoSpeed initialization.
+    // CHANGES (2026-01-28): Added an always-on AutoRPM service with last-seen distance
+    //                        hold so Auto continuously updates launcher RPM during
+    //                        every step (including blocking drive loops).
     // CHANGES (2025-10-30): Intake assist now pulls from FeedTuning to reflect tunable relocation.
     // CHANGES (2025-10-31): Added safeInit gating so subsystems stay motionless until START.
     // CHANGES (2025-10-31): Added unified telemetry/status surface, live obelisk refresh, and
@@ -301,6 +307,17 @@ public abstract class BaseAuto extends LinearOpMode {
     private static final double AUTO_RPM_TWEAK_MIN = 0.50;
     private static final double AUTO_RPM_TWEAK_MAX = 1.50;
     private double autoRpmTweakFactor = 1.0;
+    private boolean autoRpmServiceEnabled = false;
+    private Double autoRpmLastDistanceIn = null;
+    private long autoRpmLastDistanceMs = -1L;
+    private Double autoRpmEffectiveDistanceIn = null;
+    private boolean autoRpmUsingLastSeen = false;
+    private long autoRpmLastDebugTelemetryMs = -1L;
+    private String autoRpmDebugDistanceText = "---";
+    private String autoRpmDebugAgeText = "---";
+    private String autoRpmDebugTargetText = "---";
+    private String autoRpmDebugReadyText = "---";
+    private static final long AUTO_RPM_DEBUG_INTERVAL_MS = 250L;
 
     private double lockTolDeg() {
         double fallback = DEF_LOCK_TOL_DEG;
@@ -376,6 +393,101 @@ public abstract class BaseAuto extends LinearOpMode {
         launcher.updateReadyLatch(nowMs, launcher.targetRpm);
     }
 
+    private long autoDistanceHoldMs() {
+        try { return SharedRobotTuning.AUTO_DISTANCE_LAST_SEEN_HOLD_MS; }
+        catch (Throwable t) { return 500L; }
+    }
+
+    private void enableAutoRpmService() {
+        autoRpmServiceEnabled = true;
+        autoRpmLastDistanceIn = null;
+        autoRpmLastDistanceMs = -1L;
+        autoRpmEffectiveDistanceIn = null;
+        autoRpmUsingLastSeen = false;
+        autoRpmLastDebugTelemetryMs = -1L;
+        try { autoCtrl.setAutoEnabled(true); } catch (Throwable ignored) {}
+        try { AutoRpmConfig.apply(autoCtrl, alliance()); } catch (Throwable ignored) {}
+        try { autoCtrl.setDefaultRpm(autoSeedRpm()); } catch (Throwable ignored) {}
+        runAutoRpmService();
+    }
+
+    private void disableAutoRpmService() {
+        autoRpmServiceEnabled = false;
+    }
+
+    private void runAutoRpmService() {
+        if (!autoRpmServiceEnabled || launcher == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Double distanceIn = distanceInchesFromProvider(visionTargetProvider);
+        if (distanceIn != null) {
+            autoRpmLastDistanceIn = distanceIn;
+            autoRpmLastDistanceMs = now;
+            autoRpmUsingLastSeen = false;
+        }
+
+        Double effectiveDistance = distanceIn;
+        if (effectiveDistance == null && autoRpmLastDistanceIn != null) {
+            long ageMs = Math.max(0L, now - autoRpmLastDistanceMs);
+            if (ageMs <= autoDistanceHoldMs()) {
+                effectiveDistance = autoRpmLastDistanceIn;
+                autoRpmUsingLastSeen = true;
+            } else {
+                autoRpmUsingLastSeen = false;
+            }
+        }
+
+        autoRpmEffectiveDistanceIn = effectiveDistance;
+
+        double targetRpm = (effectiveDistance != null)
+                ? autoCtrl.updateWithVision(effectiveDistance)
+                : autoCtrl.updateWithVision(null);
+        launcher.setTargetRpm(scaleAutoRpm(targetRpm));
+        updateLauncherReadyLatch(now);
+    }
+
+    private void sleepWithAutoRpmService(long ms) throws InterruptedException {
+        long endMs = System.currentTimeMillis() + Math.max(0L, ms);
+        while (opModeIsActive() && System.currentTimeMillis() < endMs) {
+            runAutoRpmService();
+            updateIntakeFlowForAuto();
+            idle();
+        }
+    }
+
+    private void updateAutoRpmDebugTelemetry(long nowMs) {
+        if (!autoRpmServiceEnabled || !DebugTelemetryConfig.DEBUG_AUTORPM_TELEMETRY) {
+            return;
+        }
+        if (autoRpmLastDebugTelemetryMs >= 0L
+                && (nowMs - autoRpmLastDebugTelemetryMs) < AUTO_RPM_DEBUG_INTERVAL_MS) {
+            return;
+        }
+        autoRpmLastDebugTelemetryMs = nowMs;
+
+        String distanceText;
+        if (autoRpmEffectiveDistanceIn == null) {
+            distanceText = "---";
+        } else if (autoRpmUsingLastSeen) {
+            distanceText = String.format(Locale.US, "%.1f (held)", autoRpmEffectiveDistanceIn);
+        } else {
+            distanceText = String.format(Locale.US, "%.1f", autoRpmEffectiveDistanceIn);
+        }
+
+        long ageMs = (autoRpmLastDistanceMs < 0L)
+                ? -1L
+                : Math.max(0L, nowMs - autoRpmLastDistanceMs);
+        String ageText = (ageMs < 0L) ? "---" : String.format(Locale.US, "%d", ageMs);
+
+        autoRpmDebugDistanceText = distanceText;
+        autoRpmDebugAgeText = ageText;
+        autoRpmDebugTargetText = (launcher == null)
+                ? "---"
+                : String.format(Locale.US, "%.0f", launcher.targetRpm);
+        autoRpmDebugReadyText = (launcher != null && launcher.isReadyLatched()) ? "READY" : "not ready";
+    }
+
     /** Elapsed autonomous time (ms) since START. */
     protected final long autoElapsedMs() {
         if (autoStartMs < 0L) {
@@ -406,6 +518,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         // Create drivetrain with IMU + encoder helpers for field-aligned movement.
         drive = new Drivebase(this);
+        drive.setAutoLoopHook(this::runAutoRpmService);
         limelight = null;
         // Initialize AprilTag vision (legacy webcam path) and the unified target provider.
         try {
@@ -498,10 +611,12 @@ public abstract class BaseAuto extends LinearOpMode {
         }
         if (vision != null) vision.setObeliskAutoLatchEnabled(true); // Capture motifs during movement
 
+        enableAutoRpmService();
         try { runSequence(); }
         finally {
             FieldPose finalPose = updateOdometryPose();
             saveFinalPoseForTeleOp(finalPose);
+            disableAutoRpmService();
             stopAll();
             stopVisionIfAny();
             updateStatusWithPose("COMPLETE", false, finalPose);
@@ -602,6 +717,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
 
             updateIntakeFlowForAuto();
+            runAutoRpmService();
             ensureLimelightGoalAimMode();
             VisionTargetProvider provider = visionTargetProvider;
             double bearing = Double.NaN;
@@ -731,6 +847,11 @@ public abstract class BaseAuto extends LinearOpMode {
         Double fallbackDistance = (launchDistanceIn != null && Double.isFinite(launchDistanceIn))
                 ? launchDistanceIn
                 : null;
+        boolean seededFallbackDistance = false;
+        if (fallbackDistance != null) {
+            autoCtrl.updateWithVision(fallbackDistance);
+            seededFallbackDistance = true;
+        }
 
         boolean hadLock = false;
         long start = System.currentTimeMillis();
@@ -739,6 +860,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive()) {
             updateIntakeFlowForAuto();
+            runAutoRpmService();
             FieldPose loopPose = updateOdometryPose();
             long now = System.currentTimeMillis();
             if (mainPhaseOver()) {
@@ -764,33 +886,18 @@ public abstract class BaseAuto extends LinearOpMode {
             Double distanceIn = distanceInchesFromProvider(visionTargetProvider);
             if (distanceIn != null) { hadLock = true; }
 
-            double targetRpm;
-            boolean usingFallbackDistance = false;
-            if (distanceIn != null) {
-                targetRpm = autoCtrl.updateWithVision(distanceIn);
-            } else if (hadLock) {
-                targetRpm = autoCtrl.updateWithVision(null);
-            } else if (fallbackDistance != null) {
-                usingFallbackDistance = true;
-                targetRpm = autoCtrl.updateWithVision(fallbackDistance);
-            } else {
-                targetRpm = fallbackRpm;
-            }
-
-            double scaledTargetRpm = scaleAutoRpm(targetRpm);
-            launcher.setTargetRpm(scaledTargetRpm);
-            updateLauncherReadyLatch(now);
-
             double currentRpm = launcher.getCurrentRpm();
             double error = Math.abs(currentRpm - launcher.targetRpm);
             boolean withinBand = error <= tolerance;
             String distanceText;
-            if (distanceIn == null) {
-                distanceText = (usingFallbackDistance && fallbackDistance != null)
-                        ? String.format(Locale.US, "%.1f (fallback)", fallbackDistance)
-                        : "---";
+            if (autoRpmEffectiveDistanceIn != null) {
+                distanceText = autoRpmUsingLastSeen
+                        ? String.format(Locale.US, "%.1f (held)", autoRpmEffectiveDistanceIn)
+                        : String.format(Locale.US, "%.1f", autoRpmEffectiveDistanceIn);
+            } else if (seededFallbackDistance && fallbackDistance != null) {
+                distanceText = String.format(Locale.US, "%.1f (fallback)", fallbackDistance);
             } else {
-                distanceText = String.format(Locale.US, "%.1f", distanceIn);
+                distanceText = "---";
             }
 
             if (withinBand && hadLock) {
@@ -838,6 +945,36 @@ public abstract class BaseAuto extends LinearOpMode {
         return false;
     }
 
+    private boolean warmLauncherForAuto(String phase, Double launchDistanceIn) {
+        String label = (phase == null || phase.isEmpty()) ? "Ready launcher" : phase;
+        Double distanceIn = distanceInchesFromProvider(visionTargetProvider);
+        boolean usingFallback = false;
+        if (distanceIn == null && launchDistanceIn != null && Double.isFinite(launchDistanceIn)) {
+            autoCtrl.updateWithVision(launchDistanceIn);
+            usingFallback = true;
+        }
+        runAutoRpmService();
+
+        lastReadyHadLock = distanceIn != null;
+        updateStatusWithPose(label, lastReadyHadLock, updateOdometryPose());
+
+        String distanceText;
+        if (distanceIn != null) {
+            distanceText = String.format(Locale.US, "%.1f", distanceIn);
+        } else if (usingFallback) {
+            distanceText = String.format(Locale.US, "%.1f (fallback)", launchDistanceIn);
+        } else {
+            distanceText = "---";
+        }
+
+        telemetry.addData("Distance (in)", distanceText);
+        telemetry.addData("Target RPM", launcher.targetRpm);
+        telemetry.addData("Current RPM", launcher.getCurrentRpm());
+        telemetry.addData("Ready Latched", launcher.isReadyLatched());
+        telemetry.update();
+        return launcher.isReadyLatched();
+    }
+
     // ---------- Strictly gated shooting ----------
     /**
      * Fire count artifacts with strict gating—requires tag lock for each shot and enforces
@@ -881,15 +1018,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 break;
             }
 
-            double holdTarget = autoCtrl.hold();
-            if (holdTarget <= 0) {
-                holdTarget = unscaleAutoRpm(launcher.targetRpm);
-                if (holdTarget <= 0) {
-                    holdTarget = autoSeedRpm();
-                }
-            }
-            launcher.setTargetRpm(scaleAutoRpm(holdTarget));
-            updateLauncherReadyLatch(System.currentTimeMillis());
+            runAutoRpmService();
 
             boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
             SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
@@ -911,6 +1040,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
             while (opModeIsActive() && !mainPhaseOver() && firingController != null && !firingController.isIdle()) {
                 long now = System.currentTimeMillis();
+                runAutoRpmService();
                 firingController.setIntakeDesiredState(intake.isOn());
                 firingController.setContinuousRequested(false);
                 firingController.setSprayLike(sprayLike);
@@ -936,18 +1066,11 @@ public abstract class BaseAuto extends LinearOpMode {
                 break;
             }
 
-            // Reassert the AutoSpeed target so the flywheels stay at commanded RPM during recovery.
-            double recoverTarget = autoCtrl.hold();
-            if (recoverTarget <= 0) {
-                recoverTarget = holdTarget;
-            }
-            launcher.setTargetRpm(scaleAutoRpm(recoverTarget));
-
             long delay = (betweenShotsMs > 0) ? betweenShotsMs : DEFAULT_BETWEEN_MS;
             if (mainPhaseOver()) {
                 break;
             }
-            sleep((int)delay);
+            sleepWithAutoRpmService(delay);
             feed.update();
             updateIntakeFlowForAuto();
             if (resumeIntakeAfterFire) {
@@ -988,16 +1111,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
         }
 
-        autoCtrl.setAutoEnabled(true);
-        double holdTarget = autoCtrl.hold();
-        if (holdTarget <= 0) {
-            holdTarget = unscaleAutoRpm(launcher.targetRpm);
-            if (holdTarget <= 0) {
-                holdTarget = autoSeedRpm();
-            }
-        }
-        launcher.setTargetRpm(scaleAutoRpm(holdTarget));
-        updateLauncherReadyLatch(System.currentTimeMillis());
+        runAutoRpmService();
 
         boolean sprayLike = !requireLock && !requireLauncherAtSpeed;
         SharedRobotTuning.HoldFireForRpmMode rpmGateMode = requireLauncherAtSpeed
@@ -1009,11 +1123,7 @@ public abstract class BaseAuto extends LinearOpMode {
         while (opModeIsActive() && !mainPhaseOver()) {
             long now = System.currentTimeMillis();
             boolean continueRequested = now < endMs;
-
-            double sustainTarget = autoCtrl.hold();
-            if (sustainTarget > 0) {
-                launcher.setTargetRpm(scaleAutoRpm(sustainTarget));
-            }
+            runAutoRpmService();
 
             if (firingController != null) {
                 firingController.setIntakeDesiredState(intake.isOn());
@@ -1087,6 +1197,7 @@ public abstract class BaseAuto extends LinearOpMode {
 
         while (opModeIsActive() && !mainPhaseOver() && (System.currentTimeMillis() - start) < guardMs) {
             updateIntakeFlowForAuto();
+            runAutoRpmService();
             VisionTargetProvider provider = visionTargetProvider;
             Double smoothedHeading = (provider != null) ? provider.getSmoothedHeadingErrorDeg() : null;
             if (provider != null && provider.isGoalVisibleSmoothed() && smoothedHeading != null) {
@@ -1217,7 +1328,9 @@ public abstract class BaseAuto extends LinearOpMode {
         try { launcher.applyBrakeHold(); } catch (Throwable ignored) {}
         try { feed.setIdleHoldActive(false); feed.applyBrakeHold(); } catch (Throwable ignored) {}
         try { intake.applyBrakeHold(); } catch (Throwable ignored) {}
-        try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
+        if (!autoRpmServiceEnabled) {
+            try { autoCtrl.setAutoEnabled(false); } catch (Throwable ignored) {}
+        }
         if (firingController != null) {
             firingController.reset();
         }
@@ -1289,6 +1402,7 @@ public abstract class BaseAuto extends LinearOpMode {
     }
 
     protected final void updateStatusWithPose(String phase, boolean tagLocked, FieldPose poseForDashboard) {
+        runAutoRpmService();
         if (limelightAutoSelector != null && limelightAutoSelector.isEnabled() && !limelightAutoSelector.isLocked()) {
             limelightAutoSelector.update();
         }
@@ -1312,6 +1426,7 @@ public abstract class BaseAuto extends LinearOpMode {
             }
         }
 
+        long nowMs = System.currentTimeMillis();
         telemetry.addData("Phase", statusPhase);
         mirroredLines.add("Phase: " + statusPhase);
 
@@ -1390,6 +1505,18 @@ public abstract class BaseAuto extends LinearOpMode {
         mirroredLines.add("Obelisk Seen: " + (visibleObelisks.isEmpty() ? "-" : visibleObelisks.toString()));
         telemetry.addData("Obelisk Latched", latchedObeliskId < 0 ? "-" : latchedObeliskId);
         mirroredLines.add("Obelisk Latched: " + (latchedObeliskId < 0 ? "-" : latchedObeliskId));
+
+        updateAutoRpmDebugTelemetry(nowMs);
+        if (autoRpmServiceEnabled && DebugTelemetryConfig.DEBUG_AUTORPM_TELEMETRY) {
+            telemetry.addData("AutoRPM Distance (in)", autoRpmDebugDistanceText);
+            telemetry.addData("AutoRPM Distance Age (ms)", autoRpmDebugAgeText);
+            telemetry.addData("AutoRPM Target (rpm)", autoRpmDebugTargetText);
+            telemetry.addData("AutoRPM Ready", autoRpmDebugReadyText);
+            mirroredLines.add("AutoRPM Distance (in): " + autoRpmDebugDistanceText);
+            mirroredLines.add("AutoRPM Distance Age (ms): " + autoRpmDebugAgeText);
+            mirroredLines.add("AutoRPM Target (rpm): " + autoRpmDebugTargetText);
+            mirroredLines.add("AutoRPM Ready: " + autoRpmDebugReadyText);
+        }
 
         Double tagDistanceIn = null;
         Double rawTzM = null;
@@ -1872,26 +1999,18 @@ public abstract class BaseAuto extends LinearOpMode {
 
         public AutoSequence readyToLaunch(String phase, long timeoutMs) {
             return addStep(() -> {
-                lastAimReady = readyLauncherUntilReady(timeoutMs, phase);
+                lastAimReady = warmLauncherForAuto(phase, null);
                 if (lastReadyHadLock) {
                     lastLock = true;
-                }
-                if (!lastAimReady) {
-                    telemetry.addLine("⚠️ Launcher not at speed before timeout");
-                    telemetry.update();
                 }
             });
         }
 
         public AutoSequence readyToLaunch(String phase, long timeoutMs, double launchDistanceIn) {
             return addStep(() -> {
-                lastAimReady = readyLauncherUntilReady(timeoutMs, phase, launchDistanceIn);
+                lastAimReady = warmLauncherForAuto(phase, launchDistanceIn);
                 if (lastReadyHadLock) {
                     lastLock = true;
-                }
-                if (!lastAimReady) {
-                    telemetry.addLine("⚠️ Launcher not at speed before timeout");
-                    telemetry.update();
                 }
             });
         }
@@ -1908,7 +2027,7 @@ public abstract class BaseAuto extends LinearOpMode {
                 updateStatusWithPose(label, lastLock, updateOdometryPose());
                 telemetry.addData("Duration (ms)", milliseconds);
                 telemetry.update();
-                sleep(milliseconds);
+                sleepWithAutoRpmService(milliseconds);
             });
         }
 
@@ -1968,29 +2087,25 @@ public abstract class BaseAuto extends LinearOpMode {
                 double previousTarget = launcher.targetRpm;
                 double previousHold = autoCtrl.hold();
                 boolean autoWasEnabled = autoCtrl.isAutoEnabled();
-                if (autoWasEnabled) {
-                    double manualSync = previousTarget;
-                    if (manualSync <= 0 && previousHold > 0) {
-                        manualSync = previousHold;
-                    }
-                    autoCtrl.onManualOverride(manualSync);
-                }
 
                 int ejectDuration = Math.max(100, TeleOpEjectTuning.TIME_MS);
                 int spinUpDelay = Math.max(100, ejectDuration / 3);
 
                 double ejectRpm = Math.max(0.0, TeleOpEjectTuning.RPM);
+                if (autoWasEnabled) {
+                    autoCtrl.onManualOverride(unscaleAutoRpm(ejectRpm));
+                }
                 launcher.setTargetRpm(ejectRpm);
-                sleep(spinUpDelay);
+                sleepWithAutoRpmService(spinUpDelay);
 
                 boolean intakeWasOn = intake.isOn();
                 if (!intakeWasOn) intake.set(true);
                 feed.feedOnceBlocking();
                 feed.update();
-                sleep(ejectDuration);
+                sleepWithAutoRpmService(ejectDuration);
                 feed.update();
                 if (!intakeWasOn) {
-                    sleep(FeedTuning.INTAKE_ASSIST_MS);
+                    sleepWithAutoRpmService(FeedTuning.INTAKE_ASSIST_MS);
                     intake.set(false);
                     feed.update();
                 }

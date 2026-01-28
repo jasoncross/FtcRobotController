@@ -19,6 +19,9 @@
  *         BaseAuto/TeleOp declare it "ready".
  *       • Keep modest so volleys remain responsive while filtering transient
  *         noise after large RPM adjustments.
+ *   - AUTO_DISTANCE_LAST_SEEN_HOLD_MS (ADDED 2026-01-28)
+ *       • Auto-only hold window for the last valid vision distance before
+ *         AutoRPM returns to its last computed RPM.
  *   - READY_LATCH_TOLERANCE_RPM / READY_LATCH_SETTLE_MS (ADDED 2026-01-05)
  *       • Looser readiness latch used for firing fast-path decisions before a
  *         shot transaction begins.
@@ -69,6 +72,7 @@ public final class SharedRobotTuning {
     // CHANGES (2026-01-03): Added HOLD_FIRE_FOR_RPM mode to control TeleOp RPM-ready feed gating.
     // CHANGES (2026-01-05): Added readiness latch and recovery-band tunables for firing cadence.
     // CHANGES (2026-01-07): Retuned RPM readiness and added stream/burst recovery tunables.
+    // CHANGES (2026-01-28): Added an Auto-only last-seen distance hold window for AutoRPM.
     // --- REV Control Hub IMU physical mounting ---
     public static RevHubOrientationOnRobot.LogoFacingDirection LOGO_DIRECTION =
             RevHubOrientationOnRobot.LogoFacingDirection.UP;      // Physical face of hub logo; adjust when remounted
@@ -81,6 +85,7 @@ public final class SharedRobotTuning {
     public static long   RPM_READY_SETTLE_MS        = 80L;    // Time launcher must remain inside tolerance before declaring ready
     public static double READY_LATCH_TOLERANCE_RPM   = 120.0;  // Looser ±RPM window for the continuous readiness latch
     public static long   READY_LATCH_SETTLE_MS       = 80L;    // Time inside latch window before ready latch is set
+    public static long   AUTO_DISTANCE_LAST_SEEN_HOLD_MS = 500L; // Auto: hold last valid distance this long when vision drops
     public enum HoldFireForRpmMode {
         ALL,
         INITIAL,

@@ -72,19 +72,19 @@ public class Auto_Blue_Target extends BaseAuto {
     protected void runSequence() throws InterruptedException {
         sequence()
                 .rememberHeading("Record start heading")
-                //.spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
-                .move("Drive to standoff", 40.0, 0.0, 0.0, 1)
-                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
-                .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",2000,true, true)
+                .move("Drive back", 37.0, -180.0, 0, 1)
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 30, -30, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .readyToLaunch("Ready launcher for volley", 500, 53)
+                .fireContinuous("firing",2500,true, false)
                 //.fire("Fire volley", 3, true, true, 00)
-                .returnToStoredHeading("Return to start heading", .25)
-                .move("Drive to balls", 26.0, -90.0, 45.0, 1)
-                .move("Drive backward", 26.0, 180.0, 0.0, 1)
-                .move("Drive to triangle", 48.0, 15.0, 135.0, 1)
+                .returnToStoredHeading("Return to start heading", .45)
+                .move("Drive to balls", 18.0, 120.0, -140.0, 1)
+                .move("Drive backward", 36.0, 180.0, 0.0, 1)
+                .move("Drive to triangle", 42.0, 10, 140.0, 1)
+                .rotateToTarget("Scan for Tag", ScanDirection.CCW, 0.45, 30, -30, 10000) // 180° CW sweep, CCW return to -90°, repeat
                 //.fire("Fire volley", 3, true, true, 100)
-                .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",2000,true, true)
+                .readyToLaunch("Ready launcher for volley", 500, 53)
+                .fireContinuous("firing",2000,true, false)
                 //.waitFor("Hold position", 500)
                 .run();
     }

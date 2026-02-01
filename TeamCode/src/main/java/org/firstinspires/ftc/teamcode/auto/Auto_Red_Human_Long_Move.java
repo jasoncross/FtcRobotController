@@ -91,13 +91,13 @@ public class Auto_Red_Human_Long_Move extends BaseAuto {
                 .rememberHeading("Record start heading")
                 //.spinToAutoRpmDefault("Pre-spin launcher to auto RPM")
                 .readyToLaunch("Ready launcher for volley", 500, 120)
-                .move("Drive forward to clear wall", 6.0, 0.0, 0.0, 1)
+                .move("Drive forward to clear wall", 6.0, 0.0, -15.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.4, -30, 30, 10000)
                 .readyToLaunch("Ready launcher for volley", 500)
                 .fireContinuous("firing",5000,true, true)
                 //.fire("Fire volley", 3, false, true, 0)
                 .returnToStoredHeading("Return to start heading", .85)
-                .move("Drive to balls", 30.0, -90.0, 90.0, 1)
+                .move("Drive to wall", 30.0, -105.0, 90.0, 1)
                 .run();
     }
 }

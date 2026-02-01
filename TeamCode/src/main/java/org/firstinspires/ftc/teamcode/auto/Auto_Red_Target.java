@@ -73,20 +73,21 @@ public class Auto_Red_Target extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
+                //.adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
-                .move("Drive 40 in to standoff", 40.0, 0.0, 0.0, 1)
-                .rotateToTarget("Scan for Tag 24", ScanDirection.CW, 0.45, 180, -90, 10000) // 180° CW sweep, CCW return to -90°, repeat
-                .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",2000,true, true)
+                .move("Drive back", 37.0, -180.0, 0, 1)
+                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.45, -30, 30, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .readyToLaunch("Ready launcher for volley", 500, 53)
+                .fireContinuous("firing",2500,true, false)
                 .returnToStoredHeading("Return to start heading", 0.45)
-                .move("Drive to balls", 26.0, 90.0, -45.0, 1)
-                .move("Drive backward", 26.0, 180.0, 0.0, 1)
-                .move("Drive to triangle", 48.0, -15.0, -135.0, 1)
+                .move("Drive to balls", 18.0, -120.0, 140.0, 1)
+                .move("Drive backward", 36.0, 180.0, 0.0, 1)
+                .move("Drive to triangle", 44.0, -10, -140.0, 1)
                 //.fire("Fire volley", 3, false, true, 0)
-                .readyToLaunch("Ready launcher for volley", 500)
-                .fireContinuous("firing",2000,true, true)
+                .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.45, -30, 30, 10000) // 180° CW sweep, CCW return to -90°, repeat
+                .readyToLaunch("Ready launcher for volley", 500, 53)
+                .fireContinuous("firing",2000,true, false)
                 //.waitFor("Hold position", 500)
                 .run();
     }

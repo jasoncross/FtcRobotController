@@ -84,10 +84,10 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
     @Override
     protected void runSequence() throws InterruptedException {
         sequence()
-                .adjustAutoScale("AutoRPM tweak +2%", 0.02)
+                //.adjustAutoScale("AutoRPM tweak +2%", 0.02)
                 //.visionMode("Switch to 480p vision", VisionTuning.Mode.P480)
                 .rememberHeading("Record start heading")
-                .move("Drive forward to clear wall", 11.0, 0.0, 0.0, 1)
+                .move("Drive forward to clear wall", 4.0, 0.0, -15.0, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.4, -30, 30, 10000)
                 //.readyToLaunch("Ready launcher for volley", 500)
                 .readyToLaunch("Ready launcher for volley", 500, 119)
@@ -95,10 +95,10 @@ public class Auto_Red_Human_LongShot extends BaseAuto {
                 .returnToStoredHeading("Return to start heading", 0.85)
                 .move("Drive to balls", 20.0, -45.0, 90.0, 1)
                 .move("Drive backward", 37.0, 180.0, 0.0, 1)
-                .move("Drive to triangle", 53.0, 27.0, -115.0, 1.0)
+                .move("Drive to triangle", 51.0, 29.0, -115.0, 1.0)
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.4, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 500, 114)
-                .fireContinuous("firing",1500,false, true)
+                .fireContinuous("firing",2000,false, true)
                 .endgameMove("Drive out",8,0,0,1)
           .run();
     }

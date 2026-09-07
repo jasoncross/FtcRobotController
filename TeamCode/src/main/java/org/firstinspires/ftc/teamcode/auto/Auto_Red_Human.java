@@ -98,7 +98,7 @@ public class Auto_Red_Human extends BaseAuto {
                 .returnToStoredHeading("Return to start heading", 0.85)
                 .move("Drive to balls", 51.0, -175.0, 90.0, 1)
                 .move("Drive backward", 34.0, 180.0, 0.0, 1)
-                .move("Drive to triangle", 51, 29.0, -115, 1)
+                .move("Drive to triangle", 51, 33.0, -115, 1)
                 .rotateToTarget("Scan for Tag", ScanDirection.CW, 0.6, -30, 30, 1000)
                 .readyToLaunch("Ready launcher for volley", 250,117)
                 .fireContinuous("firing",2000,true, true)

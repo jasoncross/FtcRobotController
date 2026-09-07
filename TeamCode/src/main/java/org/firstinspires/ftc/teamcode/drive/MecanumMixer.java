@@ -4,6 +4,12 @@ package org.firstinspires.ftc.teamcode.drive;
 public final class MecanumMixer {
     private MecanumMixer() { }
 
+    /** Field direction is clockwise from field-forward; IMU yaw is counterclockwise. */
+    public static double[] fieldVector(double fieldClockwiseDeg, double robotCounterclockwiseHeadingDeg) {
+        double radians = Math.toRadians(fieldClockwiseDeg + robotCounterclockwiseHeadingDeg);
+        return new double[]{Math.cos(radians), Math.sin(radians)};
+    }
+
     /** Returns front-left, front-right, back-left, back-right, normalized together. */
     public static double[] mix(double forward, double strafeRight, double clockwise, double limit) {
         if (!Double.isFinite(forward) || !Double.isFinite(strafeRight)

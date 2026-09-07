@@ -32,6 +32,9 @@ but does not include these later changes:
 
 The full newer checkout is preserved in the fork by the annotated tag
 `archive/decode/team-checkout-2026-02-17`. Existing tags remain unchanged.
+It has subsequently been merged into `master` and released as
+`decode-2025-2026-final-v2`, including both Target 9 modes and both Human-route
+adjustments. The code comparison below remains against the same `69bb375` tree.
 For the newest discovered DECODE reference, use:
 
 ```sh

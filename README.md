@@ -1,13 +1,15 @@
 # Indianola Robotics — BIOBUZZ foundation
 
-The final DECODE robot is preserved at `decode-2025-2026-final` (and the team's
-original `DecodeFinal` tag). BIOBUZZ development starts on `codex/biobuzz-base`.
+The updated final DECODE robot is on `master` and tagged `decode-2025-2026-final-v2`,
+including the team's February 17 Target 9 autonomous updates. Earlier tags remain
+available. BIOBUZZ development continues on `codex/biobuzz-base`.
 See the [season transition notes](docs/season-transition.md) and
 [robot setup guide](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md).
 
 The base uses official FTC SDK **v11.2.1**, the latest release verified on
-September 7, 2026. Mecanum drive and webcam AprilTag starter OpModes are included;
-configure the new hardware before enabling them. The SDK's original documentation
+September 7, 2026. Mecanum drive, controller bindings, webcam/Limelight vision,
+and reusable tuning are included; see the [foundation guide](docs/reusable-foundation.md).
+Configure the new hardware before enabling OpModes. The SDK's original documentation
 and release history follow below.
 
 ## SDK NOTICE

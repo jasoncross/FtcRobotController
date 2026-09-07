@@ -39,7 +39,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Assemble all Debug APKs
-        run: ./gradlew --no-daemon clean assembleDebug
+        run: ./gradlew --no-daemon clean assembleDebug :TeamCode:testDebugUnitTest
 
       - name: List Android outputs
         run: |

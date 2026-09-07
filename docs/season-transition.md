@@ -16,6 +16,11 @@ preserved as `archive/decode/team-checkout-2026-02-17`; neither existing final
 tag was moved. See the [comparison report](limelight-retirement.md) for evidence
 and the distinction between the original tagged release and the later checkout.
 
+Those February 17 changes have now been merged into `master` and tagged
+`decode-2025-2026-final-v2`. Its full file tree matches `69bb375`, while its merge
+history also retains the fork's commits. This is the updated final-season release
+to use when the Target 9 modes are needed; the original tags remain unchanged.
+
 The `codex/biobuzz-base` branch then merged team `master` (`5e8e046`), which
 already included the official SDK update and removal of most DECODE code.
 
@@ -35,7 +40,7 @@ that the SDK includes BIOBUZZ field data. Check FIRST's releases again when
 the season's SDK is published. SDK examples and historical release notes remain
 intact, including their references to older games.
 
-## Team code changes
+## Initial cleanup and subsequent restoration
 
 - Removed DECODE launchers, intake/feed sequencing, RPM control, auto-aim,
   autonomous paths, field drawing, localization fusion, tag IDs, old tuning,
@@ -51,6 +56,15 @@ intact, including their references to older games.
 
 See the [TeamCode setup guide](../TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md)
 before enabling any starter OpMode.
+
+Following review, the reusable controller bindings, rumble envelopes, drive
+motion helpers and tuning were restored. The webcam/Limelight abstraction,
+camera profiles, pipeline selection, and tag-aim tuning are now available as
+season-neutral infrastructure. Historical geometry/calibration is labeled and
+requires review before use. The [foundation guide](reusable-foundation.md)
+describes the current code; the [complete historical tuning reference](decode-tuning-reference.md)
+preserves every former configuration file. DECODE mechanisms and field rules
+remain excluded from BIOBUZZ.
 
 ## Preseason manual and branch housekeeping
 
@@ -70,6 +84,10 @@ Android SDK. The mecanum checks passed, including 9,261 combined stick inputs.
 The final DECODE tag's tree was verified identical to `DecodeFinal`, and the
 SDK controller, wrapper, and build files match v11.2.1 apart from trailing
 whitespace. All three starter OpModes were verified disabled.
+
+The restored foundation retains the official SDK/toolchain baseline, adding a
+JUnit test dependency only in TeamCode. The updated DECODE v2 release also
+passed `assembleDebug` with its original SDK 11.0 dependencies.
 
 Run `./gradlew --no-daemon assembleDebug` with JDK 17 and an Android SDK configured
 through `ANDROID_HOME` or `local.properties`. GitHub Actions also builds debug

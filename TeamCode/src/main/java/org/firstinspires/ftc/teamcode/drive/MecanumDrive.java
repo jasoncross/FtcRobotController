@@ -28,8 +28,12 @@ public final class MecanumDrive {
     }
 
     public void drive(double forward, double strafeRight, double clockwise) {
+        drive(forward, strafeRight, clockwise, 1.0);
+    }
+
+    public void drive(double forward, double strafeRight, double clockwise, double speedScale) {
         double[] powers = MecanumMixer.mix(forward, strafeRight, clockwise,
-                RobotConfig.DRIVE_POWER_LIMIT);
+                RobotConfig.DRIVE_POWER_LIMIT * Math.max(0, Math.min(1, speedScale)));
         frontLeft.setPower(powers[0]);
         frontRight.setPower(powers[1]);
         backLeft.setPower(powers[2]);

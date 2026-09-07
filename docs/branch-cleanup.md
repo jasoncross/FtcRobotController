@@ -1,14 +1,16 @@
 # Branch cleanup assessment
 
-Inspected September 7, 2026 after fetching and pruning remote-tracking refs.
-No local or remote branches were deleted as part of this assessment.
+Inspected and initial cleanup completed September 7, 2026 after fetching and
+pruning remote-tracking refs. The six fully preserved fork branches below and
+their three local copies were deleted. The two local-only branches were archived
+to published tags before their local branch names were removed.
 
 Keep `master`, `codex/biobuzz-base`, `decode-2025-2026-final`, and `DecodeFinal`.
 `master` currently preserves the merged DECODE release; development is on
 `codex/biobuzz-base`. Changing the default branch or merging BIOBUZZ into
 `master` is a separate decision.
 
-## Fork branches ready for deletion
+## Fork branches deleted
 
 These six `origin` branches are ancestors of `decode-2025-2026-final`, and none
 is the source or target of an open pull request in the fork at review time:
@@ -20,11 +22,18 @@ is the source or target of an open pull request in the fork at review time:
 - `codex/add-auto-scale-adjustment-method-1cnl34`
 - `codex/set-intake-to-on-by-default-in-auto-modes`
 
-Local copies of `speed-tweaks`, `feed-system`, and `limelight` are also fully
-preserved. Deleting these branch names would not remove their history from the
-final season tag. Refresh refs and recheck open PRs before executing cleanup.
+Local copies of `speed-tweaks`, `feed-system`, and `limelight` were also deleted.
+Their histories remain reachable through the final season tag.
 
-## Keep until the old PRs are resolved
+## Evaluated: retire limelight-part3 after PR disposition
+
+The [comparison with the team checkout](limelight-retirement.md) concludes that
+`limelight-part3` is no longer needed as an active development branch. It has
+zero commits outside the preserved DECODE history, and its vision/odometry
+files exactly match the later team checkout. The six PRs below should be closed
+as superseded or archived experiments, rather than merged into BIOBUZZ. Their
+unmerged source tips should be archived before branch deletion. This evaluation
+did not close PRs or delete their base/source branches.
 
 `limelight-part3` is fully preserved in the final tag, but remains the base of
 six open PRs in `jasoncross/FtcRobotController`. Keep it and the source branches
@@ -44,16 +53,18 @@ this caution. These are commit ancestry counts, not proof that every change is
 absent: equivalent changes may have been merged under different commits.
 Review or preserve the tips with annotated archive tags before deleting them.
 
-## Local branches whose remote branches are gone
+## Local-only branches archived and deleted
 
-| Local branch | Commits not reachable from the BIOBUZZ branch |
-| --- | ---: |
-| `limelight-redux` | 13 |
-| `odometry-addition` | 2 |
+| Former local branch | Unmerged commits | Published archive tag |
+| --- | ---: | --- |
+| `limelight-redux` | 13 | `archive/decode/limelight-redux` |
+| `odometry-addition` | 2 | `archive/decode/odometry-addition` |
 
-Their tips are not contained in the DECODE release tag either. Preserve them
-with archive tags or review their changes before deleting their last branch refs.
+Their tips were not contained in the DECODE release tag. Both annotated archive
+tags were pushed successfully before the local branches were deleted.
 
-The team repository (`upstream`) is outside the proposed fork cleanup. In
-particular, `upstream/speed-tweaks` has one commit outside the BIOBUZZ history;
-do not assume all team branches have been preserved by this transition.
+The team repository (`upstream`) was not modified. Its `speed-tweaks` commit
+`69bb375` matches the clean local team checkout and contains four autonomous
+file changes beyond `DecodeFinal`. It is now independently preserved in the
+fork as `archive/decode/team-checkout-2026-02-17`. Existing season tags were
+not moved. See the comparison report for the exact changes.

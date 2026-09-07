@@ -61,3 +61,9 @@ git worktree add ../FtcRobotController-DECODE decode-2025-2026-final
 All removed mechanisms, vision fusion, motion helpers, calibration, and season
 documentation remain available there. Recover individual ideas deliberately;
 their old settings describe the DECODE robot.
+
+The latest discovered team checkout is slightly newer: the tag
+`archive/decode/team-checkout-2026-02-17` preserves two added Target 9 autonomous
+modes and two Human-route adjustments beyond `DecodeFinal`. Use that tag in the
+worktree command when you want the newest local team-code reference. See the
+[comparison report](../../../../../../../../docs/limelight-retirement.md).

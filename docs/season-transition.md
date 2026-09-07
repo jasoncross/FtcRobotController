@@ -9,6 +9,13 @@ tree, and tagged `decode-2025-2026-final` before any preseason changes.
 The existing `DecodeFinal` tag was not moved. The merge also preserves the
 fork's history, including its historical `TeamCode.zip`.
 
+A subsequent comparison with the team's local repository found a clean February
+17 checkout at `69bb375`, one commit after `DecodeFinal`. It adds two Target 9
+autonomous modes and adjusts two Human routes. The full newer snapshot is now
+preserved as `archive/decode/team-checkout-2026-02-17`; neither existing final
+tag was moved. See the [comparison report](limelight-retirement.md) for evidence
+and the distinction between the original tagged release and the later checkout.
+
 The `codex/biobuzz-base` branch then merged team `master` (`5e8e046`), which
 already included the official SDK update and removal of most DECODE code.
 

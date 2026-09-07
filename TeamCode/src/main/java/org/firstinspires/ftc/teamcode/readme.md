@@ -5,6 +5,13 @@ vision. It contains no DECODE scoring mechanisms, paths, goal IDs, field poses,
 launcher curves, or robot calibration. All three example OpModes are `@Disabled`
 until the hardware configuration is reviewed.
 
+Read the [BIOBUZZ V0 preseason notes](../../../../../../../../docs/biobuzz-preseason.md)
+before adding mechanisms or vision services. In particular, R704 restricts
+robot Wi-Fi streaming to permitted Driver Station traffic and prohibits services
+such as FTC Dashboard and continuous wireless video. Keep image processing
+onboard and use Driver Station telemetry. V0 leaves game timing, field/tag data,
+and expansion limits pending; do not restore those values from DECODE.
+
 ## First setup
 
 1. Edit `config/RobotConfig.java` to match the Robot Controller configuration.

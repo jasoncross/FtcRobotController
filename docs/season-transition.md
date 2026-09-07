@@ -45,6 +45,17 @@ intact, including their references to older games.
 See the [TeamCode setup guide](../TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md)
 before enabling any starter OpMode.
 
+## Preseason manual and branch housekeeping
+
+The supplied BIOBUZZ Pre-Season V0 manual adds relevant control-system,
+vision, network-streaming, and actuator constraints. See
+[preseason notes](biobuzz-preseason.md) for rule/page references and details
+that remain pending until kickoff. No game-specific timing or field data has
+been inferred from this preliminary manual.
+
+See the [branch cleanup assessment](branch-cleanup.md) for merged branches that
+can be retired and unmerged work/open PRs that should be preserved first.
+
 ## Validation
 
 On September 7, 2026, `assembleDebug` passed using a temporary JDK 17 and

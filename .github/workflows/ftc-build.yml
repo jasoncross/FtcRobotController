@@ -28,7 +28,12 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Accept Android licenses
-        run: yes | sdkmanager --licenses
+        run: sdkmanager --licenses < <(yes)
+
+      - name: Check mecanum wheel mixing
+        run: |
+          javac -d "$RUNNER_TEMP/ftc-drive-check" TeamCode/src/main/java/org/firstinspires/ftc/teamcode/drive/MecanumMixer.java TeamCode/src/test/java/org/firstinspires/ftc/teamcode/drive/MecanumMixerCheck.java
+          java -cp "$RUNNER_TEMP/ftc-drive-check" org.firstinspires.ftc.teamcode.drive.MecanumMixerCheck
 
       - name: Ensure gradlew is executable
         run: chmod +x ./gradlew

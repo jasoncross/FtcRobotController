@@ -3,9 +3,14 @@
 The primary developer documentation for TeamCode lives alongside the Java source tree so that related files remain close together. Key references include:
 
 - [`readme.md`](../src/main/java/org/firstinspires/ftc/teamcode/readme.md) – Main project guide covering architecture, bindings, and subsystem usage.
-- [`CodexContextBackground.md`](../src/main/java/org/firstinspires/ftc/teamcode/CodexContextBackground.md) – Codex context, subsystem overview, and rules background for the DECODE season codebase.
-- [`DECODE_Season_Context.md`](../src/main/java/org/firstinspires/ftc/teamcode/DECODE_Season_Context.md) – Season briefing and on-field strategy notes.
+- [`CodexContextBackground.md`](../src/main/java/org/firstinspires/ftc/teamcode/CodexContextBackground.md) – Current BIOBUZZ component responsibilities, lifecycle, and coordinate conventions.
 - [`TunableDirectory.md`](../src/main/java/org/firstinspires/ftc/teamcode/TunableDirectory.md) – Authoritative list of configurable values.
-- [`auto/AutoSequenceGuide.md`](../src/main/java/org/firstinspires/ftc/teamcode/auto/AutoSequenceGuide.md) – Step-by-step reference and examples for building autonomous routes with the fluent sequence API.
+- [`AGENTS.md`](../../AGENTS.md) – Repository-wide coding and documentation instructions; replaces the repeated base prompt.
+- [Reusable foundation](../../docs/reusable-foundation.md) – Controller, drive, webcam/Limelight, calibration, and verification guide.
+- [BIOBUZZ V0 notes](../../docs/biobuzz-preseason.md) – Dated preliminary manual constraints and information still pending.
+- [DECODE tuning reference](../../docs/decode-tuning-reference.md) – Historical configuration source; not active BIOBUZZ tuning.
+- [Season transition](../../docs/season-transition.md) – SDK baseline, archived releases, and migration history.
 
-Add new documentation alongside these files so future contributors can discover it quickly from the source tree.
+Add current guides alongside these files or under the existing `docs/` folder and
+link them here. The former DECODE season context and AutoSequence guide remain in
+`decode-2025-2026-final-v2`; the BIOBUZZ BaseAuto is currently an empty template.

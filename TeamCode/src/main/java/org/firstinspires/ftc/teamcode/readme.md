@@ -5,6 +5,10 @@ previous season is retained here. Game mechanisms, scoring behavior, field tags,
 and routes are specific to DECODE and remain in the season release. All starter
 OpModes are disabled until the new robot is configured.
 
+Development instructions are in [AGENTS.md](../../../../../../../../AGENTS.md).
+Use the [architecture context](CodexContextBackground.md) and
+[active tunable directory](TunableDirectory.md) before changing shared behavior.
+
 Read the [foundation and tuning guide](../../../../../../../../docs/reusable-foundation.md)
 for the active settings and the [V0 preseason notes](../../../../../../../../docs/biobuzz-preseason.md)
 for preliminary season constraints. The [historical tuning reference](../../../../../../../../docs/decode-tuning-reference.md)
@@ -38,7 +42,7 @@ the new runtime.
    timeout and stall handling, encoder access, and loop hooks. Keep resource
    cleanup in `finally` and do not reuse DECODE routes as BIOBUZZ routes.
 
-## Organization
+## Project Layout
 
 - `config`: active hardware, driver, motion, camera, Limelight, aiming and rumble settings.
 - `input`: gamepad press/hold/toggle/trigger bindings and optional paddle readers.
@@ -66,3 +70,11 @@ git worktree add ../FtcRobotController-DECODE decode-2025-2026-final-v2
 The v2 tree matches the team's clean checkout at `69bb375`, also preserved by
 `archive/decode/team-checkout-2026-02-17`. See the
 [comparison report](../../../../../../../../docs/limelight-retirement.md).
+
+## Revision History
+
+- **2026-09-07 — Repository instruction migration:** Replaced the repeated
+  DECODE base prompt with root AGENTS.md; restored current architecture context
+  and the active tunable directory, repaired documentation navigation, and
+  documented build-aware verification and feature-preservation requirements.
+  Robot behavior is unchanged by this documentation request.

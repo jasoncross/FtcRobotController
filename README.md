@@ -6,6 +6,11 @@ available. BIOBUZZ development continues on `codex/biobuzz-base`.
 See the [season transition notes](docs/season-transition.md) and
 [robot setup guide](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md).
 
+Coding agents should follow [AGENTS.md](AGENTS.md), which replaces the repeated
+base prompt with repository-scoped architecture, tuning, documentation, and
+verification rules. Codex discovers this root file for new sessions in this
+checkout; see [the official AGENTS.md guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
 The base uses official FTC SDK **v11.2.1**, the latest release verified on
 September 7, 2026. Mecanum drive, controller bindings, webcam/Limelight vision,
 and reusable tuning are included; see the [foundation guide](docs/reusable-foundation.md).

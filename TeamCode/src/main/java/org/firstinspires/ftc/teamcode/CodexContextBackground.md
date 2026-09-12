@@ -13,6 +13,7 @@ separate reusable capability from calibration and game behavior.
 | --- | --- |
 | `BaseDriveTeleOp` | Creates basic drivetrain, gamepad bindings, rumble/aim controllers, and optional vision. Updates vision during INIT without driving. During RUN, reads controls, selects the configured target, optionally applies aim twist, and commands drive. Stops motors/rumble and closes vision in `finally`. |
 | `ControllerBindings` | Edge, hold, toggle and analog-trigger callbacks across two gamepads. Call `update` each RUN loop. Multiple bindings can coexist on one button; registered paddle readers are optional. Game-specific default mappings were removed. |
+| `ReverseDriveControl` | Per-TeleOp normal/reverse state. Registers the G1 left-stick press through ControllerBindings, inverts only forward/strafe, and confirms ON with two rumble pulses and OFF with one. New instances start OFF. |
 | `MecanumDrive` / `MecanumMixer` | Basic robot-centric drive with normalized wheel powers, hardware-configured directions, and the configured power cap. Trigger braking scales the cap after normalization. No IMU required. |
 | `Drivebase` | Separate retained encoder/IMU helper layer for calibrated autonomous motion. Not instantiated by the current BaseAuto or basic TeleOp. Constructor requires `CALIBRATION_CONFIRMED`; blocking helpers check active state, use timeouts and retained stall logic, and stop motors in `finally`. Do not construct both drive owners for the same hardware in one OpMode. |
 | `VisionFactory` / `VisionTargetProvider` | Device selection through a common lifecycle/status/observation interface. Device providers do not own drive or scoring decisions. |
@@ -20,7 +21,7 @@ separate reusable capability from calibration and game behavior.
 | `LimelightTargetProvider` | Native SDK Limelight3A polling and pipeline control, fresh fiducial ID/bearing observations and connection status. Stops polling on exit. Optional explicit yaw-feed API is not automatically driven by the current TeleOp. |
 | `LimelightPipelineSelector` | Nonblocking settle/sample/choose/fallback process. Counts distinct frames only from the requested pipeline. Uses a bounded selection lifetime and no persistent last-good configuration. |
 | `TargetObservation` / `TagAimController` | Timestamped ID, bearing and optional distance. Aim uses the explicit ID, rejects missing/stale/unsolved observations, applies frame-delta PD/deadband/clamp, and resets on loss. |
-| `RumbleNotifier` | Nonblocking heading-error feedback with configurable envelope. TeleOp Y toggles feedback and plays the configured confirmation pattern. |
+| `RumbleNotifier` | Nonblocking heading-error feedback with configurable envelope. TeleOp Y toggles feedback and plays the configured confirmation pattern. Aim feedback waits while the gamepad is rumbling so it does not interrupt toggle confirmations. |
 | `FieldPose` / `PoseStore` | Caller-defined pose and copied Auto-to-TeleOp handoff. Utilities retained for future localization; no current OpMode performs pose fusion through them. |
 | `BaseAuto` | Disabled, no-motion LinearOpMode template. There are no BIOBUZZ route variants or fluent `sequence()` implementation yet. |
 | `VisionTest` | Independent disabled vision bring-up OpMode. Runs either provider without drive hardware, including updates during INIT. |

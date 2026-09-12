@@ -101,9 +101,9 @@ Units and intended ranges below are tuning guidance unless enforcement is explic
 | `AIM_PULSE_MAX_MS` | `200` | Milliseconds | RumbleNotifier longest pulse near zero error |
 | `AIM_COOLDOWN_MIN_MS` | `120` | Milliseconds | RumbleNotifier shortest cooldown at window edge |
 | `AIM_COOLDOWN_MAX_MS` | `350` | Milliseconds | RumbleNotifier longest cooldown near zero error |
-| `TOGGLE_STRENGTH` | `0.8` | Normalized strength, intended 0–1 | BaseDriveTeleOp toggle confirmation bursts |
-| `TOGGLE_STEP_MS` | `120` | Milliseconds | BaseDriveTeleOp confirmation burst duration |
-| `TOGGLE_GAP_MS` | `80` | Milliseconds | BaseDriveTeleOp gap between confirmation bursts |
+| `TOGGLE_STRENGTH` | `0.8` | Normalized strength, intended 0–1 | BaseDriveTeleOp / ReverseDriveControl toggle confirmation bursts |
+| `TOGGLE_STEP_MS` | `120` | Milliseconds | BaseDriveTeleOp / ReverseDriveControl confirmation burst duration |
+| `TOGGLE_GAP_MS` | `80` | Milliseconds | BaseDriveTeleOp / ReverseDriveControl gap between confirmation bursts |
 
 ## [VisionConfig](config/VisionConfig.java)
 

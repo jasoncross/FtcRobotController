@@ -76,7 +76,12 @@ odometry. The final team robot had pose fusion disabled too.
 
 The disabled `BaseDriveTeleOp` starter uses left stick to move, right stick X
 to turn, left trigger to reduce speed, A to stop while held, and Y to toggle
-aim-feedback rumble. If `ENABLE_AIM_ASSIST` is explicitly enabled, holding RB
+aim-feedback rumble. Clicking the left stick toggles reverse drive, starting OFF
+on each run: forward/strafe invert while manual and aim twist retain their signs.
+Telemetry shows Reverse ON/OFF; two confirmation pulses mean ON and one means
+OFF, using the existing toggle rumble settings. Aim feedback waits until a
+confirmation finishes. Trigger braking and A-to-stop still apply in either mode.
+If `ENABLE_AIM_ASSIST` is explicitly enabled, holding RB
 uses the configured target's bearing. Missing/stale/unsolved targets produce
 zero aim twist; translation stays under driver control. All wheel commands
 remain capped by `RobotConfig.DRIVE_POWER_LIMIT`.
@@ -113,6 +118,11 @@ that the new runtime actually consumes. The complete implementations remain in
 `decode-2025-2026-final-v2` for deliberate reuse.
 
 ## Verification
+
+On September 12, 2026, the Android debug build, all 12 JUnit tests, and the
+9,261-input standalone mecanum check passed. The reverse-drive tests cover G1 left-stick edges,
+held-button behavior, new-run default state, single/double pulse patterns,
+translation reversal, unchanged twist, and slow-mode power scaling.
 
 On September 7, 2026, both the DECODE v2 and restored BIOBUZZ debug builds passed.
 All 10 JUnit tests passed, as did the standalone 9,261-input mecanum check.

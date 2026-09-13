@@ -12,7 +12,7 @@ Units and intended ranges below are tuning guidance unless enforcement is explic
 | --- | --- | --- | --- |
 | `TRIGGER_EDGE_THRESH` | `0.5` | Normalized trigger input | ControllerBindings trigger press edge |
 | `STICK_DEADBAND` | `0.05` | Normalized stick magnitude | BaseDriveTeleOp zeros small stick inputs |
-| `SLOWEST_SPEED` | `0.25` | Fraction, clamped 0–1 | BaseDriveTeleOp full-trigger speed floor relative to drive cap |
+| `SLOWEST_SPEED` | `0.25` | Fraction, clamped 0–1 | DriveInputScaling via BaseDriveTeleOp: full-trigger speed floor relative to drive cap |
 | `STRAFE_SCALE` | `1.0` | Multiplier | BaseDriveTeleOp lateral stick scale |
 | `TURN_SCALE` | `1.0` | Multiplier | BaseDriveTeleOp manual twist scale |
 
@@ -101,9 +101,9 @@ Units and intended ranges below are tuning guidance unless enforcement is explic
 | `AIM_PULSE_MAX_MS` | `200` | Milliseconds | RumbleNotifier longest pulse near zero error |
 | `AIM_COOLDOWN_MIN_MS` | `120` | Milliseconds | RumbleNotifier shortest cooldown at window edge |
 | `AIM_COOLDOWN_MAX_MS` | `350` | Milliseconds | RumbleNotifier longest cooldown near zero error |
-| `TOGGLE_STRENGTH` | `0.8` | Normalized strength, intended 0–1 | BaseDriveTeleOp / ReverseDriveControl toggle confirmation bursts |
-| `TOGGLE_STEP_MS` | `120` | Milliseconds | BaseDriveTeleOp / ReverseDriveControl confirmation burst duration |
-| `TOGGLE_GAP_MS` | `80` | Milliseconds | BaseDriveTeleOp / ReverseDriveControl gap between confirmation bursts |
+| `TOGGLE_STRENGTH` | `0.8` | Normalized strength, intended 0–1 | ToggleRumble: Y / reverse confirmation bursts |
+| `TOGGLE_STEP_MS` | `120` | Milliseconds | ToggleRumble: nonnegative confirmation burst duration and suppression timer |
+| `TOGGLE_GAP_MS` | `80` | Milliseconds | ToggleRumble: nonnegative gap and suppression timer for double pulses |
 
 ## [VisionConfig](config/VisionConfig.java)
 

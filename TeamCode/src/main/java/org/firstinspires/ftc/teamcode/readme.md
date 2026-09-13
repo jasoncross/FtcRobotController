@@ -36,7 +36,8 @@ the new runtime.
    are ready to test. Left stick moves, right X turns, LT slows, A stops while
    held, and Y toggles aim-feedback rumble. Click the left stick to toggle reverse
    drive: forward/strafe invert, turning stays unchanged. Reverse starts OFF;
-   two rumble pulses mean ON, one means OFF, with state shown in telemetry. Vision is optional via
+   if the button is held at START, release it before clicking to enable reverse.
+   Two rumble pulses mean ON, one means OFF, with state shown in telemetry. Vision is optional via
    `RobotConfig.VISION_ENABLED`. RB only provides aim assist when explicitly
    enabled in `VisionConfig` and the selected target has a fresh bearing.
 6. Add autonomous actions to the disabled `auto/BaseAuto.java` after calibrating
@@ -47,10 +48,10 @@ the new runtime.
 ## Project Layout
 
 - `config`: active hardware, driver, motion, camera, Limelight, aiming and rumble settings.
-- `input`: gamepad bindings, optional paddle readers, and `ReverseDriveControl` for driver perspective.
+- `input`: gamepad bindings, optional paddle readers, and `ReverseDriveControl` for driver perspective, and `DriveInputScaling` for trigger braking.
 - `drive`: basic wheel mixing plus calibrated encoder/IMU motion helpers.
 - `vision`: interchangeable camera sources, target observations, pipeline sampling, and aiming.
-- `utils`: driver feedback.
+- `utils`: aim feedback and timed toggle confirmations.
 - `odometry`: pose container and handoff; no enabled field-pose fusion.
 - `teleop`, `auto`: disabled starting OpModes for the new robot.
 
@@ -78,7 +79,10 @@ The v2 tree matches the team's clean checkout at `69bb375`, also preserved by
 - **2026-09-12 — Restore reverse drive:** Restored the Gamepad 1 left-stick
   toggle, translation-only reversal, single/double confirmation pulses, and
   Reverse telemetry. Slow mode, manual/aim turning and A-to-stop remain intact.
-  Added regression coverage and updated driver/architecture documentation.
+  Follow-up review corrections require release for a button held at START,
+  isolate toggle confirmation timing from aim pulses, and exercise the actual
+  trigger mapping plus rumble strength/duration in regression tests. Updated
+  driver guidance and component ownership documentation.
 
 - **2026-09-07 — Repository instruction migration:** Replaced the repeated
   DECODE base prompt with root AGENTS.md; restored current architecture context

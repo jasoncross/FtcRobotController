@@ -1,29 +1,22 @@
 package org.firstinspires.ftc.teamcode.input;
 
 import com.qualcomm.robotcore.hardware.Gamepad;
-import org.firstinspires.ftc.teamcode.config.TeleOpRumbleTuning;
+import org.firstinspires.ftc.teamcode.utils.ToggleRumble;
 
 /**
  * Driver perspective toggle: invert translation while preserving robot-relative twist.
- * CHANGES (2026-09-12): Restore left-stick toggle and single/double rumble confirmation.
+ * CHANGES (2026-09-12): Restore left-stick toggle; require release if held at START and share timed confirmation feedback.
  */
 public final class ReverseDriveControl {
     private boolean reversed;
 
-    /** A new instance starts in normal drive; ControllerBindings owns press-edge detection. */
-    public ReverseDriveControl(ControllerBindings bindings, Gamepad gamepad) {
-        bindings.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.L_STICK_BTN, () -> {
-            reversed = !reversed;
-            Gamepad.RumbleEffect.Builder effect = new Gamepad.RumbleEffect.Builder()
-                    .addStep(TeleOpRumbleTuning.TOGGLE_STRENGTH, TeleOpRumbleTuning.TOGGLE_STRENGTH,
-                            TeleOpRumbleTuning.TOGGLE_STEP_MS);
-            if (reversed) {
-                effect.addStep(0, 0, TeleOpRumbleTuning.TOGGLE_GAP_MS)
-                        .addStep(TeleOpRumbleTuning.TOGGLE_STRENGTH, TeleOpRumbleTuning.TOGGLE_STRENGTH,
-                                TeleOpRumbleTuning.TOGGLE_STEP_MS);
-            }
-            gamepad.runRumbleEffect(effect.build());
-        });
+    /** Construct at START: seed the button state without toggling or playing feedback. */
+    public ReverseDriveControl(ControllerBindings bindings, Gamepad gamepad, ToggleRumble feedback) {
+        bindings.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.L_STICK_BTN,
+                gamepad.left_stick_button, () -> {
+                    reversed = !reversed;
+                    feedback.play(reversed);
+                });
     }
 
     /** Apply only to forward/strafe input, never to manual or vision-generated twist. */

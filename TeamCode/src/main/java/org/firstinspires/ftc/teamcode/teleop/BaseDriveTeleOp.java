@@ -10,6 +10,8 @@ import org.firstinspires.ftc.teamcode.config.VisionConfig;
 import org.firstinspires.ftc.teamcode.drive.MecanumDrive;
 import org.firstinspires.ftc.teamcode.input.ControllerBindings;
 import org.firstinspires.ftc.teamcode.input.ReverseDriveControl;
+import org.firstinspires.ftc.teamcode.input.DriveInputScaling;
+import org.firstinspires.ftc.teamcode.utils.ToggleRumble;
 import org.firstinspires.ftc.teamcode.utils.RumbleNotifier;
 import org.firstinspires.ftc.teamcode.vision.VisionFactory;
 import org.firstinspires.ftc.teamcode.vision.VisionTargetProvider;
@@ -18,7 +20,7 @@ import org.firstinspires.ftc.teamcode.vision.TagAimController;
 
 /**
  * Starter drive with optional target aiming and reusable driver controls.
- * CHANGES (2026-09-12): Restore reverse-drive toggle, feedback and telemetry; preserve slow/stop/aim behavior.
+ * CHANGES (2026-09-12): Restore reverse-drive toggle, feedback and telemetry; require release at START, isolate confirmation timing, and test trigger scaling.
  */
 @TeleOp(name = "BIOBUZZ: Base Drive", group = "BIOBUZZ")
 @Disabled // Review RobotConfig and test wheel directions before enabling.
@@ -35,20 +37,15 @@ public class BaseDriveTeleOp extends LinearOpMode {
                 TeleOpRumbleTuning.AIM_PULSE_MIN_MS, TeleOpRumbleTuning.AIM_PULSE_MAX_MS,
                 TeleOpRumbleTuning.AIM_COOLDOWN_MIN_MS, TeleOpRumbleTuning.AIM_COOLDOWN_MAX_MS);
         ControllerBindings bindings = new ControllerBindings();
-        ReverseDriveControl reverseDrive = new ReverseDriveControl(bindings, gamepad1);
+        ToggleRumble confirmations = new ToggleRumble(gamepad1);
         bindings.bindPress(ControllerBindings.Pad.G1, ControllerBindings.Btn.Y, () -> {
             rumble.setActive(!rumble.isActive());
-            gamepad1.runRumbleEffect(new com.qualcomm.robotcore.hardware.Gamepad.RumbleEffect.Builder()
-                    .addStep(TeleOpRumbleTuning.TOGGLE_STRENGTH, TeleOpRumbleTuning.TOGGLE_STRENGTH,
-                            TeleOpRumbleTuning.TOGGLE_STEP_MS)
-                    .addStep(0, 0, TeleOpRumbleTuning.TOGGLE_GAP_MS)
-                    .addStep(TeleOpRumbleTuning.TOGGLE_STRENGTH, TeleOpRumbleTuning.TOGGLE_STRENGTH,
-                            TeleOpRumbleTuning.TOGGLE_STEP_MS).build());
+            confirmations.play(true);
         });
         try {
             if (RobotConfig.VISION_ENABLED) vision = VisionFactory.create(hardwareMap);
             telemetry.addLine("Left stick: move; right X: turn; LT: slow; A: stop; Y: rumble toggle.");
-            telemetry.addLine("Click left stick: reverse drive toggle (translation only).");
+            telemetry.addLine("After START, click left stick: reverse drive (release first if held).");
             telemetry.addLine("Hold RB: aim only when explicitly enabled and a target ID is configured.");
             telemetry.addData("Drive power limit", RobotConfig.DRIVE_POWER_LIMIT);
             telemetry.update();
@@ -58,6 +55,8 @@ public class BaseDriveTeleOp extends LinearOpMode {
                 sleep(20);
             }
             waitForStart();
+            if (isStopRequested()) return;
+            ReverseDriveControl reverseDrive = new ReverseDriveControl(bindings, gamepad1, confirmations);
             while (opModeIsActive()) {
                 bindings.update(gamepad1, gamepad2);
                 if (vision != null) vision.update();
@@ -69,8 +68,7 @@ public class BaseDriveTeleOp extends LinearOpMode {
                 } else {
                     aim.reset();
                 }
-                double floor = Math.max(0, Math.min(1, ControllerTuning.SLOWEST_SPEED));
-                double scale = 1 - Math.max(0, Math.min(1, gamepad1.left_trigger)) * (1 - floor);
+                double scale = DriveInputScaling.slowScale(gamepad1.left_trigger);
                 if (gamepad1.a) {
                     drive.stop();
                 } else {
@@ -83,7 +81,7 @@ public class BaseDriveTeleOp extends LinearOpMode {
                     telemetry.addData("Tags detected", vision.getTargets().size());
                 }
                 // Let toggle confirmation finish before issuing another aim-feedback pulse.
-                if (!gamepad1.isRumbling() && target != null
+                if (!confirmations.isConfirming() && target != null
                         && target.isFresh(System.nanoTime(), VisionConfig.MAX_TARGET_AGE_MS))
                     rumble.update(target.bearingDeg - VisionConfig.AIM_BEARING_OFFSET_DEG);
                 telemetry.addData("Drive", gamepad1.a ? "Stopped" : "Robot-centric");

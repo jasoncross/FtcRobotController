@@ -7,6 +7,7 @@ import java.util.function.DoubleConsumer;
 import org.firstinspires.ftc.teamcode.config.ControllerTuning;
 
 /** Reusable two-gamepad press/hold/toggle/trigger/paddle bindings, retained from DECODE.
+ * CHANGES (2026-09-12): Add explicitly seeded press binding for controls held through START.
  * Game-specific default bindings have been removed; register this season's actions explicitly.
  */
 public class ControllerBindings {
@@ -101,6 +102,14 @@ public class ControllerBindings {
      * ========================= */
     public ControllerBindings bindPress(Pad pad, Btn btn, Runnable onPress){
         addBinding(pad, btn, new PressBinding(onPress));
+        return this;
+    }
+
+    /** Seed the edge gate without invoking callbacks; a held button must be released first. */
+    public ControllerBindings bindPress(Pad pad, Btn btn, boolean initiallyDown, Runnable onPress) {
+        PressBinding binding = new PressBinding(onPress);
+        binding.gate = initiallyDown;
+        addBinding(pad, btn, binding);
         return this;
     }
 
